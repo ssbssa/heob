@@ -15,6 +15,9 @@
 
 #define PTRS 48
 
+#define USE_STACKWALK       0
+#define WRITE_DEBUG_STRINGS 0
+
 
 typedef HMODULE WINAPI func_LoadLibraryW( LPCWSTR lpFileName );
 typedef LPVOID WINAPI func_GetProcAddress( HMODULE hModule,LPCSTR lpProcName );
@@ -50,7 +53,7 @@ typedef BOOL WINAPI func_SymInitialize( HANDLE,PCSTR,BOOL );
 typedef BOOL WINAPI func_SymGetLineFromAddr64(
     HANDLE,DWORD64,PDWORD,PIMAGEHLP_LINE64 );
 typedef BOOL WINAPI func_SymCleanup( HANDLE );
-#if 0
+#if USE_STACKWALK
 typedef BOOL WINAPI func_StackWalk64(
     DWORD,HANDLE,HANDLE,LPSTACKFRAME64,PVOID,PREAD_PROCESS_MEMORY_ROUTINE64,
     PFUNCTION_TABLE_ACCESS_ROUTINE64,PGET_MODULE_BASE_ROUTINE64,
@@ -126,7 +129,9 @@ typedef size_t func_pm_alloc_size( struct remoteData*,void* );
 
 enum
 {
-  //WRITE_STRING,
+#if WRITE_DEBUG_STRINGS
+  WRITE_STRING,
+#endif
   WRITE_LEAKS,
   WRITE_MODS,
   WRITE_EXCEPTION,
@@ -259,7 +264,7 @@ static void *new_malloc( size_t s )
 
   rd->mtrackAllocs( rd,NULL,b,s );
 
-#if 0
+#if WRITE_DEBUG_STRINGS
   char t[] = "called: new_malloc\n";
   DWORD written;
   int type = WRITE_STRING;
@@ -277,7 +282,7 @@ static void *new_calloc( size_t n,size_t s )
 
   rd->mtrackAllocs( rd,NULL,b,n*s );
 
-#if 0
+#if WRITE_DEBUG_STRINGS
   char t[] = "called: new_calloc\n";
   DWORD written;
   int type = WRITE_STRING;
@@ -295,7 +300,7 @@ static void new_free( void *b )
 
   rd->mtrackAllocs( rd,b,NULL,0 );
 
-#if 0
+#if WRITE_DEBUG_STRINGS
   char t[] = "called: new_free\n";
   DWORD written;
   int type = WRITE_STRING;
@@ -311,7 +316,7 @@ static void *new_realloc( void *b,size_t s )
 
   rd->mtrackAllocs( rd,b,nb,s );
 
-#if 0
+#if WRITE_DEBUG_STRINGS
   char t[] = "called: new_realloc\n";
   DWORD written;
   int type = WRITE_STRING;
@@ -329,7 +334,7 @@ static char *new_strdup( const char *s )
 
   rd->mtrackAllocs( rd,NULL,b,rd->fstrlen(s)+1 );
 
-#if 0
+#if WRITE_DEBUG_STRINGS
   char t[] = "called: new_strdup\n";
   DWORD written;
   int type = WRITE_STRING;
@@ -349,7 +354,7 @@ static wchar_t *new_wcsdup( const wchar_t *s )
   while( s[l] ) l++;
   rd->mtrackAllocs( rd,NULL,b,(l+1)*sizeof(wchar_t) );
 
-#if 0
+#if WRITE_DEBUG_STRINGS
   char t[] = "called: new_wcsdup\n";
   DWORD written;
   int type = WRITE_STRING;
@@ -367,7 +372,7 @@ static void *new_op_new( size_t s )
 
   rd->mtrackAllocs( rd,NULL,b,s );
 
-#if 0
+#if WRITE_DEBUG_STRINGS
   char t[] = "called: new_op_new\n";
   DWORD written;
   int type = WRITE_STRING;
@@ -385,7 +390,7 @@ static void new_op_delete( void *b )
 
   rd->mtrackAllocs( rd,b,NULL,0 );
 
-#if 0
+#if WRITE_DEBUG_STRINGS
   char t[] = "called: new_op_delete\n";
   DWORD written;
   int type = WRITE_STRING;
@@ -400,7 +405,7 @@ static VOID WINAPI new_ExitProcess( UINT c )
 
   int type;
   DWORD written;
-#if 0
+#if WRITE_DEBUG_STRINGS
   char t[] = "called: new_ExitProcess\n";
   type = WRITE_STRING;
   rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
@@ -635,12 +640,16 @@ static wchar_t *protect_wcsdup( const wchar_t *s )
 #define csp Rsp
 #define cip Rip
 #define cfp Rbp
-//#define MACH_TYPE IMAGE_FILE_MACHINE_AMD64
+#if USE_STACKWALK
+#define MACH_TYPE IMAGE_FILE_MACHINE_AMD64
+#endif
 #else
 #define csp Esp
 #define cip Eip
 #define cfp Ebp
-//#define MACH_TYPE IMAGE_FILE_MACHINE_I386
+#if USE_STACKWALK
+#define MACH_TYPE IMAGE_FILE_MACHINE_I386
+#endif
 #endif
 static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 {
@@ -722,7 +731,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   int count = 0;
   void **frames = ei.aa[0].frames;
 
-#if 0
+#if USE_STACKWALK
   wchar_t dll_dbghelp[] = { 'd','b','g','h','e','l','p','.','d','l','l',0 };
   HMODULE symMod = rd->fLoadLibrary( dll_dbghelp );
   func_StackWalk64 *fStackWalk64 = NULL;
@@ -1667,7 +1676,7 @@ void smain( void )
     {
       switch( type )
       {
-#if 0
+#if WRITE_DEBUG_STRINGS
         case WRITE_STRING:
           {
             char buf[1024];
@@ -1680,9 +1689,7 @@ void smain( void )
                 continue;
               }
               bufpos[0] = 0;
-              //SetConsoleTextAttribute( out,att );
               printf( "child: '%s'\n",buf );
-              //SetConsoleTextAttribute( out,att_normal );
               bufpos = buf;
               break;
             }
