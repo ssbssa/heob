@@ -1718,7 +1718,7 @@ void smain( void )
     modInfo *mi_a = NULL;
     int mi_q = 0;
     allocation *alloc_a = NULL;
-    int alloc_q = 0;
+    int alloc_q = -2;
     while( ReadFile(readPipe,&type,sizeof(int),&didread,NULL) )
     {
       switch( type )
@@ -1964,6 +1964,12 @@ void smain( void )
       }
       SetConsoleTextAttribute( out,att_warn );
       printf( "  sum: %" PRIuPTR " B / %d\n",sumSize,alloc_q );
+      SetConsoleTextAttribute( out,att_normal );
+    }
+    else if( alloc_q<-1 )
+    {
+      SetConsoleTextAttribute( out,att_warn );
+      printf( "\nunexpected end of application\n" );
       SetConsoleTextAttribute( out,att_normal );
     }
 
