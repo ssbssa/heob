@@ -1229,19 +1229,15 @@ static HANDLE inject( HANDLE process,options *opt )
   HANDLE thread = CreateRemoteThread( process,NULL,0,
       remoteFuncStart,
       fullDataRemote+funcSize,0,NULL );
-  while( WaitForSingleObject(initFinished,10)==WAIT_TIMEOUT )
+  HANDLE h[2] = { thread,initFinished };
+  if( WaitForMultipleObjects(2,h,FALSE,INFINITE)==WAIT_OBJECT_0 )
   {
-    DWORD exitCode;
-    GetExitCodeThread( thread,&exitCode );
-    if( exitCode!=STILL_ACTIVE )
-    {
-      CloseHandle( initFinished );
-      CloseHandle( thread );
-      CloseHandle( readPipe );
-      free( fullData );
-      printf( "process failed to initialize\n" );
-      return( NULL );
-    }
+    CloseHandle( initFinished );
+    CloseHandle( thread );
+    CloseHandle( readPipe );
+    free( fullData );
+    printf( "process failed to initialize\n" );
+    return( NULL );
   }
   CloseHandle( initFinished );
   CloseHandle( thread );
