@@ -190,6 +190,8 @@ typedef struct remoteData
   func_ExitProcess *fExitProcess;
   func_malloc *fop_new;
   func_free *fop_delete;
+  func_malloc *fop_new_a;
+  func_free *fop_delete_a;
 
   func_malloc *mmalloc;
   func_calloc *mcalloc;
@@ -201,6 +203,8 @@ typedef struct remoteData
   func_SetUnhandledExceptionFilter *mSUEF;
   func_malloc *mop_new;
   func_free *mop_delete;
+  func_malloc *mop_new_a;
+  func_free *mop_delete_a;
 
   func_malloc *pmalloc;
   func_calloc *pcalloc;
@@ -390,6 +394,40 @@ static void new_op_delete( void *b )
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_op_delete\n";
+  DWORD written;
+  int type = WRITE_STRING;
+  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+#endif
+}
+
+static void *new_op_new_a( size_t s )
+{
+  GET_REMOTEDATA( rd );
+  void *b = rd->fop_new_a( s );
+
+  rd->mtrackAllocs( rd,NULL,b,s );
+
+#if WRITE_DEBUG_STRINGS
+  char t[] = "called: new_op_new_a\n";
+  DWORD written;
+  int type = WRITE_STRING;
+  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+#endif
+
+  return( b );
+}
+
+static void new_op_delete_a( void *b )
+{
+  GET_REMOTEDATA( rd );
+  rd->fop_delete_a( b );
+
+  rd->mtrackAllocs( rd,b,NULL,0 );
+
+#if WRITE_DEBUG_STRINGS
+  char t[] = "called: new_op_delete_a\n";
   DWORD written;
   int type = WRITE_STRING;
   rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
@@ -1315,6 +1353,8 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
     { &new_wcsdup     ,&rd->mwcsdup      },
     { &new_op_new     ,&rd->mop_new      },
     { &new_op_delete  ,&rd->mop_delete   },
+    { &new_op_new_a   ,&rd->mop_new_a    },
+    { &new_op_delete_a,&rd->mop_delete_a },
     { &new_ExitProcess,&rd->mExitProcess },
     { &protect_malloc ,&rd->pmalloc      },
     { &protect_calloc ,&rd->pcalloc      },
@@ -1354,9 +1394,13 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
 #ifndef _WIN64
   char fname_op_new[] = "??2@YAPAXI@Z";
   char fname_op_delete[] = "??3@YAXPAX@Z";
+  char fname_op_new_a[] = "??_U@YAPAXI@Z";
+  char fname_op_delete_a[] = "??_V@YAXPAX@Z";
 #else
   char fname_op_new[] = "??2@YAPEAX_K@Z";
   char fname_op_delete[] = "??3@YAXPEAX@Z";
+  char fname_op_new_a[] = "??_U@YAPEAX_K@Z";
+  char fname_op_delete_a[] = "??_V@YAXPEAX@Z";
 #endif
   replaceData rep[] = {
     { fname_malloc     ,&rd->fmalloc     ,rd->mmalloc      },
@@ -1367,6 +1411,8 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
     { fname_wcsdup     ,&rd->fwcsdup     ,rd->mwcsdup      },
     { fname_op_new     ,&rd->fop_new     ,rd->mop_new      },
     { fname_op_delete  ,&rd->fop_delete  ,rd->mop_delete   },
+    { fname_op_new_a   ,&rd->fop_new_a   ,rd->mop_new_a    },
+    { fname_op_delete_a,&rd->fop_delete_a,rd->mop_delete_a },
   };
   const char *dll_msvcrt =
     rd->mreplaceFuncs( rd,NULL,NULL,rep,sizeof(rep)/sizeof(replaceData) );
@@ -1386,6 +1432,8 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
     rd->fwcsdup = rd->pwcsdup;
     rd->fop_new = rd->pmalloc;
     rd->fop_delete = rd->pfree;
+    rd->fop_new_a = rd->pmalloc;
+    rd->fop_delete_a = rd->pfree;
 
     rd->fSetUnhandledExceptionFilter( exceptionWalkerV );
   }
