@@ -73,8 +73,6 @@ typedef void func_free( void* );
 typedef void *func_realloc( void*,size_t );
 typedef char *func_strdup( const char* );
 typedef wchar_t *func_wcsdup( const wchar_t* );
-typedef void *func_op_new( size_t );
-typedef void func_op_delete( void* );
 
 typedef struct
 {
@@ -190,8 +188,8 @@ typedef struct remoteData
   func_strdup *fstrdup;
   func_wcsdup *fwcsdup;
   func_ExitProcess *fExitProcess;
-  func_op_new *fop_new;
-  func_op_delete *fop_delete;
+  func_malloc *fop_new;
+  func_free *fop_delete;
 
   func_malloc *mmalloc;
   func_calloc *mcalloc;
@@ -201,8 +199,8 @@ typedef struct remoteData
   func_wcsdup *mwcsdup;
   func_ExitProcess *mExitProcess;
   func_SetUnhandledExceptionFilter *mSUEF;
-  func_op_new *mop_new;
-  func_op_delete *mop_delete;
+  func_malloc *mop_new;
+  func_free *mop_delete;
 
   func_malloc *pmalloc;
   func_calloc *pcalloc;
@@ -1353,17 +1351,22 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
   char fname_realloc[] = "realloc";
   char fname_strdup[] = "_strdup";
   char fname_wcsdup[] = "_wcsdup";
+#ifndef _WIN64
   char fname_op_new[] = "??2@YAPAXI@Z";
   char fname_op_delete[] = "??3@YAXPAX@Z";
+#else
+  char fname_op_new[] = "??2@YAPEAX_K@Z";
+  char fname_op_delete[] = "??3@YAXPEAX@Z";
+#endif
   replaceData rep[] = {
-    { fname_malloc   ,&rd->fmalloc   ,rd->mmalloc    },
-    { fname_calloc   ,&rd->fcalloc   ,rd->mcalloc    },
-    { fname_free     ,&rd->ffree     ,rd->mfree      },
-    { fname_realloc  ,&rd->frealloc  ,rd->mrealloc   },
-    { fname_strdup   ,&rd->fstrdup   ,rd->mstrdup    },
-    { fname_wcsdup   ,&rd->fwcsdup   ,rd->mwcsdup    },
-    { fname_op_new   ,&rd->fop_new   ,rd->mop_new    },
-    { fname_op_delete,&rd->fop_delete,rd->mop_delete },
+    { fname_malloc     ,&rd->fmalloc     ,rd->mmalloc      },
+    { fname_calloc     ,&rd->fcalloc     ,rd->mcalloc      },
+    { fname_free       ,&rd->ffree       ,rd->mfree        },
+    { fname_realloc    ,&rd->frealloc    ,rd->mrealloc     },
+    { fname_strdup     ,&rd->fstrdup     ,rd->mstrdup      },
+    { fname_wcsdup     ,&rd->fwcsdup     ,rd->mwcsdup      },
+    { fname_op_new     ,&rd->fop_new     ,rd->mop_new      },
+    { fname_op_delete  ,&rd->fop_delete  ,rd->mop_delete   },
   };
   const char *dll_msvcrt =
     rd->mreplaceFuncs( rd,NULL,NULL,rep,sizeof(rep)/sizeof(replaceData) );
