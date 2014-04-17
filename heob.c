@@ -146,6 +146,7 @@ typedef struct options
   int init;
   int slackInit;
   int protectFree;
+  int handleException;
 }
 options;
 
@@ -1434,9 +1435,10 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
     rd->fop_delete = rd->pfree;
     rd->fop_new_a = rd->pmalloc;
     rd->fop_delete_a = rd->pfree;
-
-    rd->fSetUnhandledExceptionFilter( exceptionWalkerV );
   }
+
+  if( rd->opt.handleException )
+    rd->fSetUnhandledExceptionFilter( exceptionWalkerV );
 
   char dll_kernel32[] = "kernel32.dll";
   char fname_ExitProcess[] = "ExitProcess";
@@ -1445,9 +1447,11 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
     { fname_ExitProcess,&rd->fExitProcess                ,rd->mExitProcess },
     { fname_SUEF       ,&rd->fSetUnhandledExceptionFilter,rd->mSUEF        },
   };
-  rd->mreplaceFuncs( rd,NULL,dll_kernel32,
-      rep2,sizeof(rep2)/sizeof(replaceData) );
-  for( i=0; i<sizeof(rep2)/sizeof(replaceData); i++ )
+  unsigned int rep2count = sizeof(rep2)/sizeof(replaceData);
+  if( !rd->opt.handleException )
+    rep2count--;
+  rd->mreplaceFuncs( rd,NULL,dll_kernel32,rep2,rep2count );
+  for( i=0; i<rep2count; i++ )
     rd->mreplaceFuncs( rd,dll_msvcrt,NULL,rep2+i,1 );
 
   return( 0 );
@@ -1585,6 +1589,7 @@ void smain( void )
     0xff,
     0xcc,
     0,
+    1,
   };
   options opt = defopt;
   while( args )
@@ -1614,6 +1619,9 @@ void smain( void )
       case 'f':
         opt.protectFree = atoi( args+2 );
         break;
+
+      case 'h':
+        opt.handleException = atoi( args+2 );
     }
     while( args[0] && args[0]!=' ' ) args++;
   }
@@ -1637,6 +1645,7 @@ void smain( void )
     printf( "    -iX    initial value [%d]\n",defopt.init );
     printf( "    -sX    initial value for slack [%d]\n",defopt.slackInit );
     printf( "    -fX    freed memory protection [%d]\n",defopt.protectFree );
+    printf( "    -hX    handle exceptions [%d]\n",defopt.handleException );
     ExitProcess( 1 );
   }
 
