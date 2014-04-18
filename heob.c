@@ -457,8 +457,9 @@ static VOID WINAPI new_ExitProcess( UINT c )
   type = WRITE_LEAKS;
   rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
   rd->fWriteFile( rd->master,&rd->alloc_q,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,rd->alloc_a,rd->alloc_q*sizeof(allocation),
-      &written,NULL );
+  if( rd->alloc_q )
+    rd->fWriteFile( rd->master,rd->alloc_a,rd->alloc_q*sizeof(allocation),
+        &written,NULL );
 
   rd->fLeaveCriticalSection( &rd->cs );
 
@@ -1144,7 +1145,8 @@ static void writeMods( struct remoteData *rd,allocation *alloc_a,int alloc_q )
   DWORD written;
   rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
   rd->fWriteFile( rd->master,&mi_q,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,mi_a,mi_q*sizeof(modInfo),&written,NULL );
+  if( mi_q )
+    rd->fWriteFile( rd->master,mi_a,mi_q*sizeof(modInfo),&written,NULL );
   rd->fHeapFree( rd->heap,0,mi_a );
 }
 
@@ -1756,24 +1758,23 @@ void smain( void )
         case WRITE_LEAKS:
           if( !ReadFile(readPipe,&alloc_q,sizeof(int),&didread,NULL) )
           {
-            alloc_q = 0;
+            alloc_q = -2;
             break;
           }
+          if( !alloc_q ) break;
           alloc_a = realloc( alloc_a,alloc_q*sizeof(allocation) );
           if( !ReadFile(readPipe,alloc_a,alloc_q*sizeof(allocation),
                 &didread,NULL) )
           {
-            alloc_q = 0;
+            alloc_q = -2;
             break;
           }
           break;
 
         case WRITE_MODS:
           if( !ReadFile(readPipe,&mi_q,sizeof(int),&didread,NULL) )
-          {
             mi_q = 0;
-            break;
-          }
+          if( !mi_q ) break;
           mi_a = realloc( mi_a,mi_q*sizeof(modInfo) );
           if( !ReadFile(readPipe,mi_a,mi_q*sizeof(modInfo),&didread,NULL) )
           {
@@ -1789,7 +1790,8 @@ void smain( void )
               break;
 
             SetConsoleTextAttribute( out,att_warn );
-            printf( "\nunhandled exception code: 0x%08lX",ei.er.ExceptionCode );
+            printf( "\nunhandled exception code: 0x%08lX",
+                ei.er.ExceptionCode );
             const char *desc = NULL;
             switch( ei.er.ExceptionCode )
             {
