@@ -111,5 +111,5 @@ int main( int argc,char **argv )
   arg = argc>1 ? atoi( argv[1] ) : 0;
   choose( arg );
 
-  return( 0 );
+  return( arg );
 }

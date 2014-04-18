@@ -456,6 +456,7 @@ static VOID WINAPI new_ExitProcess( UINT c )
 
   type = WRITE_LEAKS;
   rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  rd->fWriteFile( rd->master,&c,sizeof(UINT),&written,NULL );
   rd->fWriteFile( rd->master,&rd->alloc_q,sizeof(int),&written,NULL );
   if( rd->alloc_q )
     rd->fWriteFile( rd->master,rd->alloc_a,rd->alloc_q*sizeof(allocation),
@@ -1730,6 +1731,7 @@ void smain( void )
     int mi_q = 0;
     allocation *alloc_a = NULL;
     int alloc_q = -2;
+    UINT exitCode = -1;
     while( ReadFile(readPipe,&type,sizeof(int),&didread,NULL) )
     {
       switch( type )
@@ -1756,6 +1758,11 @@ void smain( void )
 #endif
 
         case WRITE_LEAKS:
+          if( !ReadFile(readPipe,&exitCode,sizeof(UINT),&didread,NULL) )
+          {
+            alloc_q = -2;
+            break;
+          }
           if( !ReadFile(readPipe,&alloc_q,sizeof(int),&didread,NULL) )
           {
             alloc_q = -2;
@@ -1936,6 +1943,8 @@ void smain( void )
     {
       SetConsoleTextAttribute( out,att_ok );
       printf( "\nno leaks found\n" );
+      SetConsoleTextAttribute( out,att_section );
+      printf( "exit code: %u (0x%08X)\n",exitCode,exitCode );
       SetConsoleTextAttribute( out,att_normal );
     }
     else if( alloc_q>0 )
@@ -1975,6 +1984,8 @@ void smain( void )
       }
       SetConsoleTextAttribute( out,att_warn );
       printf( "  sum: %" PRIuPTR " B / %d\n",sumSize,alloc_q );
+      SetConsoleTextAttribute( out,att_section );
+      printf( "exit code: %u (0x%08X)\n",exitCode,exitCode );
       SetConsoleTextAttribute( out,att_normal );
     }
     else if( alloc_q<-1 )
