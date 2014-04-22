@@ -6,8 +6,7 @@ CXX=$(PREF)g++
 CPPFLAGS=
 CFLAGS=-Wall -Wextra -fno-omit-frame-pointer -fno-optimize-sibling-calls
 CFLAGS_HEOB=$(CPPFLAGS) $(CFLAGS) -O3
-#LDFLAGS_HEOB=-s -lpsapi
-LDFLAGS_HEOB=-s -Wl,--entry=_smain -nostdlib -lmsvcrt -lkernel32 -lpsapi
+LDFLAGS_HEOB=-s -Wl,--entry=_smain -nostdlib -lkernel32
 CFLAGS_TEST=$(CFLAGS) -O3 -g
 
 

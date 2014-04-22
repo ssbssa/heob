@@ -4,10 +4,8 @@
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
 
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <stdio.h>
-#include <inttypes.h>
-#include <psapi.h>
 
 #include <dbghelp.h>
 #include <dwarfstack.h>
@@ -141,12 +139,12 @@ enum
 
 typedef struct options
 {
-  int protect;
-  int align;
-  int init;
-  int slackInit;
-  int protectFree;
-  int handleException;
+  intptr_t protect;
+  intptr_t align;
+  intptr_t init;
+  intptr_t slackInit;
+  intptr_t protectFree;
+  intptr_t handleException;
 }
 options;
 
@@ -236,7 +234,10 @@ typedef struct remoteData
   int freed_q;
   int freed_s;
 
-  wchar_t exePath[MAX_PATH];
+  union {
+    wchar_t exePath[MAX_PATH];
+    char exePathA[MAX_PATH];
+  };
 
   CRITICAL_SECTION cs;
   HANDLE heap;
@@ -247,13 +248,163 @@ typedef struct remoteData
 remoteData;
 
 
-static HANDLE inject( HANDLE process,options *opt );
+#undef RtlMoveMemory
+VOID WINAPI RtlMoveMemory( PVOID,const VOID*,SIZE_T );
+
+static __attribute__((noinline)) void mprintf( const char *format,... )
+{
+  va_list vl;
+  va_start( vl,format );
+  const char *ptr = format;
+  HANDLE out = GetStdHandle( STD_OUTPUT_HANDLE );
+  DWORD written;
+  while( ptr[0] )
+  {
+    if( ptr[0]=='%' && ptr[1] )
+    {
+      if( ptr>format )
+        WriteFile( out,format,ptr-format,&written,NULL );
+      switch( ptr[1] )
+      {
+        case 's':
+          {
+            const char *arg = va_arg( vl,const char* );
+            if( arg )
+              WriteFile( out,arg,lstrlen(arg),&written,NULL );
+          }
+          break;
+
+        case 'd':
+        case 'u':
+          {
+            uintptr_t arg;
+            int minus = 0;
+            if( ptr[1]=='d' )
+            {
+              intptr_t argi = va_arg( vl,intptr_t );
+              if( argi<0 )
+              {
+                arg = -argi;
+                minus = 1;
+              }
+              else
+                arg = argi;
+            }
+            else
+              arg = va_arg( vl,uintptr_t );
+            char str[16];
+            char *start = str + 15;
+            start[0] = 0;
+            if( !arg )
+              (--start)[0] = '0';
+            while( arg )
+            {
+              (--start)[0] = arg%10 + '0';
+              arg /= 10;
+            }
+            if( minus )
+              (--start)[0] = '-';
+            WriteFile( out,start,lstrlen(start),&written,NULL );
+          }
+          break;
+
+        case 'p':
+        case 'x':
+          {
+            uintptr_t arg;
+            int bytes;
+            if( ptr[1]=='p' )
+            {
+              arg = va_arg( vl,uintptr_t );
+              bytes = sizeof(void*);
+            }
+            else
+            {
+              arg = va_arg( vl,unsigned int );
+              bytes = sizeof(unsigned int);
+            }
+            char str[20];
+            char *end = str;
+            int b;
+            end++[0] = '0';
+            end++[0] = 'x';
+            for( b=bytes*2-1; b>=0; b-- )
+            {
+              uintptr_t bits = ( arg>>(b*4) )&0xf;
+              if( bits>=10 )
+                end++[0] = bits - 10 + 'A';
+              else
+                end++[0] = bits + '0';
+            }
+            end[0] = 0;
+            WriteFile( out,str,lstrlen(str),&written,NULL );
+          }
+          break;
+
+        case 'c':
+          {
+            int arg = va_arg( vl,int );
+            SetConsoleTextAttribute( out,arg );
+          }
+          break;
+      }
+      ptr += 2;
+      format = ptr;
+      continue;
+    }
+    ptr++;
+  }
+  if( ptr>format )
+    WriteFile( out,format,ptr-format,&written,NULL );
+  va_end( vl );
+}
+#define printf mprintf
+
+static __attribute__((noinline)) char *mstrchr( const char *s,char c )
+{
+  for( ; *s; s++ )
+    if( *s==c ) return( (char*)s );
+  return( NULL );
+}
+#define strchr mstrchr
+
+static __attribute__((noinline)) char *mstrrchr( const char *s,char c )
+{
+  char *ret = NULL;
+  for( ; *s; s++ )
+    if( *s==c ) ret = (char*)s;
+  return( ret );
+}
+#define strrchr mstrrchr
+
+static __attribute__((noinline)) int matoi( const char *s )
+{
+  int ret = 0;
+  for( ; *s>='0' && *s<='9'; s++ )
+    ret = ret*10 + ( *s - '0' );
+  return( ret );
+}
+#define atoi matoi
+
+static int mmemcmp( const void *p1,const void *p2,size_t s )
+{
+  const unsigned char *b1 = p1;
+  const unsigned char *b2 = p2;
+  size_t i;
+  for( i=0; i<s; i++ )
+    if( *b1!=*b2 ) return( 1 );
+  return( 0 );
+}
+#define memcmp mmemcmp
+
+
+static HANDLE inject( HANDLE process,options *opt,char *exePath );
 #ifndef _WIN64
 #define GET_REMOTEDATA( rd ) remoteData *rd = *((remoteData**)-1)
 #else
 typedef union
 {
-  HANDLE (*func)( HANDLE,options* );
+  HANDLE (*func)( HANDLE,options*,char* );
   remoteData **data;
 }
 unalias;
@@ -1167,7 +1318,7 @@ static DWORD WINAPI remoteCall( remoteData *rd )
 }
 
 
-static HANDLE inject( HANDLE process,options *opt )
+static HANDLE inject( HANDLE process,options *opt,char *exePath )
 {
   size_t funcSize = (size_t)&inject - (size_t)&remoteCall;
   size_t fullSize = funcSize + sizeof(remoteData);
@@ -1175,8 +1326,9 @@ static HANDLE inject( HANDLE process,options *opt )
   unsigned char *fullDataRemote =
     VirtualAllocEx( process,NULL,fullSize,MEM_COMMIT,PAGE_EXECUTE_READWRITE );
 
-  unsigned char *fullData = malloc( fullSize );
-  memcpy( fullData,&remoteCall,funcSize );
+  HANDLE heap = GetProcessHeap();
+  unsigned char *fullData = HeapAlloc( heap,0,fullSize );
+  RtlMoveMemory( fullData,&remoteCall,funcSize );
   remoteData *data = (remoteData*)( fullData+funcSize );
   ZeroMemory( data,sizeof(remoteData) );
 
@@ -1262,7 +1414,7 @@ static HANDLE inject( HANDLE process,options *opt )
       process,&data->initFinished,0,FALSE,
       DUPLICATE_SAME_ACCESS );
 
-  memcpy( &data->opt,opt,sizeof(options) );
+  RtlMoveMemory( &data->opt,opt,sizeof(options) );
 
   WriteProcessMemory( process,fullDataRemote,fullData,fullSize,NULL );
 
@@ -1275,7 +1427,7 @@ static HANDLE inject( HANDLE process,options *opt )
     CloseHandle( initFinished );
     CloseHandle( thread );
     CloseHandle( readPipe );
-    free( fullData );
+    HeapFree( heap,0,fullData );
     printf( "process failed to initialize\n" );
     return( NULL );
   }
@@ -1290,7 +1442,9 @@ static HANDLE inject( HANDLE process,options *opt )
     readPipe = NULL;
     printf( "only works with dynamically linked CRT\n" );
   }
-  free( fullData );
+  else
+    lstrcpy( exePath,data->exePathA );
+  HeapFree( heap,0,fullData );
 
   return( readPipe );
 }
@@ -1457,6 +1611,8 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
   for( i=0; i<rep2count; i++ )
     rd->mreplaceFuncs( rd,dll_msvcrt,NULL,rep2+i,1 );
 
+  rd->fGetModuleFileName( NULL,rd->exePathA,MAX_PATH );
+
   return( 0 );
 }
 
@@ -1475,9 +1631,9 @@ typedef struct dbghelp
   HANDLE process;
   func_SymGetLineFromAddr64 *fSymGetLineFromAddr64;
   func_dwstOfFile *fdwstOfFile;
-  WORD att_normal;
-  WORD att_ok;
-  WORD att_base;
+  int att_normal;
+  int att_ok;
+  int att_base;
 }
 dbghelp;
 
@@ -1501,34 +1657,25 @@ static void locFunc(
   const char *sep2 = strrchr( filename,'\\' );
   if( sep2>sep1 ) sep1 = sep2;
   if( sep1 ) filename = sep1 + 1;
-  HANDLE out = GetStdHandle( STD_OUTPUT_HANDLE );
 
   switch( lineno )
   {
     case DWST_BASE_ADDR:
-      printf( "    " );
-      SetConsoleTextAttribute( out,dh->att_base );
-      printf( "0x%p",(void*)(uintptr_t)addr );
-      SetConsoleTextAttribute( out,dh->att_normal );
-      printf( " " );
-      SetConsoleTextAttribute( out,dh->att_base );
-      printf( "%s",filename );
-      SetConsoleTextAttribute( out,dh->att_normal );
-      printf( "\n" );
+      printf( "    %c%p%c %c%s%c\n",
+          dh->att_base,(uintptr_t)addr,dh->att_normal,
+          dh->att_base,filename,dh->att_normal );
       break;
 
     case DWST_NO_DBG_SYM:
     case DWST_NO_SRC_FILE:
     case DWST_NOT_FOUND:
-      printf( "    0x%p\n",(void*)(uintptr_t)addr );
+      printf( "%c    %p\n",dh->att_normal,(uintptr_t)addr );
       break;
 
     default:
-      printf( "    0x%p ",(void*)(uintptr_t)addr );
-      SetConsoleTextAttribute( out,dh->att_ok );
-      printf( "%s",filename );
-      SetConsoleTextAttribute( out,dh->att_normal );
-      printf( ":%d\n",lineno );
+      printf( "%c    %p %c%s%c:%d\n",
+          dh->att_normal,(uintptr_t)addr,
+          dh->att_ok,filename,dh->att_normal,(intptr_t)lineno );
       break;
   }
 }
@@ -1577,6 +1724,9 @@ static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbghelp *dh )
 
 #ifdef _WIN64
 #define smain _smain
+#define BITS "64"
+#else
+#define BITS "32"
 #endif
 void smain( void )
 {
@@ -1664,10 +1814,11 @@ void smain( void )
   }
 
   HANDLE readPipe = NULL;
+  char exePath[MAX_PATH];
   if( isWrongArch(pi.hProcess) )
-    printf( "only %dbit applications possible\n",(int)sizeof(void*)*8 );
+    printf( "only " BITS "bit applications possible\n" );
   else
-    readPipe = inject( pi.hProcess,&opt );
+    readPipe = inject( pi.hProcess,&opt,exePath );
   if( !readPipe )
     TerminateProcess( pi.hProcess,1 );
 
@@ -1707,8 +1858,6 @@ void smain( void )
       fSymSetOptions( SYMOPT_LOAD_LINES );
     if( fSymInitialize )
     {
-      char exePath[MAX_PATH];
-      GetModuleFileNameEx( pi.hProcess,NULL,exePath,MAX_PATH );
       char *delim = strrchr( exePath,'\\' );
       if( delim ) delim[0] = 0;
       fSymInitialize( pi.hProcess,exePath,TRUE );
@@ -1718,12 +1867,11 @@ void smain( void )
 
     DWORD didread;
     int type;
-    HANDLE out = GetStdHandle( STD_OUTPUT_HANDLE );
-    WORD att_normal = FOREGROUND_BLUE|FOREGROUND_GREEN|FOREGROUND_RED;
-    WORD att_ok = FOREGROUND_GREEN|FOREGROUND_INTENSITY;
-    WORD att_section = FOREGROUND_BLUE|FOREGROUND_GREEN|FOREGROUND_INTENSITY;
-    WORD att_info = FOREGROUND_BLUE|FOREGROUND_RED|FOREGROUND_INTENSITY;
-    WORD att_warn = FOREGROUND_RED|FOREGROUND_INTENSITY;
+    int att_normal = FOREGROUND_BLUE|FOREGROUND_GREEN|FOREGROUND_RED;
+    int att_ok = FOREGROUND_GREEN|FOREGROUND_INTENSITY;
+    int att_section = FOREGROUND_BLUE|FOREGROUND_GREEN|FOREGROUND_INTENSITY;
+    int att_info = FOREGROUND_BLUE|FOREGROUND_RED|FOREGROUND_INTENSITY;
+    int att_warn = FOREGROUND_RED|FOREGROUND_INTENSITY;
     dh.att_normal = att_normal;
     dh.att_ok = att_ok;
     dh.att_base = BACKGROUND_INTENSITY;
@@ -1731,6 +1879,7 @@ void smain( void )
     int mi_q = 0;
     allocation *alloc_a = NULL;
     int alloc_q = -2;
+    HANDLE heap = GetProcessHeap();
     UINT exitCode = -1;
     while( ReadFile(readPipe,&type,sizeof(int),&didread,NULL) )
     {
@@ -1769,7 +1918,8 @@ void smain( void )
             break;
           }
           if( !alloc_q ) break;
-          alloc_a = realloc( alloc_a,alloc_q*sizeof(allocation) );
+          HeapFree( heap,0,alloc_a );
+          alloc_a = HeapAlloc( heap,0,alloc_q*sizeof(allocation) );
           if( !ReadFile(readPipe,alloc_a,alloc_q*sizeof(allocation),
                 &didread,NULL) )
           {
@@ -1782,7 +1932,8 @@ void smain( void )
           if( !ReadFile(readPipe,&mi_q,sizeof(int),&didread,NULL) )
             mi_q = 0;
           if( !mi_q ) break;
-          mi_a = realloc( mi_a,mi_q*sizeof(modInfo) );
+          HeapFree( heap,0,mi_a );
+          mi_a = HeapAlloc( heap,0,mi_q*sizeof(modInfo) );
           if( !ReadFile(readPipe,mi_a,mi_q*sizeof(modInfo),&didread,NULL) )
           {
             mi_q = 0;
@@ -1796,9 +1947,6 @@ void smain( void )
             if( !ReadFile(readPipe,&ei,sizeof(exceptionInfo),&didread,NULL) )
               break;
 
-            SetConsoleTextAttribute( out,att_warn );
-            printf( "\nunhandled exception code: 0x%08lX",
-                ei.er.ExceptionCode );
             const char *desc = NULL;
             switch( ei.er.ExceptionCode )
             {
@@ -1827,14 +1975,10 @@ void smain( void )
               EX_DESC( SINGLE_STEP );
               EX_DESC( STACK_OVERFLOW );
             }
-            if( desc )
-              printf( "%s",desc );
-            printf( "\n" );
-            SetConsoleTextAttribute( out,att_normal );
+            printf( "%c\nunhandled exception code: %x%s\n",
+                att_warn,ei.er.ExceptionCode,desc );
 
-            SetConsoleTextAttribute( out,att_section );
-            printf( "  exception on:\n" );
-            SetConsoleTextAttribute( out,att_normal );
+            printf( "%c  exception on:\n",att_section );
             printStack( ei.aa[0].frames,mi_a,mi_q,&dh );
 
             if( ei.er.ExceptionCode==EXCEPTION_ACCESS_VIOLATION &&
@@ -1842,31 +1986,23 @@ void smain( void )
             {
               ULONG_PTR flag = ei.er.ExceptionInformation[0];
               char *addr = (char*)ei.er.ExceptionInformation[1];
-              SetConsoleTextAttribute( out,att_warn );
-              printf( "  %s violation at 0x%p\n",
-                  flag==8?"data execution prevention":
+              printf( "%c  %s violation at %p\n",
+                  att_warn,flag==8?"data execution prevention":
                   (flag?"write access":"read access"),addr );
-              SetConsoleTextAttribute( out,att_normal );
 
               if( ei.aq>1 )
               {
                 char *ptr = (char*)ei.aa[1].ptr;
                 size_t size = ei.aa[1].size;
-                SetConsoleTextAttribute( out,att_info );
-                printf( "  %s 0x%p (size %"
-                    PRIuPTR ", offset %s%" PRIdPTR ")\n",
-                    ei.aq>2?"freed block":"protected area of",
+                printf( "%c  %s %p (size %u, offset %s%d)\n",
+                    att_info,ei.aq>2?"freed block":"protected area of",
                     ptr,size,addr>ptr?"+":"",addr-ptr );
-                SetConsoleTextAttribute( out,att_section );
-                printf( "  allocated on:\n" );
-                SetConsoleTextAttribute( out,att_normal );
+                printf( "%c  allocated on:\n",att_section );
                 printStack( ei.aa[1].frames,mi_a,mi_q,&dh );
 
                 if( ei.aq>2 )
                 {
-                  SetConsoleTextAttribute( out,att_section );
-                  printf( "  freed on:\n" );
-                  SetConsoleTextAttribute( out,att_normal );
+                  printf( "%c  freed on:\n",att_section );
                   printStack( ei.aa[2].frames,mi_a,mi_q,&dh );
                 }
               }
@@ -1882,11 +2018,9 @@ void smain( void )
             if( !ReadFile(readPipe,&a,sizeof(allocation),&didread,NULL) )
               break;
 
-            SetConsoleTextAttribute( out,att_warn );
-            printf( "\nallocation failed of %" PRIuPTR " bytes\n",a.size );
-            SetConsoleTextAttribute( out,att_section );
-            printf( "  called on:\n" );
-            SetConsoleTextAttribute( out,att_normal );
+            printf( "%c\nallocation failed of %u bytes\n",
+                att_warn,a.size );
+            printf( "%c  called on:\n",att_section );
             printStack( a.frames,mi_a,mi_q,&dh );
           }
           break;
@@ -1897,11 +2031,9 @@ void smain( void )
             if( !ReadFile(readPipe,&a,sizeof(allocation),&didread,NULL) )
               break;
 
-            SetConsoleTextAttribute( out,att_warn );
-            printf( "\ndeallocation of invalid pointer 0x%p\n",a.ptr );
-            SetConsoleTextAttribute( out,att_section );
-            printf( "  called on:\n" );
-            SetConsoleTextAttribute( out,att_normal );
+            printf( "%c\ndeallocation of invalid pointer %p\n",
+                att_warn,a.ptr );
+            printf( "%c  called on:\n",att_section );
             printStack( a.frames,mi_a,mi_q,&dh );
           }
           break;
@@ -1912,28 +2044,21 @@ void smain( void )
             if( !ReadFile(readPipe,aa,2*sizeof(allocation),&didread,NULL) )
               break;
 
-            SetConsoleTextAttribute( out,att_warn );
-            printf( "\nwrite access violation at 0x%p\n",aa[1].ptr );
-            SetConsoleTextAttribute( out,att_info );
-            printf( "  slack area of 0x%p (size %" PRIuPTR
-                ", offset %s%" PRIdPTR ")\n",
-                aa[0].ptr,aa[0].size,
-                aa[1].ptr>aa[0].ptr?"+":"",aa[1].ptr-aa[0].ptr );
-            SetConsoleTextAttribute( out,att_section );
-            printf( "  allocated on:\n" );
-            SetConsoleTextAttribute( out,att_normal );
+            printf( "%c\nwrite access violation at %p\n",
+                att_warn,aa[1].ptr );
+            printf( "%c  slack area of %p (size %u, offset %s%d)\n",
+                att_info,aa[0].ptr,aa[0].size,
+                aa[1].ptr>aa[0].ptr?"+":"",(char*)aa[1].ptr-(char*)aa[0].ptr );
+            printf( "%c  allocated on:\n",att_section );
             printStack( aa[0].frames,mi_a,mi_q,&dh );
-            SetConsoleTextAttribute( out,att_section );
-            printf( "  freed on:\n" );
-            SetConsoleTextAttribute( out,att_normal );
+            printf( "%c  freed on:\n",att_section );
             printStack( aa[1].frames,mi_a,mi_q,&dh );
           }
           break;
 
         case WRITE_MAIN_ALLOC_FAIL:
-          SetConsoleTextAttribute( out,att_warn );
-          printf( "\nnot enough memory to keep track of allocations\n" );
-          SetConsoleTextAttribute( out,att_normal );
+          printf( "%c\nnot enough memory to keep track of allocations\n",
+              att_warn );
           alloc_q = -1;
           break;
       }
@@ -1941,17 +2066,13 @@ void smain( void )
 
     if( !alloc_q )
     {
-      SetConsoleTextAttribute( out,att_ok );
-      printf( "\nno leaks found\n" );
-      SetConsoleTextAttribute( out,att_section );
-      printf( "exit code: %u (0x%08X)\n",exitCode,exitCode );
-      SetConsoleTextAttribute( out,att_normal );
+      printf( "%c\nno leaks found\n",att_ok );
+      printf( "%cexit code: %u (%x)\n",
+          att_section,(uintptr_t)exitCode,exitCode );
     }
     else if( alloc_q>0 )
     {
-      SetConsoleTextAttribute( out,att_section );
-      printf( "\nleaks:\n" );
-      SetConsoleTextAttribute( out,att_normal );
+      printf( "%c\nleaks:\n",att_section );
       int i;
       size_t sumSize = 0;
       for( i=0; i<alloc_q; i++ )
@@ -1976,30 +2097,25 @@ void smain( void )
         }
         sumSize += size;
 
-        SetConsoleTextAttribute( out,att_warn );
-        printf( "  %" PRIuPTR " B / %d\n",size,nmb );
-        SetConsoleTextAttribute( out,att_normal );
+        printf( "%c  %u B / %d\n",att_warn,size,(intptr_t)nmb );
 
         printStack( a.frames,mi_a,mi_q,&dh );
       }
-      SetConsoleTextAttribute( out,att_warn );
-      printf( "  sum: %" PRIuPTR " B / %d\n",sumSize,alloc_q );
-      SetConsoleTextAttribute( out,att_section );
-      printf( "exit code: %u (0x%08X)\n",exitCode,exitCode );
-      SetConsoleTextAttribute( out,att_normal );
+      printf( "%c  sum: %u B / %d\n",att_warn,sumSize,(intptr_t)alloc_q );
+      printf( "%cexit code: %u (%x)\n",
+          att_section,(uintptr_t)exitCode,exitCode );
     }
     else if( alloc_q<-1 )
     {
-      SetConsoleTextAttribute( out,att_warn );
-      printf( "\nunexpected end of application\n" );
-      SetConsoleTextAttribute( out,att_normal );
+      printf( "%c\nunexpected end of application\n",att_warn );
     }
 
+    printf( "%c",att_normal );
     if( fSymCleanup ) fSymCleanup( pi.hProcess );
     if( symMod ) FreeLibrary( symMod );
     if( dwstMod ) FreeLibrary( dwstMod );
-    free( alloc_a );
-    free( mi_a );
+    HeapFree( heap,0,alloc_a );
+    HeapFree( heap,0,mi_a );
     CloseHandle( readPipe );
   }
   CloseHandle( pi.hThread );
