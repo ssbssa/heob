@@ -68,7 +68,6 @@ void choose( int arg )
 #define BIGNUM 0x1000000000000000
 #endif
         char *big = (char*)malloc( BIGNUM );
-        strcpy( big,"?" );
         mem[1] = big[0];
       }
       break;
@@ -83,6 +82,7 @@ void choose( int arg )
         tmp2 = (char*)malloc( 15 );
         printf( "ptr1=0x%p; ptr2=0x%p -> %s\n",
             tmp,tmp2,tmp==tmp2?"same":"different" );
+        fflush( stdout );
         mem[2] = tmp[1];
         mem[3] = tmp2[0];
         free( tmp2 );
@@ -102,10 +102,19 @@ void choose( int arg )
 }
 
 
+#ifdef __GNUC__
+void *operator new[]( size_t size )
+{
+  return( malloc(size) );
+}
+#endif
+
+
 int main( int argc,char **argv )
 {
   int arg;
-  printf( "\nallocer: main()\n\n" );
+  printf( "allocer: main()\n" );
+  fflush( stdout );
 
   arg = argc>1 ? atoi( argv[1] ) : 0;
   choose( arg );

@@ -1,6 +1,13 @@
 
-PREF=
 BITS=
+ifeq ($(BITS),32)
+  PREF=i686-w64-mingw32-
+else ifeq ($(BITS),64)
+  PREF=x86_64-w64-mingw32-
+else
+  PREF=
+endif
+
 CC=$(PREF)gcc
 CXX=$(PREF)g++
 CPPFLAGS=
@@ -20,13 +27,12 @@ allocer$(BITS).exe: allocer.cpp
 
 
 ifeq ($(BITS),)
+.PHONY: force
+
 release: heob32.exe heob64.exe allocer32.exe allocer64.exe
 
-heob32.exe allocer32.exe:
-	$(MAKE) BITS=32 PREF=i686-w64-mingw32- $@
-
-heob64.exe allocer64.exe:
-	$(MAKE) BITS=64 PREF=x86_64-w64-mingw32- $@
+heob32.exe allocer32.exe heob64.exe allocer64.exe: force
+	$(MAKE) BITS=$(findstring 32,$@)$(findstring 64,$@) $@
 endif
 
 
