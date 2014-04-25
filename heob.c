@@ -269,7 +269,7 @@ static __attribute__((noinline)) void mprintf( const char *format,... )
         case 's':
           {
             const char *arg = va_arg( vl,const char* );
-            if( arg )
+            if( arg && arg[0] )
               WriteFile( out,arg,lstrlen(arg),&written,NULL );
           }
           break;
@@ -292,8 +292,8 @@ static __attribute__((noinline)) void mprintf( const char *format,... )
             }
             else
               arg = va_arg( vl,uintptr_t );
-            char str[16];
-            char *start = str + 15;
+            char str[32];
+            char *start = str + ( sizeof(str)-1 );
             start[0] = 0;
             if( !arg )
               (--start)[0] = '0';
