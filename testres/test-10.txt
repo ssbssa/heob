@@ -1,0 +1,5 @@
+allocer: main()
+ptr1=0xPTR; ptr2=0xPTR -> same
+
+no leaks found
+exit code: 6 (0xPTR)

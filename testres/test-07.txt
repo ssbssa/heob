@@ -1,0 +1,6 @@
+allocer: main()
+
+leaks:
+  2176 B / 64
+  sum: 2176 B / 64
+exit code: 4 (0xPTR)

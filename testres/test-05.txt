@@ -1,0 +1,9 @@
+allocer: main()
+
+write access violation at 0xPTR
+  slack area of 0xPTR (size 16, offset -5)
+  allocated on:
+  freed on:
+
+no leaks found
+exit code: 3 (0xPTR)

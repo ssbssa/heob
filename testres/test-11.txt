@@ -1,0 +1,9 @@
+allocer: main()
+ptr1=0xPTR; ptr2=0xPTR -> different
+
+unhandled exception code: 0xPTR (ACCESS_VIOLATION)
+  exception on:
+  read access violation at 0xPTR
+  freed block 0xPTR (size 16, offset +1)
+  allocated on:
+  freed on:

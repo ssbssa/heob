@@ -1,0 +1,8 @@
+allocer: main()
+
+allocation failed of NUM bytes
+  called on:
+
+unhandled exception code: 0xPTR (ACCESS_VIOLATION)
+  exception on:
+  read access violation at 0xPTR

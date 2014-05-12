@@ -29,11 +29,57 @@ allocer$(BITS).exe: allocer.cpp
 ifeq ($(BITS),)
 .PHONY: force
 
-release: heob32.exe heob64.exe allocer32.exe allocer64.exe
+release: heob32.exe heob64.exe
 
 heob32.exe allocer32.exe heob64.exe allocer64.exe: force
 	$(MAKE) BITS=$(findstring 32,$@)$(findstring 64,$@) $@
 endif
+
+
+T_H01=-p1 -a4 -f0
+T_A01=0
+T_H02=-p1 -a4 -f0
+T_A02=1
+T_H03=-p1 -a4 -f0
+T_A03=2
+T_H04=-p2 -a4 -f0
+T_A04=2
+T_H05=-p1 -a4 -f0
+T_A05=3
+T_H06=-p2 -a4 -f0
+T_A06=3
+T_H07=-p1 -a4 -f0
+T_A07=4
+T_H08=-p1 -a1 -f0
+T_A08=4
+T_H09=-p1 -a4 -f0
+T_A09=5
+T_H10=-p1 -a4 -f0
+T_A10=6
+T_H11=-p1 -a4 -f1
+T_A11=6
+T_H12=-p1 -a4 -f0
+T_A12=7
+TESTS=01 02 03 04 05 06 07 08 09 10 11 12
+
+testres:
+	mkdir -p $@
+
+testc: heob$(BITS).exe allocer$(BITS).exe | testres
+	@$(foreach t,$(TESTS),echo heob$(BITS) $(T_H$(t)) allocer$(BITS) $(T_A$(t)) "->" test$(BITS)-$(t).txt; ./heob$(BITS).exe $(T_H$(t)) allocer$(BITS) $(T_A$(t)) |sed 's/0x[0-9A-Z]*/0xPTR/g;/^    0xPTR/d;s/\<of [1-9][0-9]*/of NUM/g' >testres/test-$(t).txt;)
+
+TOK=[0;32mOK[0m
+TFAIL=[0;31mFAIL[0m
+
+test: heob$(BITS).exe allocer$(BITS).exe
+	@$(foreach t,$(TESTS),echo test$(BITS)-$(t): heob$(BITS) $(T_H$(t)) allocer$(BITS) $(T_A$(t)) "->" `./heob$(BITS).exe $(T_H$(t)) allocer$(BITS) $(T_A$(t)) |sed 's/0x[0-9A-Z]*/0xPTR/g;/^    0xPTR/d;s/\<of [1-9][0-9]*/of NUM/g' |diff - testres/test-$(t).txt >test$(BITS)-$(t).diff && echo "$(TOK)" && rm -f test$(BITS)-$(t).diff || echo "$(TFAIL)"`;)
+
+testsc:
+	$(MAKE) BITS=32 testc
+
+tests:
+	$(MAKE) BITS=32 test
+	$(MAKE) BITS=64 test
 
 
 clean:
