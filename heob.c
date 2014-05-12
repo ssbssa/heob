@@ -17,8 +17,8 @@
 #define WRITE_DEBUG_STRINGS 0
 
 
-typedef HMODULE WINAPI func_LoadLibraryW( LPCWSTR lpFileName );
-typedef LPVOID WINAPI func_GetProcAddress( HMODULE hModule,LPCSTR lpProcName );
+typedef HMODULE WINAPI func_LoadLibraryW( LPCWSTR );
+typedef LPVOID WINAPI func_GetProcAddress( HMODULE,LPCSTR );
 typedef BOOL WINAPI func_WriteFile( HANDLE,LPCVOID,DWORD,LPDWORD,LPOVERLAPPED );
 typedef HMODULE WINAPI func_GetModuleHandle( LPCSTR );
 typedef SIZE_T WINAPI func_VirtualQuery(
@@ -31,9 +31,7 @@ typedef BOOL WINAPI func_SetEvent( HANDLE );
 typedef VOID WINAPI func_ExitProcess( UINT );
 typedef USHORT WINAPI func_CaptureStackBackTrace( ULONG,ULONG,PVOID*,PULONG );
 typedef DWORD WINAPI func_GetModuleFileNameA( HMODULE,LPSTR,DWORD );
-typedef VOID WINAPI func_InitializeCriticalSection( LPCRITICAL_SECTION );
-typedef VOID WINAPI func_EnterCriticalSection( LPCRITICAL_SECTION );
-typedef VOID WINAPI func_LeaveCriticalSection( LPCRITICAL_SECTION );
+typedef VOID WINAPI func_CriticalSection( LPCRITICAL_SECTION );
 typedef LPVOID WINAPI func_HeapAlloc( HANDLE,DWORD,SIZE_T );
 typedef LPVOID WINAPI func_HeapReAlloc( HANDLE,DWORD,LPVOID,SIZE_T );
 typedef BOOL WINAPI func_HeapFree( HANDLE,DWORD,LPVOID );
@@ -162,9 +160,9 @@ typedef struct remoteData
   func_LoadLibraryW *fLoadLibrary;
   func_GetProcAddress *fGetProcAddress;
   func_GetModuleFileNameA *fGetModuleFileName;
-  func_InitializeCriticalSection *fInitializeCriticalSection;
-  func_EnterCriticalSection *fEnterCriticalSection;
-  func_LeaveCriticalSection *fLeaveCriticalSection;
+  func_CriticalSection *fInitializeCriticalSection;
+  func_CriticalSection *fEnterCriticalSection;
+  func_CriticalSection *fLeaveCriticalSection;
   func_HeapAlloc *fHeapAlloc;
   func_HeapReAlloc *fHeapReAlloc;
   func_HeapFree *fHeapFree;
@@ -1362,13 +1360,13 @@ static HANDLE inject( HANDLE process,options *opt,char *exePath )
   data->fGetModuleFileName =
     (func_GetModuleFileNameA*)GetProcAddress( kernel32,"GetModuleFileNameA" );
   data->fInitializeCriticalSection =
-    (func_InitializeCriticalSection*)GetProcAddress(
+    (func_CriticalSection*)GetProcAddress(
         kernel32,"InitializeCriticalSection" );
   data->fEnterCriticalSection =
-    (func_EnterCriticalSection*)GetProcAddress(
+    (func_CriticalSection*)GetProcAddress(
         kernel32,"EnterCriticalSection" );
   data->fLeaveCriticalSection =
-    (func_LeaveCriticalSection*)GetProcAddress(
+    (func_CriticalSection*)GetProcAddress(
         kernel32,"LeaveCriticalSection" );
   data->fHeapAlloc =
     (func_HeapAlloc*)GetProcAddress( kernel32,"HeapAlloc" );
