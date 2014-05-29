@@ -390,7 +390,7 @@ static int mmemcmp( const void *p1,const void *p2,size_t s )
   const unsigned char *b2 = p2;
   size_t i;
   for( i=0; i<s; i++ )
-    if( *b1!=*b2 ) return( 1 );
+    if( b1[i]!=b2[i] ) return( 1 );
   return( 0 );
 }
 #define memcmp mmemcmp
