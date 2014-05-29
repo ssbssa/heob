@@ -1824,10 +1824,8 @@ void smain( void )
   {
     HMODULE symMod = LoadLibrary( "dbghelp.dll" );
     HMODULE dwstMod = LoadLibrary( "dwarfstack.dll" );
-#ifdef _WIN64
     if( !dwstMod )
-      dwstMod = LoadLibrary( "dwarfstack64.dll" );
-#endif
+      dwstMod = LoadLibrary( "dwarfstack" BITS ".dll" );
     func_SymSetOptions *fSymSetOptions = NULL;
     func_SymInitialize *fSymInitialize = NULL;
     func_SymCleanup *fSymCleanup = NULL;
