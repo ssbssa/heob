@@ -93,7 +93,7 @@ typedef struct
 }
 freed;
 
-typedef struct modInfo
+typedef struct
 {
   size_t base;
   size_t size;
@@ -101,7 +101,7 @@ typedef struct modInfo
 }
 modInfo;
 
-typedef struct exceptionInfo
+typedef struct
 {
   EXCEPTION_RECORD er;
   allocation aa[3];
@@ -135,7 +135,7 @@ enum
   WRITE_MAIN_ALLOC_FAIL,
 };
 
-typedef struct options
+typedef struct
 {
   intptr_t protect;
   intptr_t align;
