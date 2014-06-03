@@ -246,15 +246,38 @@ typedef struct remoteData
 remoteData;
 
 
+typedef enum
+{
+  ATT_NORMAL,
+  ATT_OK,
+  ATT_SECTION,
+  ATT_INFO,
+  ATT_WARN,
+  ATT_BASE,
+  ATT_COUNT,
+}
+textColorAtt;
+struct textColor;
+typedef void func_TextColor( struct textColor*,textColorAtt );
+typedef struct textColor
+{
+  func_TextColor *fTextColor;
+  HANDLE out;
+  int colors[ATT_COUNT];
+}
+textColor;
+
+
 #undef RtlMoveMemory
 VOID WINAPI RtlMoveMemory( PVOID,const VOID*,SIZE_T );
 
-static __attribute__((noinline)) void mprintf( const char *format,... )
+static __attribute__((noinline)) void mprintf(
+    textColor *tc,const char *format,... )
 {
   va_list vl;
   va_start( vl,format );
   const char *ptr = format;
-  HANDLE out = GetStdHandle( STD_OUTPUT_HANDLE );
+  HANDLE out = tc->out;
   DWORD written;
   while( ptr[0] )
   {
@@ -341,8 +364,9 @@ static __attribute__((noinline)) void mprintf( const char *format,... )
 
         case 'c':
           {
-            int arg = va_arg( vl,int );
-            SetConsoleTextAttribute( out,arg );
+            textColorAtt arg = va_arg( vl,textColorAtt );
+            if( tc->fTextColor )
+              tc->fTextColor( tc,arg );
           }
           break;
       }
@@ -356,7 +380,7 @@ static __attribute__((noinline)) void mprintf( const char *format,... )
     WriteFile( out,format,ptr-format,&written,NULL );
   va_end( vl );
 }
-#define printf mprintf
+#define printf(a...) mprintf(tc,a)
 
 static __attribute__((noinline)) char *mstrchr( const char *s,char c )
 {
@@ -396,13 +420,43 @@ static int mmemcmp( const void *p1,const void *p2,size_t s )
 #define memcmp mmemcmp
 
 
-static HANDLE inject( HANDLE process,options *opt,char *exePath );
+static void TextColorConsole( textColor *tc,textColorAtt color )
+{
+  SetConsoleTextAttribute( tc->out,tc->colors[color] );
+}
+static void checkOutputVariant( textColor *tc )
+{
+  tc->fTextColor = NULL;
+  tc->out = GetStdHandle( STD_OUTPUT_HANDLE );
+
+  DWORD flags;
+  if( GetConsoleMode(tc->out,&flags) )
+  {
+    tc->fTextColor = &TextColorConsole;
+
+    tc->colors[ATT_NORMAL]  = FOREGROUND_BLUE|FOREGROUND_GREEN|FOREGROUND_RED;
+    tc->colors[ATT_OK]      = FOREGROUND_GREEN|FOREGROUND_INTENSITY;
+    tc->colors[ATT_SECTION] =
+      FOREGROUND_BLUE|FOREGROUND_GREEN|FOREGROUND_INTENSITY;
+    tc->colors[ATT_INFO]    =
+      FOREGROUND_BLUE|FOREGROUND_RED|FOREGROUND_INTENSITY;
+    tc->colors[ATT_WARN]    = FOREGROUND_RED|FOREGROUND_INTENSITY;
+    tc->colors[ATT_BASE]    = BACKGROUND_INTENSITY;
+
+    TextColorConsole( tc,ATT_NORMAL );
+    return;
+  }
+}
+
+
+static HANDLE inject( HANDLE process,options *opt,char *exePath,
+    textColor *tc );
 #ifndef _WIN64
 #define GET_REMOTEDATA( rd ) remoteData *rd = *((remoteData**)-1)
 #else
 typedef union
 {
-  HANDLE (*func)( HANDLE,options*,char* );
+  HANDLE (*func)( HANDLE,options*,char*,textColor* );
   remoteData **data;
 }
 unalias;
@@ -1316,7 +1370,7 @@ static DWORD WINAPI remoteCall( remoteData *rd )
 }
 
 
-static HANDLE inject( HANDLE process,options *opt,char *exePath )
+static HANDLE inject( HANDLE process,options *opt,char *exePath,textColor *tc )
 {
   size_t funcSize = (size_t)&inject - (size_t)&remoteCall;
   size_t fullSize = funcSize + sizeof(remoteData);
@@ -1426,7 +1480,7 @@ static HANDLE inject( HANDLE process,options *opt,char *exePath )
     CloseHandle( thread );
     CloseHandle( readPipe );
     HeapFree( heap,0,fullData );
-    printf( "process failed to initialize\n" );
+    printf( "%cprocess failed to initialize\n",ATT_WARN );
     return( NULL );
   }
   CloseHandle( initFinished );
@@ -1438,7 +1492,7 @@ static HANDLE inject( HANDLE process,options *opt,char *exePath )
   {
     CloseHandle( readPipe );
     readPipe = NULL;
-    printf( "only works with dynamically linked CRT\n" );
+    printf( "%conly works with dynamically linked CRT\n",ATT_WARN );
   }
   else
     lstrcpy( exePath,data->exePathA );
@@ -1629,15 +1683,15 @@ typedef struct dbghelp
   HANDLE process;
   func_SymGetLineFromAddr64 *fSymGetLineFromAddr64;
   func_dwstOfFile *fdwstOfFile;
-  int att_normal;
-  int att_ok;
-  int att_base;
+  textColor *tc;
 }
 dbghelp;
 
 static void locFunc(
     uint64_t addr,const char *filename,int lineno,dbghelp *dh )
 {
+  textColor *tc = dh->tc;
+
   IMAGEHLP_LINE64 il;
   if( lineno==DWST_NO_DBG_SYM && dh->fSymGetLineFromAddr64 )
   {
@@ -1660,20 +1714,20 @@ static void locFunc(
   {
     case DWST_BASE_ADDR:
       printf( "    %c%p%c %c%s%c\n",
-          dh->att_base,(uintptr_t)addr,dh->att_normal,
-          dh->att_base,filename,dh->att_normal );
+          ATT_BASE,(uintptr_t)addr,ATT_NORMAL,
+          ATT_BASE,filename,ATT_NORMAL );
       break;
 
     case DWST_NO_DBG_SYM:
     case DWST_NO_SRC_FILE:
     case DWST_NOT_FOUND:
-      printf( "%c    %p\n",dh->att_normal,(uintptr_t)addr );
+      printf( "%c    %p\n",ATT_NORMAL,(uintptr_t)addr );
       break;
 
     default:
       printf( "%c    %p %c%s%c:%d\n",
-          dh->att_normal,(uintptr_t)addr,
-          dh->att_ok,filename,dh->att_normal,(intptr_t)lineno );
+          ATT_NORMAL,(uintptr_t)addr,
+          ATT_OK,filename,ATT_NORMAL,(intptr_t)lineno );
       break;
   }
 }
@@ -1728,6 +1782,10 @@ static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbghelp *dh )
 #endif
 void smain( void )
 {
+  textColor tc_o;
+  textColor *tc = &tc_o;
+  checkOutputVariant( tc );
+
   char *cmdLine = GetCommandLineA();
   char *args;
   if( cmdLine[0]=='"' && (args=strchr(cmdLine+1,'"')) )
@@ -1787,16 +1845,24 @@ void smain( void )
     char *point = strrchr( delim,'.' );
     if( point ) point[0] = 0;
 
-    printf( "Usage: %s [OPTION]... APP [APP-OPTION]...\n",delim );
-    printf( "    -pX    page protection [%d]\n",defopt.protect );
-    printf( "             0 = off\n" );
-    printf( "             1 = after\n" );
-    printf( "             2 = before\n" );
-    printf( "    -aX    alignment [%d]\n",defopt.align );
-    printf( "    -iX    initial value [%d]\n",defopt.init );
-    printf( "    -sX    initial value for slack [%d]\n",defopt.slackInit );
-    printf( "    -fX    freed memory protection [%d]\n",defopt.protectFree );
-    printf( "    -hX    handle exceptions [%d]\n",defopt.handleException );
+    printf( "Usage: %c%s %c[OPTION]... %cAPP [APP-OPTION]...%c\n",
+        ATT_OK,delim,ATT_INFO,ATT_SECTION,ATT_NORMAL );
+    printf( "    %c-p%cX%c    page protection [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.protect,ATT_NORMAL );
+    printf( "             %c0%c = off\n",ATT_INFO,ATT_NORMAL );
+    printf( "             %c1%c = after\n",ATT_INFO,ATT_NORMAL );
+    printf( "             %c2%c = before\n",ATT_INFO,ATT_NORMAL );
+    printf( "    %c-a%cX%c    alignment [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.align,ATT_NORMAL );
+    printf( "    %c-i%cX%c    initial value [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.init,ATT_NORMAL );
+    printf( "    %c-s%cX%c    initial value for slack [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.slackInit,ATT_NORMAL );
+    printf( "    %c-f%cX%c    freed memory protection [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.protectFree,ATT_NORMAL );
+    printf( "    %c-h%cX%c    handle exceptions [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,
+        ATT_INFO,defopt.handleException,ATT_NORMAL );
     ExitProcess( 1 );
   }
 
@@ -1807,16 +1873,16 @@ void smain( void )
       CREATE_SUSPENDED,NULL,NULL,&si,&pi );
   if( !result )
   {
-    printf( "can't create process for '%s'\n",args );
+    printf( "%ccan't create process for '%s'\n%c",ATT_WARN,args,ATT_NORMAL );
     ExitProcess( 1 );
   }
 
   HANDLE readPipe = NULL;
   char exePath[MAX_PATH];
   if( isWrongArch(pi.hProcess) )
-    printf( "only " BITS "bit applications possible\n" );
+    printf( "%conly " BITS "bit applications possible\n",ATT_WARN );
   else
-    readPipe = inject( pi.hProcess,&opt,exePath );
+    readPipe = inject( pi.hProcess,&opt,exePath,tc );
   if( !readPipe )
     TerminateProcess( pi.hProcess,1 );
 
@@ -1833,6 +1899,7 @@ void smain( void )
     dh.process = pi.hProcess;
     dh.fSymGetLineFromAddr64 = NULL;
     dh.fdwstOfFile = NULL;
+    dh.tc = tc;
     if( symMod )
     {
       fSymSetOptions =
@@ -1863,14 +1930,6 @@ void smain( void )
 
     DWORD didread;
     int type;
-    int att_normal = FOREGROUND_BLUE|FOREGROUND_GREEN|FOREGROUND_RED;
-    int att_ok = FOREGROUND_GREEN|FOREGROUND_INTENSITY;
-    int att_section = FOREGROUND_BLUE|FOREGROUND_GREEN|FOREGROUND_INTENSITY;
-    int att_info = FOREGROUND_BLUE|FOREGROUND_RED|FOREGROUND_INTENSITY;
-    int att_warn = FOREGROUND_RED|FOREGROUND_INTENSITY;
-    dh.att_normal = att_normal;
-    dh.att_ok = att_ok;
-    dh.att_base = BACKGROUND_INTENSITY;
     modInfo *mi_a = NULL;
     int mi_q = 0;
     allocation *alloc_a = NULL;
@@ -1972,9 +2031,9 @@ void smain( void )
               EX_DESC( STACK_OVERFLOW );
             }
             printf( "%c\nunhandled exception code: %x%s\n",
-                att_warn,ei.er.ExceptionCode,desc );
+                ATT_WARN,ei.er.ExceptionCode,desc );
 
-            printf( "%c  exception on:\n",att_section );
+            printf( "%c  exception on:\n",ATT_SECTION );
             printStack( ei.aa[0].frames,mi_a,mi_q,&dh );
 
             if( ei.er.ExceptionCode==EXCEPTION_ACCESS_VIOLATION &&
@@ -1983,7 +2042,7 @@ void smain( void )
               ULONG_PTR flag = ei.er.ExceptionInformation[0];
               char *addr = (char*)ei.er.ExceptionInformation[1];
               printf( "%c  %s violation at %p\n",
-                  att_warn,flag==8?"data execution prevention":
+                  ATT_WARN,flag==8?"data execution prevention":
                   (flag?"write access":"read access"),addr );
 
               if( ei.aq>1 )
@@ -1991,14 +2050,14 @@ void smain( void )
                 char *ptr = (char*)ei.aa[1].ptr;
                 size_t size = ei.aa[1].size;
                 printf( "%c  %s %p (size %u, offset %s%d)\n",
-                    att_info,ei.aq>2?"freed block":"protected area of",
+                    ATT_INFO,ei.aq>2?"freed block":"protected area of",
                     ptr,size,addr>ptr?"+":"",addr-ptr );
-                printf( "%c  allocated on:\n",att_section );
+                printf( "%c  allocated on:\n",ATT_SECTION );
                 printStack( ei.aa[1].frames,mi_a,mi_q,&dh );
 
                 if( ei.aq>2 )
                 {
-                  printf( "%c  freed on:\n",att_section );
+                  printf( "%c  freed on:\n",ATT_SECTION );
                   printStack( ei.aa[2].frames,mi_a,mi_q,&dh );
                 }
               }
@@ -2015,8 +2074,8 @@ void smain( void )
               break;
 
             printf( "%c\nallocation failed of %u bytes\n",
-                att_warn,a.size );
-            printf( "%c  called on:\n",att_section );
+                ATT_WARN,a.size );
+            printf( "%c  called on:\n",ATT_SECTION );
             printStack( a.frames,mi_a,mi_q,&dh );
           }
           break;
@@ -2028,8 +2087,8 @@ void smain( void )
               break;
 
             printf( "%c\ndeallocation of invalid pointer %p\n",
-                att_warn,a.ptr );
-            printf( "%c  called on:\n",att_section );
+                ATT_WARN,a.ptr );
+            printf( "%c  called on:\n",ATT_SECTION );
             printStack( a.frames,mi_a,mi_q,&dh );
           }
           break;
@@ -2041,20 +2100,20 @@ void smain( void )
               break;
 
             printf( "%c\nwrite access violation at %p\n",
-                att_warn,aa[1].ptr );
+                ATT_WARN,aa[1].ptr );
             printf( "%c  slack area of %p (size %u, offset %s%d)\n",
-                att_info,aa[0].ptr,aa[0].size,
+                ATT_INFO,aa[0].ptr,aa[0].size,
                 aa[1].ptr>aa[0].ptr?"+":"",(char*)aa[1].ptr-(char*)aa[0].ptr );
-            printf( "%c  allocated on:\n",att_section );
+            printf( "%c  allocated on:\n",ATT_SECTION );
             printStack( aa[0].frames,mi_a,mi_q,&dh );
-            printf( "%c  freed on:\n",att_section );
+            printf( "%c  freed on:\n",ATT_SECTION );
             printStack( aa[1].frames,mi_a,mi_q,&dh );
           }
           break;
 
         case WRITE_MAIN_ALLOC_FAIL:
           printf( "%c\nnot enough memory to keep track of allocations\n",
-              att_warn );
+              ATT_WARN );
           alloc_q = -1;
           break;
       }
@@ -2062,13 +2121,13 @@ void smain( void )
 
     if( !alloc_q )
     {
-      printf( "%c\nno leaks found\n",att_ok );
+      printf( "%c\nno leaks found\n",ATT_OK );
       printf( "%cexit code: %u (%x)\n",
-          att_section,(uintptr_t)exitCode,exitCode );
+          ATT_SECTION,(uintptr_t)exitCode,exitCode );
     }
     else if( alloc_q>0 )
     {
-      printf( "%c\nleaks:\n",att_section );
+      printf( "%c\nleaks:\n",ATT_SECTION );
       int i;
       size_t sumSize = 0;
       for( i=0; i<alloc_q; i++ )
@@ -2093,20 +2152,19 @@ void smain( void )
         }
         sumSize += size;
 
-        printf( "%c  %u B / %d\n",att_warn,size,(intptr_t)nmb );
+        printf( "%c  %u B / %d\n",ATT_WARN,size,(intptr_t)nmb );
 
         printStack( a.frames,mi_a,mi_q,&dh );
       }
-      printf( "%c  sum: %u B / %d\n",att_warn,sumSize,(intptr_t)alloc_q );
+      printf( "%c  sum: %u B / %d\n",ATT_WARN,sumSize,(intptr_t)alloc_q );
       printf( "%cexit code: %u (%x)\n",
-          att_section,(uintptr_t)exitCode,exitCode );
+          ATT_SECTION,(uintptr_t)exitCode,exitCode );
     }
     else if( alloc_q<-1 )
     {
-      printf( "%c\nunexpected end of application\n",att_warn );
+      printf( "%c\nunexpected end of application\n",ATT_WARN );
     }
 
-    printf( "%c",att_normal );
     if( fSymCleanup ) fSymCleanup( pi.hProcess );
     if( symMod ) FreeLibrary( symMod );
     if( dwstMod ) FreeLibrary( dwstMod );
@@ -2116,6 +2174,8 @@ void smain( void )
   }
   CloseHandle( pi.hThread );
   CloseHandle( pi.hProcess );
+
+  printf( "%c",ATT_NORMAL );
 
   ExitProcess( 0 );
 }
