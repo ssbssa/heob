@@ -424,6 +424,14 @@ static void TextColorConsole( textColor *tc,textColorAtt color )
 {
   SetConsoleTextAttribute( tc->out,tc->colors[color] );
 }
+static void TextColorTerminal( textColor *tc,textColorAtt color )
+{
+  int c = tc->colors[color];
+  char text[] = { 27,'[',(c/10000)%10+'0',(c/1000)%10+'0',(c/100)%10+'0',';',
+    (c/10)%10+'0',c%10+'0','m' };
+  DWORD written;
+  WriteFile( tc->out,text,sizeof(text),&written,NULL );
+}
 static void checkOutputVariant( textColor *tc )
 {
   tc->fTextColor = NULL;
@@ -445,6 +453,61 @@ static void checkOutputVariant( textColor *tc )
 
     TextColorConsole( tc,ATT_NORMAL );
     return;
+  }
+
+  HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
+  if( !ntdll ) return;
+
+  typedef enum
+  {
+    ObjectNameInformation=1,
+  }
+  OBJECT_INFORMATION_CLASS;
+  typedef LONG func_NtQueryObject(
+      HANDLE,OBJECT_INFORMATION_CLASS,PVOID,ULONG,PULONG );
+  func_NtQueryObject *fNtQueryObject =
+    (func_NtQueryObject*)GetProcAddress( ntdll,"NtQueryObject" );
+  if( fNtQueryObject )
+  {
+    typedef struct
+    {
+      USHORT Length;
+      USHORT MaximumLength;
+      PWSTR Buffer;
+    }
+    UNICODE_STRING;
+    typedef struct
+    {
+      UNICODE_STRING Name;
+      WCHAR NameBuffer[0xffff];
+    }
+    OBJECT_NAME_INFORMATION;
+    HANDLE heap = GetProcessHeap();
+    OBJECT_NAME_INFORMATION *oni =
+      HeapAlloc( heap,0,sizeof(OBJECT_NAME_INFORMATION) );
+    ULONG len;
+    wchar_t namedPipe[] = L"\\Device\\NamedPipe\\";
+    size_t l1 = sizeof(namedPipe)/2 - 1;
+    wchar_t toMaster[] = L"-to-master";
+    size_t l2 = sizeof(toMaster)/2 - 1;
+    if( !fNtQueryObject(tc->out,ObjectNameInformation,
+          oni,sizeof(OBJECT_NAME_INFORMATION),&len) &&
+        oni->Name.Length/2>l1+l2 &&
+        !memcmp(oni->Name.Buffer,namedPipe,l1*2) &&
+        !memcmp(oni->Name.Buffer+(oni->Name.Length/2-l2),toMaster,l2*2) )
+    {
+      tc->fTextColor = &TextColorTerminal;
+
+      tc->colors[ATT_NORMAL]  =  4939;
+      tc->colors[ATT_OK]      =  4932;
+      tc->colors[ATT_SECTION] =  4936;
+      tc->colors[ATT_INFO]    =  4935;
+      tc->colors[ATT_WARN]    =  4931;
+      tc->colors[ATT_BASE]    = 10030;
+
+      TextColorTerminal( tc,ATT_NORMAL );
+    }
+    HeapFree( heap,0,oni );
   }
 }
 
