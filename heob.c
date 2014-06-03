@@ -291,7 +291,11 @@ static __attribute__((noinline)) void mprintf(
           {
             const char *arg = va_arg( vl,const char* );
             if( arg && arg[0] )
-              WriteFile( out,arg,lstrlen(arg),&written,NULL );
+            {
+              size_t l = 0;
+              while( arg[l] ) l++;
+              WriteFile( out,arg,l,&written,NULL );
+            }
           }
           break;
 
@@ -314,8 +318,8 @@ static __attribute__((noinline)) void mprintf(
             else
               arg = va_arg( vl,uintptr_t );
             char str[32];
-            char *start = str + ( sizeof(str)-1 );
-            start[0] = 0;
+            char *end = str + sizeof(str);
+            char *start = end;
             if( !arg )
               (--start)[0] = '0';
             while( arg )
@@ -325,7 +329,7 @@ static __attribute__((noinline)) void mprintf(
             }
             if( minus )
               (--start)[0] = '-';
-            WriteFile( out,start,lstrlen(start),&written,NULL );
+            WriteFile( out,start,end-start,&written,NULL );
           }
           break;
 
@@ -357,8 +361,7 @@ static __attribute__((noinline)) void mprintf(
               else
                 end++[0] = bits + '0';
             }
-            end[0] = 0;
-            WriteFile( out,str,lstrlen(str),&written,NULL );
+            WriteFile( out,str,end-str,&written,NULL );
           }
           break;
 
@@ -1558,7 +1561,7 @@ static HANDLE inject( HANDLE process,options *opt,char *exePath,textColor *tc )
     printf( "%conly works with dynamically linked CRT\n",ATT_WARN );
   }
   else
-    lstrcpy( exePath,data->exePathA );
+    RtlMoveMemory( exePath,data->exePathA,MAX_PATH );
   HeapFree( heap,0,fullData );
 
   return( readPipe );
