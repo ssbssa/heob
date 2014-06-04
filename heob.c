@@ -1206,7 +1206,7 @@ static const char *replaceFuncs( remoteData *rd,const char *caller,
 }
 
 #ifndef _WIN64
-int fixDataFuncAddr( unsigned char *pos,size_t size,void *data )
+static int fixDataFuncAddr( unsigned char *pos,size_t size,void *data )
 {
   unsigned char *end = pos + ( size-3 );
   while( 1 )
@@ -1228,7 +1228,7 @@ int fixDataFuncAddr( unsigned char *pos,size_t size,void *data )
 }
 #endif
 
-void trackAllocs( struct remoteData *rd,
+static void trackAllocs( struct remoteData *rd,
     void *free_ptr,void *alloc_ptr,size_t alloc_size )
 {
   if( free_ptr )
@@ -1897,6 +1897,7 @@ void smain( void )
 
       case 'h':
         opt.handleException = atoi( args+2 );
+        break;
     }
     while( args[0] && args[0]!=' ' ) args++;
   }
