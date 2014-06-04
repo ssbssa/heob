@@ -43,6 +43,9 @@ typedef VOID WINAPI func_GetSystemInfo( LPSYSTEM_INFO );
 typedef LPTOP_LEVEL_EXCEPTION_FILTER WINAPI func_SetUnhandledExceptionFilter(
     LPTOP_LEVEL_EXCEPTION_FILTER );
 typedef BOOL WINAPI func_IsBadReadPtr( const VOID*,UINT_PTR );
+typedef HANDLE WINAPI func_GetStdHandle( DWORD );
+typedef BOOL WINAPI func_ReadConsoleInput(
+    HANDLE,PINPUT_RECORD,DWORD,LPDWORD );
 
 typedef DWORD WINAPI func_SymSetOptions( DWORD );
 typedef BOOL WINAPI func_SymInitialize( HANDLE,PCSTR,BOOL );
@@ -117,6 +120,7 @@ typedef void func_trackAllocs( struct remoteData*,void*,void*,size_t );
 typedef int func_fixDataFuncAddr( unsigned char*,size_t,void* );
 #endif
 typedef void func_writeMods( struct remoteData*,allocation*,int );
+typedef void func_exitWait( struct remoteData*,UINT );
 typedef void *func_pm_alloc( struct remoteData*,size_t );
 typedef void func_pm_free( struct remoteData*,void* );
 typedef size_t func_pm_alloc_size( struct remoteData*,void* );
@@ -143,6 +147,7 @@ typedef struct
   intptr_t slackInit;
   intptr_t protectFree;
   intptr_t handleException;
+  intptr_t newConsole;
 }
 options;
 
@@ -173,6 +178,10 @@ typedef struct remoteData
   func_GetSystemInfo *fGetSystemInfo;
   func_SetUnhandledExceptionFilter *fSetUnhandledExceptionFilter;
   func_IsBadReadPtr *fIsBadReadPtr;
+  func_SetEvent *fCloseHandle;
+  func_GetStdHandle *fGetStdHandle;
+  func_SetEvent *fFlushConsoleInputBuffer;
+  func_ReadConsoleInput *fReadConsoleInput;
 
   func_strlen *fstrlen;
   func_strcmp *fstrcmp;
@@ -220,6 +229,7 @@ typedef struct remoteData
   func_fixDataFuncAddr *mfixDataFuncAddr;
 #endif
   func_writeMods *mwriteMods;
+  func_exitWait *mexitWait;
 
   HANDLE master;
   HANDLE initFinished;
@@ -733,7 +743,7 @@ static VOID WINAPI new_ExitProcess( UINT c )
 
   rd->fLeaveCriticalSection( &rd->cs );
 
-  rd->fExitProcess( c );
+  rd->mexitWait( rd,c );
 }
 
 static LPTOP_LEVEL_EXCEPTION_FILTER WINAPI new_SUEF(
@@ -1123,7 +1133,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
   rd->fWriteFile( rd->master,&ei,sizeof(exceptionInfo),&written,NULL );
 
-  rd->fExitProcess( 1 );
+  rd->mexitWait( rd,1 );
 
   return( EXCEPTION_EXECUTE_HANDLER );
 }
@@ -1256,7 +1266,7 @@ static void trackAllocs( struct remoteData *rd,
             DWORD written;
             int type = WRITE_MAIN_ALLOC_FAIL;
             rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-            rd->fExitProcess( 1 );
+            rd->mexitWait( rd,1 );
             return;
           }
           rd->freed_a = freed_an;
@@ -1318,7 +1328,7 @@ static void trackAllocs( struct remoteData *rd,
         DWORD written;
         int type = WRITE_MAIN_ALLOC_FAIL;
         rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-        rd->fExitProcess( 1 );
+        rd->mexitWait( rd,1 );
         return;
       }
       rd->alloc_a = alloc_an;
@@ -1403,7 +1413,7 @@ static void writeMods( struct remoteData *rd,allocation *alloc_a,int alloc_q )
         DWORD written;
         int type = WRITE_MAIN_ALLOC_FAIL;
         rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-        rd->fExitProcess( 1 );
+        rd->mexitWait( rd,1 );
       }
       mi_a[mi_q-1].base = base;
       mi_a[mi_q-1].size = size;
@@ -1418,6 +1428,36 @@ static void writeMods( struct remoteData *rd,allocation *alloc_a,int alloc_q )
   if( mi_q )
     rd->fWriteFile( rd->master,mi_a,mi_q*sizeof(modInfo),&written,NULL );
   rd->fHeapFree( rd->heap,0,mi_a );
+}
+
+static void exitWait( struct remoteData *rd,UINT c )
+{
+  rd->fCloseHandle( rd->master );
+
+  if( rd->opt.newConsole )
+  {
+    HANDLE in = rd->fGetStdHandle( STD_INPUT_HANDLE );
+    if( rd->fFlushConsoleInputBuffer(in) )
+    {
+      HANDLE out = rd->fGetStdHandle( STD_OUTPUT_HANDLE );
+      DWORD written;
+      char exitText[] =
+        "\n\n-------------------- APPLICATION EXIT --------------------\n";
+      rd->fWriteFile( out,exitText,sizeof(exitText)-1,&written,NULL );
+
+      INPUT_RECORD ir;
+      DWORD didread;
+      while( rd->fReadConsoleInput(in,&ir,1,&didread) &&
+          (ir.EventType!=KEY_EVENT || !ir.Event.KeyEvent.bKeyDown ||
+           ir.Event.KeyEvent.wVirtualKeyCode==VK_SHIFT ||
+           ir.Event.KeyEvent.wVirtualKeyCode==VK_CONTROL ||
+           ir.Event.KeyEvent.wVirtualKeyCode==VK_MENU ||
+           ir.Event.KeyEvent.wVirtualKeyCode==VK_LWIN ||
+           ir.Event.KeyEvent.wVirtualKeyCode==VK_RWIN) );
+    }
+  }
+
+  rd->fExitProcess( c );
 }
 
 
@@ -1509,6 +1549,14 @@ static HANDLE inject( HANDLE process,options *opt,char *exePath,textColor *tc )
         kernel32,"SetUnhandledExceptionFilter" );
   data->fIsBadReadPtr =
     (func_IsBadReadPtr*)GetProcAddress( kernel32,"IsBadReadPtr" );
+  data->fCloseHandle =
+    (func_SetEvent*)GetProcAddress( kernel32,"CloseHandle" );
+  data->fGetStdHandle =
+    (func_GetStdHandle*)GetProcAddress( kernel32,"GetStdHandle" );
+  data->fFlushConsoleInputBuffer =
+    (func_SetEvent*)GetProcAddress( kernel32,"FlushConsoleInputBuffer" );
+  data->fReadConsoleInput =
+    (func_ReadConsoleInput*)GetProcAddress( kernel32,"ReadConsoleInputA" );
   data->fExitProcess =
     (func_ExitProcess*)GetProcAddress( kernel32,"ExitProcess" );
 
@@ -1588,6 +1636,7 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
     { &fixDataFuncAddr,&rd->mfixDataFuncAddr },
 #endif
     { &writeMods      ,&rd->mwriteMods       },
+    { &exitWait       ,&rd->mexitWait        },
     { &inject         ,&dataPtr              },
     { &protect_alloc_m,&rd->pm_alloc         },
     { &protect_free_m ,&rd->pm_free          },
@@ -1865,6 +1914,7 @@ void smain( void )
     0xcc,
     0,
     1,
+    0,
   };
   options opt = defopt;
   while( args )
@@ -1898,6 +1948,10 @@ void smain( void )
       case 'h':
         opt.handleException = atoi( args+2 );
         break;
+
+      case 'c':
+        opt.newConsole = atoi( args+2 );
+        break;
     }
     while( args[0] && args[0]!=' ' ) args++;
   }
@@ -1930,6 +1984,8 @@ void smain( void )
     printf( "    %c-h%cX%c    handle exceptions [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,
         ATT_INFO,defopt.handleException,ATT_NORMAL );
+    printf( "    %c-c%cX%c    create new console [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.newConsole,ATT_NORMAL );
     ExitProcess( 1 );
   }
 
@@ -1937,7 +1993,8 @@ void smain( void )
   PROCESS_INFORMATION pi = {0};
   si.cb = sizeof(STARTUPINFO);
   BOOL result = CreateProcess( NULL,args,NULL,NULL,FALSE,
-      CREATE_SUSPENDED,NULL,NULL,&si,&pi );
+      CREATE_SUSPENDED|(opt.newConsole?CREATE_NEW_CONSOLE:0),
+      NULL,NULL,&si,&pi );
   if( !result )
   {
     printf( "%ccan't create process for '%s'\n%c",ATT_WARN,args,ATT_NORMAL );
