@@ -148,6 +148,7 @@ typedef struct
   intptr_t protectFree;
   intptr_t handleException;
   intptr_t newConsole;
+  intptr_t fullPath;
 }
 options;
 
@@ -1799,6 +1800,7 @@ typedef struct dbghelp
   func_SymGetLineFromAddr64 *fSymGetLineFromAddr64;
   func_dwstOfFile *fdwstOfFile;
   textColor *tc;
+  options *opt;
 }
 dbghelp;
 
@@ -1820,10 +1822,13 @@ static void locFunc(
     }
   }
 
-  const char *sep1 = strrchr( filename,'/' );
-  const char *sep2 = strrchr( filename,'\\' );
-  if( sep2>sep1 ) sep1 = sep2;
-  if( sep1 ) filename = sep1 + 1;
+  if( !dh->opt->fullPath )
+  {
+    const char *sep1 = strrchr( filename,'/' );
+    const char *sep2 = strrchr( filename,'\\' );
+    if( sep2>sep1 ) sep1 = sep2;
+    if( sep1 ) filename = sep1 + 1;
+  }
 
   switch( lineno )
   {
@@ -1915,6 +1920,7 @@ void smain( void )
     0,
     1,
     0,
+    0,
   };
   options opt = defopt;
   while( args )
@@ -1952,6 +1958,10 @@ void smain( void )
       case 'c':
         opt.newConsole = atoi( args+2 );
         break;
+
+      case 'F':
+        opt.fullPath = atoi( args+2 );
+        break;
     }
     while( args[0] && args[0]!=' ' ) args++;
   }
@@ -1986,6 +1996,8 @@ void smain( void )
         ATT_INFO,defopt.handleException,ATT_NORMAL );
     printf( "    %c-c%cX%c    create new console [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.newConsole,ATT_NORMAL );
+    printf( "    %c-F%cX%c    show full path [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.fullPath,ATT_NORMAL );
     ExitProcess( 1 );
   }
 
@@ -2024,6 +2036,7 @@ void smain( void )
       NULL,
       NULL,
       tc,
+      &opt,
     };
     if( symMod )
     {
