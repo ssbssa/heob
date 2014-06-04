@@ -2019,11 +2019,12 @@ void smain( void )
     func_SymSetOptions *fSymSetOptions = NULL;
     func_SymInitialize *fSymInitialize = NULL;
     func_SymCleanup *fSymCleanup = NULL;
-    dbghelp dh;
-    dh.process = pi.hProcess;
-    dh.fSymGetLineFromAddr64 = NULL;
-    dh.fdwstOfFile = NULL;
-    dh.tc = tc;
+    dbghelp dh = {
+      pi.hProcess,
+      NULL,
+      NULL,
+      tc,
+    };
     if( symMod )
     {
       fSymSetOptions =
