@@ -11,7 +11,13 @@
 #include <dbghelp.h>
 #endif
 
+#ifndef NO_DWARFSTACK
 #include <dwarfstack.h>
+#else
+#include <stdint.h>
+#define DWST_BASE_ADDR   0
+#define DWST_NO_DBG_SYM -1
+#endif
 
 
 #define PTRS 48
@@ -65,8 +71,10 @@ typedef BOOL WINAPI func_StackWalk64(
 #endif
 
 struct dbghelp;
+#ifndef NO_DWARFSTACK
 typedef int func_dwstOfFile( const char*,uint64_t,uint64_t*,int,
     void(*)(uint64_t,const char*,int,struct dbghelp*),struct dbghelp* );
+#endif
 
 typedef int WINAPI func_strlen( LPCSTR );
 typedef int WINAPI func_strcmp( LPCSTR,LPCSTR );
@@ -1805,7 +1813,9 @@ typedef struct dbghelp
 #ifndef NO_DBGHELP
   func_SymGetLineFromAddr64 *fSymGetLineFromAddr64;
 #endif
+#ifndef NO_DWARFSTACK
   func_dwstOfFile *fdwstOfFile;
+#endif
   textColor *tc;
   options *opt;
 }
@@ -1848,8 +1858,10 @@ static void locFunc(
       break;
 
     case DWST_NO_DBG_SYM:
+#ifndef NO_DWARFSTACK
     case DWST_NO_SRC_FILE:
     case DWST_NOT_FOUND:
+#endif
       printf( "%c    %p\n",ATT_NORMAL,(uintptr_t)addr );
       break;
 
@@ -1888,9 +1900,11 @@ static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbghelp *dh )
     for( l=j+1; l<fc && frames[l]>=mi->base &&
         frames[l]<mi->base+mi->size; l++ );
 
+#ifndef NO_DWARFSTACK
     if( dh->fdwstOfFile )
       dh->fdwstOfFile( mi->path,mi->base,frames+j,l-j,locFunc,dh );
     else
+#endif
     {
       locFunc( mi->base,mi->path,DWST_BASE_ADDR,dh );
       int i;
@@ -2036,9 +2050,11 @@ void smain( void )
 #ifndef NO_DBGHELP
     HMODULE symMod = LoadLibrary( "dbghelp.dll" );
 #endif
+#ifndef NO_DWARFSTACK
     HMODULE dwstMod = LoadLibrary( "dwarfstack.dll" );
     if( !dwstMod )
       dwstMod = LoadLibrary( "dwarfstack" BITS ".dll" );
+#endif
 #ifndef NO_DBGHELP
     func_SymSetOptions *fSymSetOptions = NULL;
     func_SymInitialize *fSymInitialize = NULL;
@@ -2049,7 +2065,9 @@ void smain( void )
 #ifndef NO_DBGHELP
       NULL,
 #endif
+#ifndef NO_DWARFSTACK
       NULL,
+#endif
       tc,
       &opt,
     };
@@ -2067,11 +2085,13 @@ void smain( void )
             symMod,"SymGetLineFromAddr64" );
     }
 #endif
+#ifndef NO_DWARFSTACK
     if( dwstMod )
     {
       dh.fdwstOfFile =
         (func_dwstOfFile*)GetProcAddress( dwstMod,"dwstOfFile" );
     }
+#endif
 #ifndef NO_DBGHELP
     if( fSymSetOptions )
       fSymSetOptions( SYMOPT_LOAD_LINES );
@@ -2326,7 +2346,9 @@ void smain( void )
     if( fSymCleanup ) fSymCleanup( pi.hProcess );
     if( symMod ) FreeLibrary( symMod );
 #endif
+#ifndef NO_DWARFSTACK
     if( dwstMod ) FreeLibrary( dwstMod );
+#endif
     HeapFree( heap,0,alloc_a );
     HeapFree( heap,0,mi_a );
     CloseHandle( readPipe );
