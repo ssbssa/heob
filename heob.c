@@ -7,7 +7,10 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#ifndef NO_DBGHELP
 #include <dbghelp.h>
+#endif
+
 #include <dwarfstack.h>
 
 
@@ -47,6 +50,7 @@ typedef HANDLE WINAPI func_GetStdHandle( DWORD );
 typedef BOOL WINAPI func_ReadConsoleInput(
     HANDLE,PINPUT_RECORD,DWORD,LPDWORD );
 
+#ifndef NO_DBGHELP
 typedef DWORD WINAPI func_SymSetOptions( DWORD );
 typedef BOOL WINAPI func_SymInitialize( HANDLE,PCSTR,BOOL );
 typedef BOOL WINAPI func_SymGetLineFromAddr64(
@@ -57,6 +61,7 @@ typedef BOOL WINAPI func_StackWalk64(
     DWORD,HANDLE,HANDLE,LPSTACKFRAME64,PVOID,PREAD_PROCESS_MEMORY_ROUTINE64,
     PFUNCTION_TABLE_ACCESS_ROUTINE64,PGET_MODULE_BASE_ROUTINE64,
     PTRANSLATE_ADDRESS_ROUTINE64 );
+#endif
 #endif
 
 struct dbghelp;
@@ -1797,7 +1802,9 @@ static int isWrongArch( HANDLE process )
 typedef struct dbghelp
 {
   HANDLE process;
+#ifndef NO_DBGHELP
   func_SymGetLineFromAddr64 *fSymGetLineFromAddr64;
+#endif
   func_dwstOfFile *fdwstOfFile;
   textColor *tc;
   options *opt;
@@ -1809,6 +1816,7 @@ static void locFunc(
 {
   textColor *tc = dh->tc;
 
+#ifndef NO_DBGHELP
   IMAGEHLP_LINE64 il;
   if( lineno==DWST_NO_DBG_SYM && dh->fSymGetLineFromAddr64 )
   {
@@ -1821,6 +1829,7 @@ static void locFunc(
       lineno = il.LineNumber;
     }
   }
+#endif
 
   if( !dh->opt->fullPath )
   {
@@ -2024,20 +2033,27 @@ void smain( void )
 
   if( readPipe )
   {
+#ifndef NO_DBGHELP
     HMODULE symMod = LoadLibrary( "dbghelp.dll" );
+#endif
     HMODULE dwstMod = LoadLibrary( "dwarfstack.dll" );
     if( !dwstMod )
       dwstMod = LoadLibrary( "dwarfstack" BITS ".dll" );
+#ifndef NO_DBGHELP
     func_SymSetOptions *fSymSetOptions = NULL;
     func_SymInitialize *fSymInitialize = NULL;
     func_SymCleanup *fSymCleanup = NULL;
+#endif
     dbghelp dh = {
       pi.hProcess,
+#ifndef NO_DBGHELP
       NULL,
+#endif
       NULL,
       tc,
       &opt,
     };
+#ifndef NO_DBGHELP
     if( symMod )
     {
       fSymSetOptions =
@@ -2050,11 +2066,13 @@ void smain( void )
         (func_SymGetLineFromAddr64*)GetProcAddress(
             symMod,"SymGetLineFromAddr64" );
     }
+#endif
     if( dwstMod )
     {
       dh.fdwstOfFile =
         (func_dwstOfFile*)GetProcAddress( dwstMod,"dwstOfFile" );
     }
+#ifndef NO_DBGHELP
     if( fSymSetOptions )
       fSymSetOptions( SYMOPT_LOAD_LINES );
     if( fSymInitialize )
@@ -2063,6 +2081,7 @@ void smain( void )
       if( delim ) delim[0] = 0;
       fSymInitialize( pi.hProcess,exePath,TRUE );
     }
+#endif
 
     ResumeThread( pi.hThread );
 
@@ -2303,8 +2322,10 @@ void smain( void )
       printf( "%c\nunexpected end of application\n",ATT_WARN );
     }
 
+#ifndef NO_DBGHELP
     if( fSymCleanup ) fSymCleanup( pi.hProcess );
     if( symMod ) FreeLibrary( symMod );
+#endif
     if( dwstMod ) FreeLibrary( dwstMod );
     HeapFree( heap,0,alloc_a );
     HeapFree( heap,0,mi_a );
