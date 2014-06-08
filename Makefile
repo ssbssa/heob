@@ -1,4 +1,6 @@
 
+HEOB_VERSION:=1.0-dev-$(shell date +%Y%m%d)
+
 BITS=
 ifeq ($(BITS),32)
   PREF=i686-w64-mingw32-
@@ -12,7 +14,7 @@ CC=$(PREF)gcc
 CXX=$(PREF)g++
 CPPFLAGS=
 CFLAGS=-Wall -Wextra -fno-omit-frame-pointer -fno-optimize-sibling-calls
-CFLAGS_HEOB=$(CPPFLAGS) $(CFLAGS) -O3
+CFLAGS_HEOB=$(CPPFLAGS) $(CFLAGS) -O3 -DHEOB_VER="\"$(HEOB_VERSION)\""
 LDFLAGS_HEOB=-s -Wl,--entry=_smain -nostdlib -lkernel32
 CFLAGS_TEST=$(CFLAGS) -O3 -g
 
@@ -29,7 +31,13 @@ allocer$(BITS).exe: allocer.cpp
 ifeq ($(BITS),)
 .PHONY: force
 
-release: heob32.exe heob64.exe
+package: heob-$(HEOB_VERSION).7z
+
+package-src:
+	git archive "HEAD^{tree}" |xz >heob-$(HEOB_VERSION).tar.xz
+
+heob-$(HEOB_VERSION).7z: heob32.exe heob64.exe
+	7z a -mx=9 $@ $^
 
 heob32.exe allocer32.exe heob64.exe allocer64.exe: force
 	$(MAKE) BITS=$(findstring 32,$@)$(findstring 64,$@) $@

@@ -2021,6 +2021,7 @@ void smain( void )
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.newConsole,ATT_NORMAL );
     printf( "    %c-F%cX%c    show full path [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.fullPath,ATT_NORMAL );
+    printf( "\nheap-observer " HEOB_VER " (" BITS "bit)\n" );
     ExitProcess( 1 );
   }
 
