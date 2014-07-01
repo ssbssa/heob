@@ -294,6 +294,8 @@ textColor;
 
 #undef RtlMoveMemory
 VOID WINAPI RtlMoveMemory( PVOID,const VOID*,SIZE_T );
+#undef RtlZeroMemory
+VOID WINAPI RtlZeroMemory( PVOID,SIZE_T );
 
 static __attribute__((noinline)) void mprintf(
     textColor *tc,const char *format,... )
@@ -1502,7 +1504,7 @@ static HANDLE inject( HANDLE process,options *opt,char *exePath,textColor *tc )
   unsigned char *fullData = HeapAlloc( heap,0,fullSize );
   RtlMoveMemory( fullData,&remoteCall,funcSize );
   remoteData *data = (remoteData*)( fullData+funcSize );
-  ZeroMemory( data,sizeof(remoteData) );
+  RtlZeroMemory( data,sizeof(remoteData) );
 
   LPTHREAD_START_ROUTINE remoteFuncStart =
     (LPTHREAD_START_ROUTINE)( fullDataRemote );
@@ -1830,7 +1832,7 @@ static void locFunc(
   IMAGEHLP_LINE64 il;
   if( lineno==DWST_NO_DBG_SYM && dh->fSymGetLineFromAddr64 )
   {
-    memset( &il,0,sizeof(IMAGEHLP_LINE64) );
+    RtlZeroMemory( &il,sizeof(IMAGEHLP_LINE64) );
     il.SizeOfStruct = sizeof(IMAGEHLP_LINE64);
     DWORD dis;
     if( dh->fSymGetLineFromAddr64(dh->process,addr,&dis,&il) )
