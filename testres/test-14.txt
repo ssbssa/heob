@@ -1,0 +1,4 @@
+allocer: main()
+
+no leaks found
+exit code: 8 (0xPTR)

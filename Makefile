@@ -25,8 +25,11 @@ all: heob$(BITS).exe allocer$(BITS).exe
 heob$(BITS).exe: heob.c
 	$(CC) $(CFLAGS_HEOB) -o$@ $^ $(LDFLAGS_HEOB)
 
-allocer$(BITS).exe: allocer.cpp
+allocer$(BITS).exe: allocer.cpp libcrt$(BITS).a
 	$(CXX) $(CFLAGS_TEST) -o$@ $^
+
+libcrt$(BITS).a: crt$(BITS).def
+	$(PREF)dlltool -k -d $< -l $@
 
 
 ifeq ($(BITS),)
@@ -69,7 +72,11 @@ T_H11=-p1 -a4 -f1
 T_A11=6
 T_H12=-p1 -a4 -f0
 T_A12=7
-TESTS=01 02 03 04 05 06 07 08 09 10 11 12
+T_H13=-p1 -a4 -f0 -m1
+T_A13=8
+T_H14=-p1 -a4 -f0 -m0
+T_A14=8
+TESTS=01 02 03 04 05 06 07 08 09 10 11 12 13 14
 
 testres:
 	mkdir -p $@
@@ -92,4 +99,4 @@ tests:
 
 
 clean:
-	rm -f *.exe
+	rm -f *.exe *.a

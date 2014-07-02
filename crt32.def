@@ -1,0 +1,12 @@
+
+LIBRARY msvcrt.dll
+
+EXPORTS
+; new
+_Znwj == ??2@YAPAXI@Z
+; delete
+_ZdlPv == ??3@YAXPAX@Z
+; new[]
+_Znaj == ??_U@YAPAXI@Z
+; delete[]
+_ZdaPv == ??_V@YAXPAX@Z

@@ -94,11 +94,20 @@ typedef struct
 }
 replaceData;
 
+typedef enum
+{
+  AT_MALLOC,
+  AT_NEW,
+  AT_NEW_ARR,
+}
+allocType;
+
 typedef struct
 {
   void *ptr;
   size_t size;
   void *frames[PTRS];
+  allocType at;
 }
 allocation;
 
@@ -128,7 +137,8 @@ exceptionInfo;
 struct remoteData;
 typedef const char *func_replaceFuncs( struct remoteData*,const char*,
     const char*,replaceData*,unsigned int );
-typedef void func_trackAllocs( struct remoteData*,void*,void*,size_t );
+typedef void func_trackAllocs( struct remoteData*,void*,void*,size_t,
+    allocType );
 #ifndef _WIN64
 typedef int func_fixDataFuncAddr( unsigned char*,size_t,void* );
 #endif
@@ -150,6 +160,7 @@ enum
   WRITE_FREE_FAIL,
   WRITE_SLACK,
   WRITE_MAIN_ALLOC_FAIL,
+  WRITE_WRONG_DEALLOC,
 };
 
 typedef struct
@@ -162,6 +173,7 @@ typedef struct
   intptr_t handleException;
   intptr_t newConsole;
   intptr_t fullPath;
+  intptr_t allocMethod;
 }
 options;
 
@@ -560,7 +572,7 @@ static void *new_malloc( size_t s )
   GET_REMOTEDATA( rd );
   void *b = rd->fmalloc( s );
 
-  rd->mtrackAllocs( rd,NULL,b,s );
+  rd->mtrackAllocs( rd,NULL,b,s,AT_MALLOC );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_malloc\n";
@@ -578,7 +590,7 @@ static void *new_calloc( size_t n,size_t s )
   GET_REMOTEDATA( rd );
   void *b = rd->fcalloc( n,s );
 
-  rd->mtrackAllocs( rd,NULL,b,n*s );
+  rd->mtrackAllocs( rd,NULL,b,n*s,AT_MALLOC );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_calloc\n";
@@ -596,7 +608,7 @@ static void new_free( void *b )
   GET_REMOTEDATA( rd );
   rd->ffree( b );
 
-  rd->mtrackAllocs( rd,b,NULL,0 );
+  rd->mtrackAllocs( rd,b,NULL,0,AT_MALLOC );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_free\n";
@@ -612,7 +624,7 @@ static void *new_realloc( void *b,size_t s )
   GET_REMOTEDATA( rd );
   void *nb = rd->frealloc( b,s );
 
-  rd->mtrackAllocs( rd,b,nb,s );
+  rd->mtrackAllocs( rd,b,nb,s,AT_MALLOC );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_realloc\n";
@@ -630,7 +642,7 @@ static char *new_strdup( const char *s )
   GET_REMOTEDATA( rd );
   char *b = rd->fstrdup( s );
 
-  rd->mtrackAllocs( rd,NULL,b,rd->fstrlen(s)+1 );
+  rd->mtrackAllocs( rd,NULL,b,rd->fstrlen(s)+1,AT_MALLOC );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_strdup\n";
@@ -650,7 +662,7 @@ static wchar_t *new_wcsdup( const wchar_t *s )
 
   size_t l = 0;
   while( s[l] ) l++;
-  rd->mtrackAllocs( rd,NULL,b,(l+1)*sizeof(wchar_t) );
+  rd->mtrackAllocs( rd,NULL,b,(l+1)*sizeof(wchar_t),AT_MALLOC );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_wcsdup\n";
@@ -668,7 +680,7 @@ static void *new_op_new( size_t s )
   GET_REMOTEDATA( rd );
   void *b = rd->fop_new( s );
 
-  rd->mtrackAllocs( rd,NULL,b,s );
+  rd->mtrackAllocs( rd,NULL,b,s,AT_NEW );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_op_new\n";
@@ -686,7 +698,7 @@ static void new_op_delete( void *b )
   GET_REMOTEDATA( rd );
   rd->fop_delete( b );
 
-  rd->mtrackAllocs( rd,b,NULL,0 );
+  rd->mtrackAllocs( rd,b,NULL,0,AT_NEW );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_op_delete\n";
@@ -702,7 +714,7 @@ static void *new_op_new_a( size_t s )
   GET_REMOTEDATA( rd );
   void *b = rd->fop_new_a( s );
 
-  rd->mtrackAllocs( rd,NULL,b,s );
+  rd->mtrackAllocs( rd,NULL,b,s,AT_NEW_ARR );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_op_new_a\n";
@@ -720,7 +732,7 @@ static void new_op_delete_a( void *b )
   GET_REMOTEDATA( rd );
   rd->fop_delete_a( b );
 
-  rd->mtrackAllocs( rd,b,NULL,0 );
+  rd->mtrackAllocs( rd,b,NULL,0,AT_NEW_ARR );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_op_delete_a\n";
@@ -1255,7 +1267,7 @@ static int fixDataFuncAddr( unsigned char *pos,size_t size,void *data )
 #endif
 
 static void trackAllocs( struct remoteData *rd,
-    void *free_ptr,void *alloc_ptr,size_t alloc_size )
+    void *free_ptr,void *alloc_ptr,size_t alloc_size,allocType at )
 {
   if( free_ptr )
   {
@@ -1298,6 +1310,26 @@ static void trackAllocs( struct remoteData *rd,
           rd->fZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
       }
 
+      if( rd->opt.allocMethod && rd->alloc_a[i].at!=at )
+      {
+        allocation aa[2];
+        rd->fMoveMemory( aa,rd->alloc_a+i,sizeof(allocation) );
+        void **frames = aa[1].frames;
+        int ptrs = rd->fCaptureStackBackTrace( 2,PTRS,frames,NULL );
+        if( ptrs<PTRS )
+          rd->fZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
+        aa[1].ptr = free_ptr;
+        aa[1].size = 0;
+        aa[1].at = at;
+
+        rd->mwriteMods( rd,aa,2 );
+
+        int type = WRITE_WRONG_DEALLOC;
+        DWORD written;
+        rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
+        rd->fWriteFile( rd->master,aa,2*sizeof(allocation),&written,NULL );
+      }
+
       rd->alloc_q--;
       if( i<rd->alloc_q ) rd->alloc_a[i] = rd->alloc_a[rd->alloc_q];
     }
@@ -1306,6 +1338,7 @@ static void trackAllocs( struct remoteData *rd,
       allocation a;
       a.ptr = free_ptr;
       a.size = 0;
+      a.at = at;
 
       void **frames = a.frames;
       int ptrs = rd->fCaptureStackBackTrace( 2,PTRS,frames,NULL );
@@ -1353,6 +1386,7 @@ static void trackAllocs( struct remoteData *rd,
     rd->alloc_q++;
     a->ptr = alloc_ptr;
     a->size = alloc_size;
+    a->at = at;
 
     void **frames = a->frames;
     int ptrs = rd->fCaptureStackBackTrace( 2,PTRS,frames,NULL );
@@ -1366,6 +1400,7 @@ static void trackAllocs( struct remoteData *rd,
     allocation a;
     a.ptr = NULL;
     a.size = alloc_size;
+    a.at = at;
 
     void **frames = a.frames;
     int ptrs = rd->fCaptureStackBackTrace( 2,PTRS,frames,NULL );
@@ -1946,6 +1981,7 @@ void smain( void )
     1,
     0,
     0,
+    1,
   };
   options opt = defopt;
   while( args )
@@ -1987,6 +2023,10 @@ void smain( void )
       case 'F':
         opt.fullPath = atoi( args+2 );
         break;
+
+      case 'm':
+        opt.allocMethod = atoi( args+2 );
+        break;
     }
     while( args[0] && args[0]!=' ' ) args++;
   }
@@ -2023,6 +2063,8 @@ void smain( void )
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.newConsole,ATT_NORMAL );
     printf( "    %c-F%cX%c    show full path [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.fullPath,ATT_NORMAL );
+    printf( "    %c-m%cX%c    compare allocation/release method [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.allocMethod,ATT_NORMAL );
     printf( "\nheap-observer " HEOB_VER " (" BITS "bit)\n" );
     ExitProcess( 1 );
   }
@@ -2295,6 +2337,35 @@ void smain( void )
           printf( "%c\nnot enough memory to keep track of allocations\n",
               ATT_WARN );
           alloc_q = -1;
+          break;
+
+        case WRITE_WRONG_DEALLOC:
+          {
+            allocation aa[2];
+            if( !ReadFile(readPipe,aa,2*sizeof(allocation),&didread,NULL) )
+              break;
+
+            printf( "%c\nmismatching allocation/release method"
+                " of %p (size %u)\n",ATT_WARN,aa[0].ptr,aa[0].size );
+            char *allocMethods[] = {
+              "malloc",
+              "new",
+              "new[]",
+            };
+            printf( "%c  allocated with '%s'\n",
+                ATT_INFO,allocMethods[aa[0].at] );
+            char *deallocMethods[] = {
+              "free",
+              "delete",
+              "delete[]",
+            };
+            printf( "%c  freed with '%s'\n",
+                ATT_INFO,deallocMethods[aa[1].at] );
+            printf( "%c  allocated on:\n",ATT_SECTION );
+            printStack( aa[0].frames,mi_a,mi_q,&dh );
+            printf( "%c  freed on:\n",ATT_SECTION );
+            printStack( aa[1].frames,mi_a,mi_q,&dh );
+          }
           break;
       }
     }

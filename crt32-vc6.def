@@ -1,0 +1,8 @@
+
+LIBRARY msvcrt.dll
+
+EXPORTS
+; new[]
+??_U@YAPAXI@Z
+; delete[]
+??_V@YAXPAX@Z

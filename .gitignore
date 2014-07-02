@@ -1,3 +1,6 @@
 *.exe
 *.dll
 *.swp
+*.a
+*.7z
+*.xz

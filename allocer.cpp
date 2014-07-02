@@ -9,6 +9,14 @@
 #include <string.h>
 
 
+#ifdef __GNUC__
+__declspec(dllimport) void *operator new( size_t );
+__declspec(dllimport) void operator delete( void *ptr );
+#endif
+__declspec(dllimport) void *operator new[]( size_t size );
+__declspec(dllimport) void operator delete[]( void *ptr );
+
+
 void choose( int arg )
 {
   char *mem = (char*)malloc( 15 );
@@ -94,20 +102,25 @@ void choose( int arg )
       free( mem );
       free( (void*)0x80000000 );
       break;
+
+    case 8:
+      // mismatch of allocation/release method
+      printf( "%s",mem );
+      delete mem;
+      mem = new char;
+      mem[0] = 0;
+
+      printf( "%s",mem );
+      delete[] mem;
+      mem = new char[100];
+      mem[0] = 0;
+      break;
   }
 
   mem = (char*)realloc( mem,30 );
   if( mem ) printf( "%s",mem );
   free( mem );
 }
-
-
-#ifdef __GNUC__
-void *operator new[]( size_t size )
-{
-  return( malloc(size) );
-}
-#endif
 
 
 int main( int argc,char **argv )
