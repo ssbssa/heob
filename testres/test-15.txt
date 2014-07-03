@@ -1,0 +1,5 @@
+allocer: main()
+
+leaks:
+  sum: 1072 B / 4
+exit code: 1 (0xPTR)

@@ -174,6 +174,7 @@ typedef struct
   intptr_t newConsole;
   intptr_t fullPath;
   intptr_t allocMethod;
+  intptr_t leakDetails;
 }
 options;
 
@@ -1982,6 +1983,7 @@ void smain( void )
     0,
     0,
     1,
+    1,
   };
   options opt = defopt;
   while( args )
@@ -2027,6 +2029,10 @@ void smain( void )
       case 'm':
         opt.allocMethod = atoi( args+2 );
         break;
+
+      case 'l':
+        opt.leakDetails = atoi( args+2 );
+        break;
     }
     while( args[0] && args[0]!=' ' ) args++;
   }
@@ -2065,6 +2071,8 @@ void smain( void )
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.fullPath,ATT_NORMAL );
     printf( "    %c-m%cX%c    compare allocation/release method [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.allocMethod,ATT_NORMAL );
+    printf( "    %c-l%cX%c    show leak details [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.leakDetails,ATT_NORMAL );
     printf( "\nheap-observer " HEOB_VER " (" BITS "bit)\n" );
     ExitProcess( 1 );
   }
@@ -2402,6 +2410,8 @@ void smain( void )
           nmb++;
         }
         sumSize += size;
+
+        if( !opt.leakDetails ) continue;
 
         printf( "%c  %u B / %d\n",ATT_WARN,size,(intptr_t)nmb );
 
