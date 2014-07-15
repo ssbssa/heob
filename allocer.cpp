@@ -115,6 +115,17 @@ void choose( int arg )
       mem = new char[100];
       mem[0] = 0;
       break;
+
+    case 9:
+      // missing return address of strcmp()
+      {
+        mem[15] = 'a';
+        char *s = strdup( "abc" );
+        if( !strcmp(mem+15,s) )
+          strcat( mem,"a" );
+        free( s );
+      }
+      break;
   }
 
   mem = (char*)realloc( mem,30 );

@@ -175,6 +175,7 @@ typedef struct
   intptr_t fullPath;
   intptr_t allocMethod;
   intptr_t leakDetails;
+  intptr_t useSp;
 }
 options;
 
@@ -1137,10 +1138,11 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 #endif
   {
     frames[count++] = (void*)( ep->ContextRecord->cip+1 );
-#if 0
-    ULONG_PTR csp = *(ULONG_PTR*)ep->ContextRecord->csp;
-    if( csp ) ei.frames[count++] = (void*)csp;
-#endif
+    if( rd->opt.useSp )
+    {
+      ULONG_PTR csp = *(ULONG_PTR*)ep->ContextRecord->csp;
+      if( csp ) frames[count++] = (void*)csp;
+    }
     ULONG_PTR *sp = (ULONG_PTR*)ep->ContextRecord->cfp;
     while( count<PTRS )
     {
@@ -1984,6 +1986,7 @@ void smain( void )
     0,
     1,
     1,
+    0,
   };
   options opt = defopt;
   while( args )
@@ -2033,6 +2036,10 @@ void smain( void )
       case 'l':
         opt.leakDetails = atoi( args+2 );
         break;
+
+      case 'S':
+        opt.useSp = atoi( args+2 );
+        break;
     }
     while( args[0] && args[0]!=' ' ) args++;
   }
@@ -2073,6 +2080,8 @@ void smain( void )
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.allocMethod,ATT_NORMAL );
     printf( "    %c-l%cX%c    show leak details [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.leakDetails,ATT_NORMAL );
+    printf( "    %c-S%cX%c    use stack pointer in exception [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.useSp,ATT_NORMAL );
     printf( "\nheap-observer " HEOB_VER " (" BITS "bit)\n" );
     ExitProcess( 1 );
   }
