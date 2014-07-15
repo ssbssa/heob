@@ -11,10 +11,10 @@
 
 #ifdef __GNUC__
 __declspec(dllimport) void *operator new( size_t );
-__declspec(dllimport) void operator delete( void *ptr );
+__declspec(dllimport) void operator delete( void* );
 #endif
-__declspec(dllimport) void *operator new[]( size_t size );
-__declspec(dllimport) void operator delete[]( void *ptr );
+__declspec(dllimport) void *operator new[]( size_t );
+__declspec(dllimport) void operator delete[]( void* );
 
 
 void choose( int arg )
