@@ -12,7 +12,7 @@ endif
 
 CC=$(PREF)gcc
 CXX=$(PREF)g++
-CPPFLAGS=
+CPPFLAGS=-DNO_DWARFSTACK
 CFLAGS=-Wall -Wextra -fno-omit-frame-pointer -fno-optimize-sibling-calls
 CFLAGS_HEOB=$(CPPFLAGS) $(CFLAGS) -O3 -DHEOB_VER="\"$(HEOB_VERSION)\"" \
 	    -ffreestanding

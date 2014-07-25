@@ -13,7 +13,7 @@ compilation:
 The location of dwarfstack.h has to be provided.
 $ make CPPFLAGS="-I../dwarfstack/include"
 
-Or disable dwarfstack completely.
+Or disable dwarfstack completely (this is the default).
 $ make CPPFLAGS="-DNO_DWARFSTACK"
 
 
