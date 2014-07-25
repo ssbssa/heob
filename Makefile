@@ -1,7 +1,7 @@
 
 HEOB_VERSION:=1.1-dev-$(shell date +%Y%m%d)
 
-BITS=
+BITS=32
 ifeq ($(BITS),32)
   PREF=i686-w64-mingw32-
 else ifeq ($(BITS),64)
@@ -32,9 +32,6 @@ libcrt$(BITS).a: crt$(BITS).def
 	$(PREF)dlltool -k -d $< -l $@
 
 
-ifeq ($(BITS),)
-.PHONY: force
-
 package: heob-$(HEOB_VERSION).7z
 
 package-src:
@@ -43,8 +40,16 @@ package-src:
 heob-$(HEOB_VERSION).7z: heob32.exe heob64.exe
 	7z a -mx=9 $@ $^
 
-heob32.exe allocer32.exe heob64.exe allocer64.exe: force
-	$(MAKE) BITS=$(findstring 32,$@)$(findstring 64,$@) $@
+
+.PHONY: force
+
+ifneq ($(BITS),32)
+heob32.exe allocer32.exe: force
+	$(MAKE) BITS=32 $@
+endif
+ifneq ($(BITS),64)
+heob64.exe allocer64.exe: force
+	$(MAKE) BITS=64 $@
 endif
 
 
