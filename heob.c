@@ -2087,7 +2087,7 @@ void smain( void )
     printf( "    %c-S%cX%c    use stack pointer in exception [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.useSp,ATT_NORMAL );
     printf( "\nheap-observer " HEOB_VER " (" BITS "bit)\n" );
-    ExitProcess( 1 );
+    ExitProcess( -1 );
   }
 
   STARTUPINFO si = {0};
@@ -2099,7 +2099,7 @@ void smain( void )
   if( !result )
   {
     printf( "%ccan't create process for '%s'\n%c",ATT_WARN,args,ATT_NORMAL );
-    ExitProcess( 1 );
+    ExitProcess( -1 );
   }
 
   HANDLE readPipe = NULL;
@@ -2111,6 +2111,7 @@ void smain( void )
   if( !readPipe )
     TerminateProcess( pi.hProcess,1 );
 
+  UINT exitCode = -1;
   if( readPipe )
   {
 #ifndef NO_DBGHELP
@@ -2178,7 +2179,6 @@ void smain( void )
     allocation *alloc_a = NULL;
     int alloc_q = -2;
     HANDLE heap = GetProcessHeap();
-    UINT exitCode = -1;
     while( ReadFile(readPipe,&type,sizeof(int),&didread,NULL) )
     {
       switch( type )
@@ -2455,5 +2455,5 @@ void smain( void )
 
   printf( "%c",ATT_NORMAL );
 
-  ExitProcess( 0 );
+  ExitProcess( exitCode );
 }
