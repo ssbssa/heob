@@ -1977,7 +1977,11 @@ void smain( void )
     args = strchr( cmdLine,' ' );
   options defopt = {
     1,
-    4,
+#ifndef _WIN64
+    8,
+#else
+    16,
+#endif
     0xff,
     0xcc,
     0,
