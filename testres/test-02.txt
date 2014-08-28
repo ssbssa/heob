@@ -1,9 +1,9 @@
 allocer: main()
 
 leaks:
-  8 B / 1
-  12 B / 1
-  1000 B / 1
-  52 B / 1
+  1000 B * 1 = 1000 B
+  52 B * 1 = 52 B
+  12 B * 1 = 12 B
+  8 B * 1 = 8 B
   sum: 1072 B / 4
 exit code: 1 (0xPTR)

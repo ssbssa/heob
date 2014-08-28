@@ -104,7 +104,10 @@ allocType;
 
 typedef struct
 {
-  void *ptr;
+  union {
+    void *ptr;
+    int count;
+  };
   size_t size;
   void *frames[PTRS];
   allocType at;
@@ -457,7 +460,7 @@ static int mmemcmp( const void *p1,const void *p2,size_t s )
   const unsigned char *b2 = p2;
   size_t i;
   for( i=0; i<s; i++ )
-    if( b1[i]!=b2[i] ) return( 1 );
+    if( b1[i]!=b2[i] ) return( (int)b2[i]-(int)b1[i] );
   return( 0 );
 }
 #define memcmp mmemcmp
@@ -2404,6 +2407,7 @@ void smain( void )
       printf( "%c\nleaks:\n",ATT_SECTION );
       int i;
       size_t sumSize = 0;
+      int combined_q = 0;
       for( i=0; i<alloc_q; i++ )
       {
         allocation a;
@@ -2412,25 +2416,63 @@ void smain( void )
         if( !a.ptr ) continue;
 
         size_t size = a.size;
-        int nmb = 1;
+        a.count = 1;
         int j;
         for( j=i+1; j<alloc_q; j++ )
         {
           if( !alloc_a[j].ptr ||
+              a.size!=alloc_a[j].size ||
               memcmp(a.frames,alloc_a[j].frames,PTRS*sizeof(void*)) )
             continue;
 
           size += alloc_a[j].size;
           alloc_a[j].ptr = NULL;
-          nmb++;
+          a.count++;
         }
         sumSize += size;
 
-        if( !opt.leakDetails ) continue;
+        alloc_a[combined_q++] = a;
+      }
+      if( opt.leakDetails )
+      {
+        for( i=0; i<combined_q; i++ )
+        {
+          int best = -1;
+          allocation a;
 
-        printf( "%c  %u B / %d\n",ATT_WARN,size,(intptr_t)nmb );
+          int j;
+          for( j=0; j<combined_q; j++ )
+          {
+            allocation b = alloc_a[j];
+            if( !b.count ) continue;
 
-        printStack( a.frames,mi_a,mi_q,&dh );
+            int use = 0;
+            if( best<0 )
+              use = 1;
+            else if( b.size>a.size )
+              use = 1;
+            else if( b.size==a.size )
+            {
+              int cmp = memcmp( a.frames,b.frames,PTRS*sizeof(void*) );
+              if( cmp<0 )
+                use = 1;
+              else if( cmp==0 && b.count>a.count )
+                use = 1;
+            }
+            if( use )
+            {
+              best = j;
+              a = b;
+            }
+          }
+
+          alloc_a[best].count = 0;
+
+          printf( "%c  %u B * %d = %u B\n",
+              ATT_WARN,a.size,(intptr_t)a.count,a.size*a.count );
+
+          printStack( a.frames,mi_a,mi_q,&dh );
+        }
       }
       printf( "%c  sum: %u B / %d\n",ATT_WARN,sumSize,(intptr_t)alloc_q );
       printf( "%cexit code: %u (%x)\n",
