@@ -1194,11 +1194,15 @@ static const char *replaceFuncs( remoteData *rd,const char *caller,
   UINT i;
   for( i=0; iid[i].Characteristics; i++ )
   {
-    PSTR curModName = (PSTR)REL_PTR( idh,iid[i].Name );
-    if( called && rd->fstrcmpi(curModName,called) )
-      continue;
     if( !iid[i].FirstThunk || !iid[i].OriginalFirstThunk )
       break;
+
+    PSTR curModName = (PSTR)REL_PTR( idh,iid[i].Name );
+    if( rd->fIsBadReadPtr(curModName,1) || !curModName[0] ) continue;
+    HMODULE curModule = rd->fGetModuleHandle( curModName );
+    if( !curModule ) continue;
+    if( called && rd->fstrcmpi(curModName,called) )
+      continue;
 
     PIMAGE_THUNK_DATA thunk =
       (PIMAGE_THUNK_DATA)REL_PTR( idh,iid[i].FirstThunk );
