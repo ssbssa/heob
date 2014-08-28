@@ -1933,7 +1933,7 @@ static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbghelp *dh )
           frame>=mi_a[k].base+mi_a[k].size); k++ );
     if( k>=mi_q )
     {
-      locFunc( frame,"?",DWST_BASE_ADDR,NULL );
+      locFunc( frame,"?",DWST_BASE_ADDR,dh );
       continue;
     }
     modInfo *mi = mi_a + k;
