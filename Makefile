@@ -25,8 +25,14 @@ all: heob$(BITS).exe allocer$(BITS).exe
 heob$(BITS).exe: heob.c
 	$(CC) $(CFLAGS_HEOB) -o$@ $^ $(LDFLAGS_HEOB)
 
-allocer$(BITS).exe: allocer.cpp libcrt$(BITS).a
+allocer$(BITS).exe: allocer.cpp libcrt$(BITS).a dll-alloc$(BITS).dll dll-alloc-shared$(BITS).dll
 	$(CXX) $(CFLAGS_TEST) -o$@ $^
+
+dll-alloc$(BITS).dll: dll-alloc.c
+	$(CC) $(CFLAGS_TEST) -shared -o$@ $^
+
+dll-alloc-shared$(BITS).dll: dll-alloc$(BITS).dll
+	cp -f $< $@
 
 libcrt$(BITS).a: crt$(BITS).def
 	$(PREF)dlltool -k -d $< -l $@
@@ -83,7 +89,13 @@ T_H14=-p1 -a4 -f0 -m0
 T_A14=8
 T_H15=-p1 -a4 -f0 -l0
 T_A15=1
-TESTS=01 02 03 04 05 06 07 08 09 10 11 12 13 14 15
+T_H16=-p1 -a4 -f0 -d0
+T_A16=10
+T_H17=-p1 -a4 -f0 -d1
+T_A17=10
+T_H18=-p1 -a4 -f0 -d2
+T_A18=10
+TESTS=01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18
 
 testres:
 	mkdir -p $@
@@ -106,4 +118,4 @@ tests:
 
 
 clean:
-	rm -f *.exe *.a
+	rm -f *.exe *.a dll-alloc*.dll

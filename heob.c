@@ -26,7 +26,9 @@
 #define WRITE_DEBUG_STRINGS 0
 
 
+typedef HMODULE WINAPI func_LoadLibraryA( LPCSTR );
 typedef HMODULE WINAPI func_LoadLibraryW( LPCWSTR );
+typedef BOOL WINAPI func_FreeLibrary( HMODULE );
 typedef LPVOID WINAPI func_GetProcAddress( HMODULE,LPCSTR );
 typedef BOOL WINAPI func_WriteFile( HANDLE,LPCVOID,DWORD,LPDWORD,LPOVERLAPPED );
 typedef HMODULE WINAPI func_GetModuleHandle( LPCSTR );
@@ -138,8 +140,9 @@ typedef struct
 exceptionInfo;
 
 struct remoteData;
-typedef const char *func_replaceFuncs( struct remoteData*,const char*,
+typedef HMODULE func_replaceFuncs( struct remoteData*,HMODULE,
     const char*,replaceData*,unsigned int );
+typedef void func_addModule( struct remoteData*,HMODULE );
 typedef void func_trackAllocs( struct remoteData*,void*,void*,size_t,
     allocType );
 #ifndef _WIN64
@@ -147,6 +150,7 @@ typedef int func_fixDataFuncAddr( unsigned char*,size_t,void* );
 #endif
 typedef void func_writeMods( struct remoteData*,allocation*,int );
 typedef void func_exitWait( struct remoteData*,UINT );
+typedef void func_replaceModFuncs( struct remoteData* );
 typedef void *func_pm_alloc( struct remoteData*,size_t );
 typedef void func_pm_free( struct remoteData*,void* );
 typedef size_t func_pm_alloc_size( struct remoteData*,void* );
@@ -179,6 +183,7 @@ typedef struct
   intptr_t allocMethod;
   intptr_t leakDetails;
   intptr_t useSp;
+  intptr_t dlls;
 }
 options;
 
@@ -193,7 +198,9 @@ typedef struct remoteData
   func_Sleep *fSleep;
   func_SetEvent *fSetEvent;
   func_CaptureStackBackTrace *fCaptureStackBackTrace;
-  func_LoadLibraryW *fLoadLibrary;
+  func_LoadLibraryA *fLoadLibraryA;
+  func_LoadLibraryW *fLoadLibraryW;
+  func_FreeLibrary *fFreeLibrary;
   func_GetProcAddress *fGetProcAddress;
   func_GetModuleFileNameA *fGetModuleFileName;
   func_CriticalSection *fInitializeCriticalSection;
@@ -242,6 +249,9 @@ typedef struct remoteData
   func_free *mop_delete;
   func_malloc *mop_new_a;
   func_free *mop_delete_a;
+  func_LoadLibraryA *mLLA;
+  func_LoadLibraryW *mLLW;
+  func_FreeLibrary *mFL;
 
   func_malloc *pmalloc;
   func_calloc *pcalloc;
@@ -255,6 +265,8 @@ typedef struct remoteData
   func_pm_alloc_size *pm_alloc_size;
 
   func_replaceFuncs *mreplaceFuncs;
+  func_addModule *maddModule;
+  func_replaceModFuncs *mreplaceModFuncs;
   func_trackAllocs *mtrackAllocs;
 #ifndef _WIN64
   func_fixDataFuncAddr *mfixDataFuncAddr;
@@ -272,6 +284,11 @@ typedef struct remoteData
   freed *freed_a;
   int freed_q;
   int freed_s;
+
+  HMODULE *mod_a;
+  int mod_q;
+  int mod_s;
+  int mod_d;
 
   union {
     wchar_t exePath[MAX_PATH];
@@ -787,6 +804,59 @@ static LPTOP_LEVEL_EXCEPTION_FILTER WINAPI new_SUEF(
   return( NULL );
 }
 
+static HMODULE WINAPI new_LLA( LPCSTR name )
+{
+  GET_REMOTEDATA( rd );
+
+#if WRITE_DEBUG_STRINGS
+  int type;
+  DWORD written;
+  char t[] = "called: new_LLA\n";
+  type = WRITE_STRING;
+  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+#endif
+
+  HMODULE mod = rd->fLoadLibraryA( name );
+
+  rd->fEnterCriticalSection( &rd->cs );
+  rd->maddModule( rd,mod );
+  rd->mreplaceModFuncs( rd );
+  rd->fLeaveCriticalSection( &rd->cs );
+
+  return( mod );
+}
+
+static HMODULE WINAPI new_LLW( LPCWSTR name )
+{
+  GET_REMOTEDATA( rd );
+
+#if WRITE_DEBUG_STRINGS
+  int type;
+  DWORD written;
+  char t[] = "called: new_LLW\n";
+  type = WRITE_STRING;
+  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+#endif
+
+  HMODULE mod = rd->fLoadLibraryW( name );
+
+  rd->fEnterCriticalSection( &rd->cs );
+  rd->maddModule( rd,mod );
+  rd->mreplaceModFuncs( rd );
+  rd->fLeaveCriticalSection( &rd->cs );
+
+  return( mod );
+}
+
+static BOOL WINAPI new_FL( HMODULE mod )
+{
+  (void)mod;
+
+  return( TRUE );
+}
+
 
 static void *protect_alloc_m( remoteData *rd,size_t s )
 {
@@ -1084,7 +1154,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 
 #if USE_STACKWALK
   wchar_t dll_dbghelp[] = { 'd','b','g','h','e','l','p','.','d','l','l',0 };
-  HMODULE symMod = rd->fLoadLibrary( dll_dbghelp );
+  HMODULE symMod = rd->fLoadLibraryW( dll_dbghelp );
   func_StackWalk64 *fStackWalk64 = NULL;
   if( symMod )
   {
@@ -1175,10 +1245,9 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 
 #define REL_PTR( base,ofs ) ( ((PBYTE)base)+ofs )
 
-static const char *replaceFuncs( remoteData *rd,const char *caller,
+static HMODULE replaceFuncs( remoteData *rd,HMODULE app,
     const char *called,replaceData *rep,unsigned int count )
 {
-  HMODULE app = rd->fGetModuleHandle( caller );
   if( !app ) return( NULL );
 
   PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)app;
@@ -1191,6 +1260,7 @@ static const char *replaceFuncs( remoteData *rd,const char *caller,
         DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress );
 
   PSTR repModName = NULL;
+  HMODULE repModule = NULL;
   UINT i;
   for( i=0; iid[i].Characteristics; i++ )
   {
@@ -1201,6 +1271,8 @@ static const char *replaceFuncs( remoteData *rd,const char *caller,
     if( rd->fIsBadReadPtr(curModName,1) || !curModName[0] ) continue;
     HMODULE curModule = rd->fGetModuleHandle( curModName );
     if( !curModule ) continue;
+    if( rd->opt.dlls )
+      rd->maddModule( rd,curModule );
     if( called && rd->fstrcmpi(curModName,called) )
       continue;
 
@@ -1209,7 +1281,11 @@ static const char *replaceFuncs( remoteData *rd,const char *caller,
     PIMAGE_THUNK_DATA originalThunk =
       (PIMAGE_THUNK_DATA)REL_PTR( idh,iid[i].OriginalFirstThunk );
 
-    repModName = called ? curModName : NULL;
+    if( !repModName && called )
+    {
+      repModName = curModName;
+      repModule = curModule;
+    }
     for( ; originalThunk->u1.Function; originalThunk++,thunk++ )
     {
       if( originalThunk->u1.Ordinal&IMAGE_ORDINAL_FLAG )
@@ -1231,6 +1307,7 @@ static const char *replaceFuncs( remoteData *rd,const char *caller,
       if( !origFunc ) continue;
 
       repModName = curModName;
+      repModule = curModule;
 
       MEMORY_BASIC_INFORMATION mbi;
       rd->fVirtualQuery( thunk,&mbi,sizeof(MEMORY_BASIC_INFORMATION) );
@@ -1250,7 +1327,112 @@ static const char *replaceFuncs( remoteData *rd,const char *caller,
     if( !called && repModName ) called = repModName;
   }
 
-  return( repModName );
+  return( repModule );
+}
+
+static void addModule( remoteData *rd,HMODULE mod )
+{
+  int m;
+  for( m=0; m<rd->mod_q && rd->mod_a[m]!=mod; m++ );
+  if( m<rd->mod_q ) return;
+
+  if( rd->mod_q>=rd->mod_s )
+  {
+    rd->mod_s += 64;
+    HMODULE *mod_an;
+    if( !rd->mod_a )
+      mod_an = rd->fHeapAlloc(
+          rd->heap,0,rd->mod_s*sizeof(HMODULE) );
+    else
+      mod_an = rd->fHeapReAlloc(
+          rd->heap,0,rd->mod_a,rd->mod_s*sizeof(HMODULE) );
+    if( !mod_an )
+    {
+      DWORD written;
+      int type = WRITE_MAIN_ALLOC_FAIL;
+      rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
+      rd->mexitWait( rd,1 );
+    }
+    rd->mod_a = mod_an;
+  }
+
+  rd->mod_a[rd->mod_q++] = mod;
+}
+
+static void replaceModFuncs( struct remoteData *rd )
+{
+  char fname_malloc[] = "malloc";
+  char fname_calloc[] = "calloc";
+  char fname_free[] = "free";
+  char fname_realloc[] = "realloc";
+  char fname_strdup[] = "_strdup";
+  char fname_wcsdup[] = "_wcsdup";
+#ifndef _WIN64
+  char fname_op_new[] = "??2@YAPAXI@Z";
+  char fname_op_delete[] = "??3@YAXPAX@Z";
+  char fname_op_new_a[] = "??_U@YAPAXI@Z";
+  char fname_op_delete_a[] = "??_V@YAXPAX@Z";
+#else
+  char fname_op_new[] = "??2@YAPEAX_K@Z";
+  char fname_op_delete[] = "??3@YAXPEAX@Z";
+  char fname_op_new_a[] = "??_U@YAPEAX_K@Z";
+  char fname_op_delete_a[] = "??_V@YAXPEAX@Z";
+#endif
+  replaceData rep[] = {
+    { fname_malloc     ,&rd->fmalloc     ,rd->mmalloc      },
+    { fname_calloc     ,&rd->fcalloc     ,rd->mcalloc      },
+    { fname_free       ,&rd->ffree       ,rd->mfree        },
+    { fname_realloc    ,&rd->frealloc    ,rd->mrealloc     },
+    { fname_strdup     ,&rd->fstrdup     ,rd->mstrdup      },
+    { fname_wcsdup     ,&rd->fwcsdup     ,rd->mwcsdup      },
+    { fname_op_new     ,&rd->fop_new     ,rd->mop_new      },
+    { fname_op_delete  ,&rd->fop_delete  ,rd->mop_delete   },
+    { fname_op_new_a   ,&rd->fop_new_a   ,rd->mop_new_a    },
+    { fname_op_delete_a,&rd->fop_delete_a,rd->mop_delete_a },
+  };
+
+  char fname_ExitProcess[] = "ExitProcess";
+  char fname_SUEF[] = "SetUnhandledExceptionFilter";
+  replaceData rep2[] = {
+    { fname_ExitProcess,&rd->fExitProcess                ,rd->mExitProcess },
+    { fname_SUEF       ,&rd->fSetUnhandledExceptionFilter,rd->mSUEF        },
+  };
+  unsigned int rep2count = sizeof(rep2)/sizeof(replaceData);
+  if( !rd->opt.handleException )
+    rep2count--;
+
+  char fname_LoadLibraryA[] = "LoadLibraryA";
+  char fname_LoadLibraryW[] = "LoadLibraryW";
+  char fname_FreeLibrary[] = "FreeLibrary";
+  replaceData repLL[] = {
+    { fname_LoadLibraryA,&rd->fLoadLibraryA,rd->mLLA },
+    { fname_LoadLibraryW,&rd->fLoadLibraryW,rd->mLLW },
+    { fname_FreeLibrary ,&rd->fFreeLibrary ,rd->mFL  },
+  };
+
+  for( ; rd->mod_d<rd->mod_q; rd->mod_d++ )
+  {
+    HMODULE mod = rd->mod_a[rd->mod_d];
+
+    HMODULE dll_msvcrt =
+      rd->mreplaceFuncs( rd,mod,NULL,rep,sizeof(rep)/sizeof(replaceData) );
+    if( !rd->mod_d )
+    {
+      if( !dll_msvcrt )
+      {
+        rd->master = NULL;
+        return;
+      }
+      rd->maddModule( rd,dll_msvcrt );
+    }
+
+    unsigned int i;
+    for( i=0; i<rep2count; i++ )
+      rd->mreplaceFuncs( rd,mod,NULL,rep2+i,1 );
+
+    if( rd->opt.dlls>1 )
+      rd->mreplaceFuncs( rd,mod,NULL,repLL,sizeof(repLL)/sizeof(replaceData) );
+  }
 }
 
 #ifndef _WIN64
@@ -1305,7 +1487,6 @@ static void trackAllocs( struct remoteData *rd,
             int type = WRITE_MAIN_ALLOC_FAIL;
             rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
             rd->mexitWait( rd,1 );
-            return;
           }
           rd->freed_a = freed_an;
         }
@@ -1388,7 +1569,6 @@ static void trackAllocs( struct remoteData *rd,
         int type = WRITE_MAIN_ALLOC_FAIL;
         rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
         rd->mexitWait( rd,1 );
-        return;
       }
       rd->alloc_a = alloc_an;
     }
@@ -1526,7 +1706,7 @@ static void exitWait( struct remoteData *rd,UINT c )
 
 static DWORD WINAPI remoteCall( remoteData *rd )
 {
-  HMODULE app = rd->fLoadLibrary( rd->exePath );
+  HMODULE app = rd->fLoadLibraryW( rd->exePath );
   char inj_name[] = "inj";
   DWORD (*func_inj)( remoteData*,unsigned char* );
   func_inj = rd->fGetProcAddress( app,inj_name );
@@ -1576,7 +1756,9 @@ static HANDLE inject( HANDLE process,options *opt,char *exePath,textColor *tc )
   data->fCaptureStackBackTrace =
     (func_CaptureStackBackTrace*)GetProcAddress(
         kernel32,"RtlCaptureStackBackTrace" );
-  data->fLoadLibrary =
+  data->fLoadLibraryA =
+    (func_LoadLibraryA*)GetProcAddress( kernel32,"LoadLibraryA" );
+  data->fLoadLibraryW =
     (func_LoadLibraryW*)GetProcAddress( kernel32,"LoadLibraryW" );
   data->fGetProcAddress =
     (func_GetProcAddress*)GetProcAddress( kernel32,"GetProcAddress" );
@@ -1694,6 +1876,8 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
     void *ptr;
   } funcs[] = {
     { &replaceFuncs   ,&rd->mreplaceFuncs    },
+    { &addModule      ,&rd->maddModule       },
+    { &replaceModFuncs,&rd->mreplaceModFuncs },
     { &trackAllocs    ,&rd->mtrackAllocs     },
 #ifndef _WIN64
     { &fixDataFuncAddr,&rd->mfixDataFuncAddr },
@@ -1705,6 +1889,7 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
     { &protect_free_m ,&rd->pm_free          },
     { &alloc_size     ,&rd->pm_alloc_size    },
     { &new_SUEF       ,&rd->mSUEF            },
+    { &new_FL         ,&rd->mFL              },
   };
   for( i=0; i<sizeof(funcs)/sizeof(funcs[0]); i++ )
   {
@@ -1751,6 +1936,8 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
     { &protect_strdup ,&rd->pstrdup      },
     { &protect_wcsdup ,&rd->pwcsdup      },
     { &exceptionWalker,&exceptionWalkerV },
+    { &new_LLA        ,&rd->mLLA         },
+    { &new_LLW        ,&rd->mLLW         },
   };
 
   for( i=0; i<sizeof(fix_funcs)/sizeof(fix_funcs[0]); i++ )
@@ -1773,43 +1960,6 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
 #endif
   }
 
-  char fname_malloc[] = "malloc";
-  char fname_calloc[] = "calloc";
-  char fname_free[] = "free";
-  char fname_realloc[] = "realloc";
-  char fname_strdup[] = "_strdup";
-  char fname_wcsdup[] = "_wcsdup";
-#ifndef _WIN64
-  char fname_op_new[] = "??2@YAPAXI@Z";
-  char fname_op_delete[] = "??3@YAXPAX@Z";
-  char fname_op_new_a[] = "??_U@YAPAXI@Z";
-  char fname_op_delete_a[] = "??_V@YAXPAX@Z";
-#else
-  char fname_op_new[] = "??2@YAPEAX_K@Z";
-  char fname_op_delete[] = "??3@YAXPEAX@Z";
-  char fname_op_new_a[] = "??_U@YAPEAX_K@Z";
-  char fname_op_delete_a[] = "??_V@YAXPEAX@Z";
-#endif
-  replaceData rep[] = {
-    { fname_malloc     ,&rd->fmalloc     ,rd->mmalloc      },
-    { fname_calloc     ,&rd->fcalloc     ,rd->mcalloc      },
-    { fname_free       ,&rd->ffree       ,rd->mfree        },
-    { fname_realloc    ,&rd->frealloc    ,rd->mrealloc     },
-    { fname_strdup     ,&rd->fstrdup     ,rd->mstrdup      },
-    { fname_wcsdup     ,&rd->fwcsdup     ,rd->mwcsdup      },
-    { fname_op_new     ,&rd->fop_new     ,rd->mop_new      },
-    { fname_op_delete  ,&rd->fop_delete  ,rd->mop_delete   },
-    { fname_op_new_a   ,&rd->fop_new_a   ,rd->mop_new_a    },
-    { fname_op_delete_a,&rd->fop_delete_a,rd->mop_delete_a },
-  };
-  const char *dll_msvcrt =
-    rd->mreplaceFuncs( rd,NULL,NULL,rep,sizeof(rep)/sizeof(replaceData) );
-  if( !dll_msvcrt )
-  {
-    rd->master = NULL;
-    return( 0 );
-  }
-
   if( rd->opt.protect )
   {
     rd->fmalloc = rd->pmalloc;
@@ -1827,19 +1977,8 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
   if( rd->opt.handleException )
     rd->fSetUnhandledExceptionFilter( exceptionWalkerV );
 
-  char dll_kernel32[] = "kernel32.dll";
-  char fname_ExitProcess[] = "ExitProcess";
-  char fname_SUEF[] = "SetUnhandledExceptionFilter";
-  replaceData rep2[] = {
-    { fname_ExitProcess,&rd->fExitProcess                ,rd->mExitProcess },
-    { fname_SUEF       ,&rd->fSetUnhandledExceptionFilter,rd->mSUEF        },
-  };
-  unsigned int rep2count = sizeof(rep2)/sizeof(replaceData);
-  if( !rd->opt.handleException )
-    rep2count--;
-  rd->mreplaceFuncs( rd,NULL,dll_kernel32,rep2,rep2count );
-  for( i=0; i<rep2count; i++ )
-    rd->mreplaceFuncs( rd,dll_msvcrt,NULL,rep2+i,1 );
+  rd->maddModule( rd,rd->fGetModuleHandle(NULL) );
+  rd->mreplaceModFuncs( rd );
 
   rd->fGetModuleFileName( NULL,rd->exePathA,MAX_PATH );
 
@@ -2000,6 +2139,7 @@ void smain( void )
     1,
     1,
     0,
+    0,
   };
   options opt = defopt;
   while( args )
@@ -2053,6 +2193,10 @@ void smain( void )
       case 'S':
         opt.useSp = atoi( args+2 );
         break;
+
+      case 'd':
+        opt.dlls = atoi( args+2 );
+        break;
     }
     while( args[0] && args[0]!=' ' ) args++;
   }
@@ -2095,6 +2239,8 @@ void smain( void )
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.leakDetails,ATT_NORMAL );
     printf( "    %c-S%cX%c    use stack pointer in exception [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.useSp,ATT_NORMAL );
+    printf( "    %c-d%cX%c    monitor dlls [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.dlls,ATT_NORMAL );
     printf( "\nheap-observer " HEOB_VER " (" BITS "bit)\n" );
     ExitProcess( -1 );
   }

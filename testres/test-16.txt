@@ -1,0 +1,4 @@
+allocer: main()
+
+no leaks found
+exit code: 10 (0xPTR)

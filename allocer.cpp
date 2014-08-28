@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <windows.h>
 
 
 #ifdef __GNUC__
@@ -15,6 +16,8 @@ __declspec(dllimport) void operator delete( void* );
 #endif
 __declspec(dllimport) void *operator new[]( size_t );
 __declspec(dllimport) void operator delete[]( void* );
+
+extern "C" __declspec(dllimport) void *dll_alloc( size_t );
 
 
 void choose( int arg )
@@ -126,6 +129,32 @@ void choose( int arg )
         free( s );
       }
       break;
+
+    case 10:
+      // leak in dll
+      {
+        char *leak = (char*)dll_alloc( 10 );
+        mem[1] = leak[0];
+
+#ifndef _WIN64
+#define BITS "32"
+#else
+#define BITS "64"
+#endif
+        HMODULE mod = LoadLibrary( "dll-alloc-shared" BITS ".dll" );
+        if( mod )
+        {
+          typedef void *dll_alloc_func( size_t );
+          dll_alloc_func *func =
+            (dll_alloc_func*)GetProcAddress( mod,"dll_alloc" );
+          if( func )
+          {
+            leak = (char*)func( 20 );
+            mem[2] = leak[0];
+          }
+          FreeLibrary( mod );
+        }
+      }
   }
 
   mem = (char*)realloc( mem,30 );
