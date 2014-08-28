@@ -1444,7 +1444,9 @@ static void writeMods( struct remoteData *rd,allocation *alloc_a,int alloc_q )
       if( k<mi_q ) continue;
 
       MEMORY_BASIC_INFORMATION mbi;
-      rd->fVirtualQuery( (void*)ptr,&mbi,sizeof(MEMORY_BASIC_INFORMATION) );
+      if( !rd->fVirtualQuery((void*)ptr,&mbi,
+            sizeof(MEMORY_BASIC_INFORMATION)) )
+        continue;
       size_t base = (size_t)mbi.AllocationBase;
       size_t size = mbi.RegionSize;
       if( base+size<ptr ) size = ptr - base;
