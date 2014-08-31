@@ -321,7 +321,11 @@ typedef struct textColor
 {
   func_TextColor *fTextColor;
   HANDLE out;
-  int colors[ATT_COUNT];
+  union {
+    int colors[ATT_COUNT];
+    const char *styles[ATT_COUNT];
+  };
+  textColorAtt color;
 }
 textColor;
 
@@ -428,8 +432,11 @@ static __attribute__((noinline)) void mprintf(
         case 'c':
           {
             textColorAtt arg = va_arg( vl,textColorAtt );
-            if( tc->fTextColor )
+            if( tc->fTextColor && tc->color!=arg )
+            {
               tc->fTextColor( tc,arg );
+              tc->color = arg;
+            }
           }
           break;
       }
@@ -495,10 +502,31 @@ static void TextColorTerminal( textColor *tc,textColorAtt color )
   DWORD written;
   WriteFile( tc->out,text,sizeof(text),&written,NULL );
 }
+static void TextColorHtml( textColor *tc,textColorAtt color )
+{
+  DWORD written;
+  if( tc->color )
+  {
+    char spanEnd[] = "</span>";
+    WriteFile( tc->out,spanEnd,sizeof(spanEnd)-1,&written,NULL );
+  }
+  if( color )
+  {
+    char span1[] = "<span class=\"";
+    const char *style = tc->styles[color];
+    char span2[] = "\">";
+    WriteFile( tc->out,span1,sizeof(span1)-1,&written,NULL );
+    size_t len;
+    for( len=0; style[len]; len++ );
+    WriteFile( tc->out,style,len,&written,NULL );
+    WriteFile( tc->out,span2,sizeof(span2)-1,&written,NULL );
+  }
+}
 static void checkOutputVariant( textColor *tc )
 {
   tc->fTextColor = NULL;
   tc->out = GetStdHandle( STD_OUTPUT_HANDLE );
+  tc->color = ATT_NORMAL;
 
   DWORD flags;
   if( GetConsoleMode(tc->out,&flags) )
@@ -549,26 +577,56 @@ static void checkOutputVariant( textColor *tc )
     OBJECT_NAME_INFORMATION *oni =
       HeapAlloc( heap,0,sizeof(OBJECT_NAME_INFORMATION) );
     ULONG len;
-    wchar_t namedPipe[] = L"\\Device\\NamedPipe\\";
-    size_t l1 = sizeof(namedPipe)/2 - 1;
-    wchar_t toMaster[] = L"-to-master";
-    size_t l2 = sizeof(toMaster)/2 - 1;
     if( !fNtQueryObject(tc->out,ObjectNameInformation,
-          oni,sizeof(OBJECT_NAME_INFORMATION),&len) &&
-        oni->Name.Length/2>l1+l2 &&
-        !memcmp(oni->Name.Buffer,namedPipe,l1*2) &&
-        !memcmp(oni->Name.Buffer+(oni->Name.Length/2-l2),toMaster,l2*2) )
+          oni,sizeof(OBJECT_NAME_INFORMATION),&len) )
     {
-      tc->fTextColor = &TextColorTerminal;
+      wchar_t namedPipe[] = L"\\Device\\NamedPipe\\";
+      size_t l1 = sizeof(namedPipe)/2 - 1;
+      wchar_t toMaster[] = L"-to-master";
+      size_t l2 = sizeof(toMaster)/2 - 1;
+      wchar_t html[] = L".html";
+      size_t hl = sizeof(html)/2 - 1;
+      if( oni->Name.Length/2>l1+l2 &&
+          !memcmp(oni->Name.Buffer,namedPipe,l1*2) &&
+          !memcmp(oni->Name.Buffer+(oni->Name.Length/2-l2),toMaster,l2*2) )
+      {
+        tc->fTextColor = &TextColorTerminal;
 
-      tc->colors[ATT_NORMAL]  =  4939;
-      tc->colors[ATT_OK]      =  4932;
-      tc->colors[ATT_SECTION] =  4936;
-      tc->colors[ATT_INFO]    =  4935;
-      tc->colors[ATT_WARN]    =  4931;
-      tc->colors[ATT_BASE]    = 10030;
+        tc->colors[ATT_NORMAL]  =  4939;
+        tc->colors[ATT_OK]      =  4932;
+        tc->colors[ATT_SECTION] =  4936;
+        tc->colors[ATT_INFO]    =  4935;
+        tc->colors[ATT_WARN]    =  4931;
+        tc->colors[ATT_BASE]    = 10030;
 
-      TextColorTerminal( tc,ATT_NORMAL );
+        TextColorTerminal( tc,ATT_NORMAL );
+      }
+      else if( GetFileType(tc->out)==FILE_TYPE_DISK &&
+          oni->Name.Length/2>hl &&
+          !memcmp(oni->Name.Buffer+(oni->Name.Length/2-hl),html,hl*2) )
+      {
+        char styleInit[] =
+          "<style type=\"text/css\">\n"
+          "body { color:lightgrey; background-color:black; }\n"
+          ".ok { color:lime; }\n"
+          ".section { color:turquoise; }\n"
+          ".info { color:violet; }\n"
+          ".warn { color:red; }\n"
+          ".base { color:black; background-color:grey; }\n"
+          "</style>\n"
+          "<body><pre>\n";
+        DWORD written;
+        WriteFile( tc->out,styleInit,sizeof(styleInit)-1,&written,NULL );
+
+        tc->fTextColor = &TextColorHtml;
+
+        tc->styles[ATT_NORMAL]  = NULL;
+        tc->styles[ATT_OK]      = "ok";
+        tc->styles[ATT_SECTION] = "section";
+        tc->styles[ATT_INFO]    = "info";
+        tc->styles[ATT_WARN]    = "warn";
+        tc->styles[ATT_BASE]    = "base";
+      }
     }
     HeapFree( heap,0,oni );
   }
