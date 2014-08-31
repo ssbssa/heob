@@ -2040,7 +2040,7 @@ static void locFunc(
   switch( lineno )
   {
     case DWST_BASE_ADDR:
-      printf( "    %c%p%c %c%s%c\n",
+      printf( "    %c%p%c   %c%s%c\n",
           ATT_BASE,(uintptr_t)addr,ATT_NORMAL,
           ATT_BASE,filename,ATT_NORMAL );
       break;
@@ -2050,11 +2050,11 @@ static void locFunc(
     case DWST_NO_SRC_FILE:
     case DWST_NOT_FOUND:
 #endif
-      printf( "%c    %p\n",ATT_NORMAL,(uintptr_t)addr );
+      printf( "%c      %p\n",ATT_NORMAL,(uintptr_t)addr );
       break;
 
     default:
-      printf( "%c    %p %c%s%c:%d\n",
+      printf( "%c      %p   %c%s%c:%d\n",
           ATT_NORMAL,(uintptr_t)addr,
           ATT_OK,filename,ATT_NORMAL,(intptr_t)lineno );
       break;
