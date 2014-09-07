@@ -79,6 +79,7 @@ typedef int func_dwstOfFile( const char*,uint64_t,uint64_t*,int,
 #endif
 
 typedef int WINAPI func_strlen( LPCSTR );
+typedef int WINAPI func_strlenW( LPCWSTR );
 typedef int WINAPI func_strcmp( LPCSTR,LPCSTR );
 
 typedef void *func_malloc( size_t );
@@ -222,6 +223,7 @@ typedef struct remoteData
   func_ReadConsoleInput *fReadConsoleInput;
 
   func_strlen *fstrlen;
+  func_strlenW *fstrlenW;
   func_strcmp *fstrcmp;
   func_strcmp *fstrcmpi;
 
@@ -740,9 +742,7 @@ static wchar_t *new_wcsdup( const wchar_t *s )
   GET_REMOTEDATA( rd );
   wchar_t *b = rd->fwcsdup( s );
 
-  size_t l = 0;
-  while( s[l] ) l++;
-  rd->mtrackAllocs( rd,NULL,b,(l+1)*sizeof(wchar_t),AT_MALLOC );
+  rd->mtrackAllocs( rd,NULL,b,(rd->fstrlenW(s)+1)*2,AT_MALLOC );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_wcsdup\n";
@@ -1103,9 +1103,8 @@ static wchar_t *protect_wcsdup( const wchar_t *s )
 {
   GET_REMOTEDATA( rd );
 
-  size_t l = 0;
-  while( s[l] ) l++;
-  l = ( l+1 )*2;
+  size_t l = rd->fstrlenW( s ) + 1;
+  l *= 2;
 
   wchar_t *b = rd->pm_alloc( rd,l );
   if( !b ) return( NULL );
@@ -1865,6 +1864,8 @@ static HANDLE inject( HANDLE process,options *opt,char *exePath,textColor *tc )
 
   data->fstrlen =
     (func_strlen*)GetProcAddress( kernel32,"lstrlen" );
+  data->fstrlenW =
+    (func_strlenW*)GetProcAddress( kernel32,"lstrlenW" );
   data->fstrcmp =
     (func_strcmp*)GetProcAddress( kernel32,"lstrcmp" );
   data->fstrcmpi =
