@@ -251,9 +251,9 @@ typedef struct remoteData
   func_free *mop_delete;
   func_malloc *mop_new_a;
   func_free *mop_delete_a;
-  func_LoadLibraryA *mLLA;
-  func_LoadLibraryW *mLLW;
-  func_FreeLibrary *mFL;
+  func_LoadLibraryA *mLoadLibraryA;
+  func_LoadLibraryW *mLoadLibraryW;
+  func_FreeLibrary *mFreeLibrary;
 
   func_malloc *pmalloc;
   func_calloc *pcalloc;
@@ -862,14 +862,14 @@ static LPTOP_LEVEL_EXCEPTION_FILTER WINAPI new_SUEF(
   return( NULL );
 }
 
-static HMODULE WINAPI new_LLA( LPCSTR name )
+static HMODULE WINAPI new_LoadLibraryA( LPCSTR name )
 {
   GET_REMOTEDATA( rd );
 
 #if WRITE_DEBUG_STRINGS
   int type;
   DWORD written;
-  char t[] = "called: new_LLA\n";
+  char t[] = "called: new_LoadLibraryA\n";
   type = WRITE_STRING;
   rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
   rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
@@ -885,14 +885,14 @@ static HMODULE WINAPI new_LLA( LPCSTR name )
   return( mod );
 }
 
-static HMODULE WINAPI new_LLW( LPCWSTR name )
+static HMODULE WINAPI new_LoadLibraryW( LPCWSTR name )
 {
   GET_REMOTEDATA( rd );
 
 #if WRITE_DEBUG_STRINGS
   int type;
   DWORD written;
-  char t[] = "called: new_LLW\n";
+  char t[] = "called: new_LoadLibraryW\n";
   type = WRITE_STRING;
   rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
   rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
@@ -908,7 +908,7 @@ static HMODULE WINAPI new_LLW( LPCWSTR name )
   return( mod );
 }
 
-static BOOL WINAPI new_FL( HMODULE mod )
+static BOOL WINAPI new_FreeLibrary( HMODULE mod )
 {
   (void)mod;
 
@@ -1436,16 +1436,16 @@ static void replaceModFuncs( struct remoteData *rd )
   char fname_op_delete_a[] = "??_V@YAXPEAX@Z";
 #endif
   replaceData rep[] = {
-    { fname_malloc     ,&rd->fmalloc     ,rd->mmalloc      },
-    { fname_calloc     ,&rd->fcalloc     ,rd->mcalloc      },
-    { fname_free       ,&rd->ffree       ,rd->mfree        },
-    { fname_realloc    ,&rd->frealloc    ,rd->mrealloc     },
-    { fname_strdup     ,&rd->fstrdup     ,rd->mstrdup      },
-    { fname_wcsdup     ,&rd->fwcsdup     ,rd->mwcsdup      },
-    { fname_op_new     ,&rd->fop_new     ,rd->mop_new      },
-    { fname_op_delete  ,&rd->fop_delete  ,rd->mop_delete   },
-    { fname_op_new_a   ,&rd->fop_new_a   ,rd->mop_new_a    },
-    { fname_op_delete_a,&rd->fop_delete_a,rd->mop_delete_a },
+    { fname_malloc         ,&rd->fmalloc         ,rd->mmalloc          },
+    { fname_calloc         ,&rd->fcalloc         ,rd->mcalloc          },
+    { fname_free           ,&rd->ffree           ,rd->mfree            },
+    { fname_realloc        ,&rd->frealloc        ,rd->mrealloc         },
+    { fname_strdup         ,&rd->fstrdup         ,rd->mstrdup          },
+    { fname_wcsdup         ,&rd->fwcsdup         ,rd->mwcsdup          },
+    { fname_op_new         ,&rd->fop_new         ,rd->mop_new          },
+    { fname_op_delete      ,&rd->fop_delete      ,rd->mop_delete       },
+    { fname_op_new_a       ,&rd->fop_new_a       ,rd->mop_new_a        },
+    { fname_op_delete_a    ,&rd->fop_delete_a    ,rd->mop_delete_a     },
   };
 
   char fname_ExitProcess[] = "ExitProcess";
@@ -1462,9 +1462,9 @@ static void replaceModFuncs( struct remoteData *rd )
   char fname_LoadLibraryW[] = "LoadLibraryW";
   char fname_FreeLibrary[] = "FreeLibrary";
   replaceData repLL[] = {
-    { fname_LoadLibraryA,&rd->fLoadLibraryA,rd->mLLA },
-    { fname_LoadLibraryW,&rd->fLoadLibraryW,rd->mLLW },
-    { fname_FreeLibrary ,&rd->fFreeLibrary ,rd->mFL  },
+    { fname_LoadLibraryA  ,&rd->fLoadLibraryA  ,rd->mLoadLibraryA   },
+    { fname_LoadLibraryW  ,&rd->fLoadLibraryW  ,rd->mLoadLibraryW   },
+    { fname_FreeLibrary   ,&rd->fFreeLibrary   ,rd->mFreeLibrary    },
   };
 
   for( ; rd->mod_d<rd->mod_q; rd->mod_d++ )
@@ -1934,21 +1934,21 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
     void *addr;
     void *ptr;
   } funcs[] = {
-    { &replaceFuncs   ,&rd->mreplaceFuncs    },
-    { &addModule      ,&rd->maddModule       },
-    { &replaceModFuncs,&rd->mreplaceModFuncs },
-    { &trackAllocs    ,&rd->mtrackAllocs     },
+    { &replaceFuncs             ,&rd->mreplaceFuncs              },
+    { &addModule                ,&rd->maddModule                 },
+    { &replaceModFuncs          ,&rd->mreplaceModFuncs           },
+    { &trackAllocs              ,&rd->mtrackAllocs               },
 #ifndef _WIN64
-    { &fixDataFuncAddr,&rd->mfixDataFuncAddr },
+    { &fixDataFuncAddr          ,&rd->mfixDataFuncAddr           },
 #endif
-    { &writeMods      ,&rd->mwriteMods       },
-    { &exitWait       ,&rd->mexitWait        },
-    { &inject         ,&dataPtr              },
-    { &protect_alloc_m,&rd->pm_alloc         },
-    { &protect_free_m ,&rd->pm_free          },
-    { &alloc_size     ,&rd->pm_alloc_size    },
-    { &new_SUEF       ,&rd->mSUEF            },
-    { &new_FL         ,&rd->mFL              },
+    { &writeMods                ,&rd->mwriteMods                 },
+    { &exitWait                 ,&rd->mexitWait                  },
+    { &inject                   ,&dataPtr                        },
+    { &protect_alloc_m          ,&rd->pm_alloc                   },
+    { &protect_free_m           ,&rd->pm_free                    },
+    { &alloc_size               ,&rd->pm_alloc_size              },
+    { &new_SUEF                 ,&rd->mSUEF                      },
+    { &new_FreeLibrary          ,&rd->mFreeLibrary               },
   };
   for( i=0; i<sizeof(funcs)/sizeof(funcs[0]); i++ )
   {
@@ -1977,26 +1977,26 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
     void *addr;
     void *ptr;
   } fix_funcs[] = {
-    { &new_malloc     ,&rd->mmalloc      },
-    { &new_calloc     ,&rd->mcalloc      },
-    { &new_free       ,&rd->mfree        },
-    { &new_realloc    ,&rd->mrealloc     },
-    { &new_strdup     ,&rd->mstrdup      },
-    { &new_wcsdup     ,&rd->mwcsdup      },
-    { &new_op_new     ,&rd->mop_new      },
-    { &new_op_delete  ,&rd->mop_delete   },
-    { &new_op_new_a   ,&rd->mop_new_a    },
-    { &new_op_delete_a,&rd->mop_delete_a },
-    { &new_ExitProcess,&rd->mExitProcess },
-    { &protect_malloc ,&rd->pmalloc      },
-    { &protect_calloc ,&rd->pcalloc      },
-    { &protect_free   ,&rd->pfree        },
-    { &protect_realloc,&rd->prealloc     },
-    { &protect_strdup ,&rd->pstrdup      },
-    { &protect_wcsdup ,&rd->pwcsdup      },
-    { &exceptionWalker,&exceptionWalkerV },
-    { &new_LLA        ,&rd->mLLA         },
-    { &new_LLW        ,&rd->mLLW         },
+    { &new_malloc                  ,&rd->mmalloc                  },
+    { &new_calloc                  ,&rd->mcalloc                  },
+    { &new_free                    ,&rd->mfree                    },
+    { &new_realloc                 ,&rd->mrealloc                 },
+    { &new_strdup                  ,&rd->mstrdup                  },
+    { &new_wcsdup                  ,&rd->mwcsdup                  },
+    { &new_op_new                  ,&rd->mop_new                  },
+    { &new_op_delete               ,&rd->mop_delete               },
+    { &new_op_new_a                ,&rd->mop_new_a                },
+    { &new_op_delete_a             ,&rd->mop_delete_a             },
+    { &new_ExitProcess             ,&rd->mExitProcess             },
+    { &protect_malloc              ,&rd->pmalloc                  },
+    { &protect_calloc              ,&rd->pcalloc                  },
+    { &protect_free                ,&rd->pfree                    },
+    { &protect_realloc             ,&rd->prealloc                 },
+    { &protect_strdup              ,&rd->pstrdup                  },
+    { &protect_wcsdup              ,&rd->pwcsdup                  },
+    { &exceptionWalker             ,&exceptionWalkerV             },
+    { &new_LoadLibraryA            ,&rd->mLoadLibraryA            },
+    { &new_LoadLibraryW            ,&rd->mLoadLibraryW            },
   };
 
   for( i=0; i<sizeof(fix_funcs)/sizeof(fix_funcs[0]); i++ )
