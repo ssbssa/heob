@@ -88,6 +88,14 @@ typedef void func_free( void* );
 typedef void *func_realloc( void*,size_t );
 typedef char *func_strdup( const char* );
 typedef wchar_t *func_wcsdup( const wchar_t* );
+typedef char *func_getcwd( char*,int );
+typedef wchar_t *func_wgetcwd( wchar_t*,int );
+typedef char *func_getdcwd( int,char*,int );
+typedef wchar_t *func_wgetdcwd( int,wchar_t*,int );
+typedef char *func_fullpath( char*,const char*,size_t );
+typedef wchar_t *func_wfullpath( wchar_t*,const wchar_t*,size_t );
+typedef char *func_tempnam( char*,char* );
+typedef wchar_t *func_wtempnam( wchar_t*,wchar_t* );
 
 typedef struct
 {
@@ -238,6 +246,14 @@ typedef struct remoteData
   func_free *fop_delete;
   func_malloc *fop_new_a;
   func_free *fop_delete_a;
+  func_getcwd *fgetcwd;
+  func_wgetcwd *fwgetcwd;
+  func_getdcwd *fgetdcwd;
+  func_wgetdcwd *fwgetdcwd;
+  func_fullpath *ffullpath;
+  func_wfullpath *fwfullpath;
+  func_tempnam *ftempnam;
+  func_wtempnam *fwtempnam;
 
   func_malloc *mmalloc;
   func_calloc *mcalloc;
@@ -251,6 +267,14 @@ typedef struct remoteData
   func_free *mop_delete;
   func_malloc *mop_new_a;
   func_free *mop_delete_a;
+  func_getcwd *mgetcwd;
+  func_wgetcwd *mwgetcwd;
+  func_getdcwd *mgetdcwd;
+  func_wgetdcwd *mwgetdcwd;
+  func_fullpath *mfullpath;
+  func_wfullpath *mwfullpath;
+  func_tempnam *mtempnam;
+  func_wtempnam *mwtempnam;
   func_LoadLibraryA *mLoadLibraryA;
   func_LoadLibraryW *mLoadLibraryW;
   func_FreeLibrary *mFreeLibrary;
@@ -261,6 +285,24 @@ typedef struct remoteData
   func_realloc *prealloc;
   func_strdup *pstrdup;
   func_wcsdup *pwcsdup;
+  func_getcwd *pgetcwd;
+  func_wgetcwd *pwgetcwd;
+  func_getdcwd *pgetdcwd;
+  func_wgetdcwd *pwgetdcwd;
+  func_fullpath *pfullpath;
+  func_wfullpath *pwfullpath;
+  func_tempnam *ptempnam;
+  func_wtempnam *pwtempnam;
+
+  func_free *ofree;
+  func_getcwd *ogetcwd;
+  func_wgetcwd *owgetcwd;
+  func_getdcwd *ogetdcwd;
+  func_wgetdcwd *owgetdcwd;
+  func_fullpath *ofullpath;
+  func_wfullpath *owfullpath;
+  func_tempnam *otempnam;
+  func_wtempnam *owtempnam;
 
   func_pm_alloc *pm_alloc;
   func_pm_free *pm_free;
@@ -823,6 +865,170 @@ static void new_op_delete_a( void *b )
 #endif
 }
 
+static char *new_getcwd( char *buffer,int maxlen )
+{
+  GET_REMOTEDATA( rd );
+  char *cwd = rd->fgetcwd( buffer,maxlen );
+  if( !cwd || buffer ) return( cwd );
+
+  size_t l = rd->fstrlen( cwd ) + 1;
+  if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
+  rd->mtrackAllocs( rd,NULL,cwd,l,AT_MALLOC );
+
+#if WRITE_DEBUG_STRINGS
+  char t[] = "called: new_getcwd\n";
+  DWORD written;
+  int type = WRITE_STRING;
+  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+#endif
+
+  return( cwd );
+}
+
+static wchar_t *new_wgetcwd( wchar_t *buffer,int maxlen )
+{
+  GET_REMOTEDATA( rd );
+  wchar_t *cwd = rd->fwgetcwd( buffer,maxlen );
+  if( !cwd || buffer ) return( cwd );
+
+  size_t l = rd->fstrlenW( cwd ) + 1;
+  if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
+  rd->mtrackAllocs( rd,NULL,cwd,l*2,AT_MALLOC );
+
+#if WRITE_DEBUG_STRINGS
+  char t[] = "called: new_wgetcwd\n";
+  DWORD written;
+  int type = WRITE_STRING;
+  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+#endif
+
+  return( cwd );
+}
+
+static char *new_getdcwd( int drive,char *buffer,int maxlen )
+{
+  GET_REMOTEDATA( rd );
+  char *cwd = rd->fgetdcwd( drive,buffer,maxlen );
+  if( !cwd || buffer ) return( cwd );
+
+  size_t l = rd->fstrlen( cwd ) + 1;
+  if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
+  rd->mtrackAllocs( rd,NULL,cwd,l,AT_MALLOC );
+
+#if WRITE_DEBUG_STRINGS
+  char t[] = "called: new_getdcwd\n";
+  DWORD written;
+  int type = WRITE_STRING;
+  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+#endif
+
+  return( cwd );
+}
+
+static wchar_t *new_wgetdcwd( int drive,wchar_t *buffer,int maxlen )
+{
+  GET_REMOTEDATA( rd );
+  wchar_t *cwd = rd->fwgetdcwd( drive,buffer,maxlen );
+  if( !cwd || buffer ) return( cwd );
+
+  size_t l = rd->fstrlenW( cwd ) + 1;
+  if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
+  rd->mtrackAllocs( rd,NULL,cwd,l*2,AT_MALLOC );
+
+#if WRITE_DEBUG_STRINGS
+  char t[] = "called: new_wgetdcwd\n";
+  DWORD written;
+  int type = WRITE_STRING;
+  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+#endif
+
+  return( cwd );
+}
+
+static char *new_fullpath( char *absPath,const char *relPath,
+    size_t maxLength )
+{
+  GET_REMOTEDATA( rd );
+  char *fp = rd->ffullpath( absPath,relPath,maxLength );
+  if( !fp || absPath ) return( fp );
+
+  rd->mtrackAllocs( rd,NULL,fp,MAX_PATH,AT_MALLOC );
+
+#if WRITE_DEBUG_STRINGS
+  char t[] = "called: new_fullpath\n";
+  DWORD written;
+  int type = WRITE_STRING;
+  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+#endif
+
+  return( fp );
+}
+
+static wchar_t *new_wfullpath( wchar_t *absPath,const wchar_t *relPath,
+    size_t maxLength )
+{
+  GET_REMOTEDATA( rd );
+  wchar_t *fp = rd->fwfullpath( absPath,relPath,maxLength );
+  if( !fp || absPath ) return( fp );
+
+  rd->mtrackAllocs( rd,NULL,fp,MAX_PATH*2,AT_MALLOC );
+
+#if WRITE_DEBUG_STRINGS
+  char t[] = "called: new_wfullpath\n";
+  DWORD written;
+  int type = WRITE_STRING;
+  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+#endif
+
+  return( fp );
+}
+
+static char *new_tempnam( char *dir,char *prefix )
+{
+  GET_REMOTEDATA( rd );
+  char *tn = rd->ftempnam( dir,prefix );
+  if( !tn ) return( tn );
+
+  size_t l = rd->fstrlen( tn ) + 1;
+  rd->mtrackAllocs( rd,NULL,tn,l,AT_MALLOC );
+
+#if WRITE_DEBUG_STRINGS
+  char t[] = "called: new_tempnam\n";
+  DWORD written;
+  int type = WRITE_STRING;
+  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+#endif
+
+  return( tn );
+}
+
+static wchar_t *new_wtempnam( wchar_t *dir,wchar_t *prefix )
+{
+  GET_REMOTEDATA( rd );
+  wchar_t *tn = rd->fwtempnam( dir,prefix );
+  if( !tn ) return( tn );
+
+  size_t l = rd->fstrlenW( tn ) + 1;
+  rd->mtrackAllocs( rd,NULL,tn,l*2,AT_MALLOC );
+
+#if WRITE_DEBUG_STRINGS
+  char t[] = "called: new_wtempnam\n";
+  DWORD written;
+  int type = WRITE_STRING;
+  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+#endif
+
+  return( tn );
+}
+
 static VOID WINAPI new_ExitProcess( UINT c )
 {
   GET_REMOTEDATA( rd );
@@ -1112,6 +1318,152 @@ static wchar_t *protect_wcsdup( const wchar_t *s )
   rd->fMoveMemory( b,s,l );
 
   return( b );
+}
+
+static char *protect_getcwd( char *buffer,int maxlen )
+{
+  GET_REMOTEDATA( rd );
+  char *cwd = rd->ogetcwd( buffer,maxlen );
+  if( !cwd || buffer ) return( cwd );
+
+  size_t l = rd->fstrlen( cwd ) + 1;
+  if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
+
+  char *cwd_copy = rd->pm_alloc( rd,l );
+  if( cwd_copy )
+    rd->fMoveMemory( cwd_copy,cwd,l );
+
+  rd->ofree( cwd );
+
+  return( cwd_copy );
+}
+
+static wchar_t *protect_wgetcwd( wchar_t *buffer,int maxlen )
+{
+  GET_REMOTEDATA( rd );
+  wchar_t *cwd = rd->owgetcwd( buffer,maxlen );
+  if( !cwd || buffer ) return( cwd );
+
+  size_t l = rd->fstrlenW( cwd ) + 1;
+  if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
+  l *= 2;
+
+  wchar_t *cwd_copy = rd->pm_alloc( rd,l );
+  if( cwd_copy )
+    rd->fMoveMemory( cwd_copy,cwd,l );
+
+  rd->ofree( cwd );
+
+  return( cwd_copy );
+}
+
+static char *protect_getdcwd( int drive,char *buffer,int maxlen )
+{
+  GET_REMOTEDATA( rd );
+  char *cwd = rd->ogetdcwd( drive,buffer,maxlen );
+  if( !cwd || buffer ) return( cwd );
+
+  size_t l = rd->fstrlen( cwd ) + 1;
+  if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
+
+  char *cwd_copy = rd->pm_alloc( rd,l );
+  if( cwd_copy )
+    rd->fMoveMemory( cwd_copy,cwd,l );
+
+  rd->ofree( cwd );
+
+  return( cwd_copy );
+}
+
+static wchar_t *protect_wgetdcwd( int drive,wchar_t *buffer,int maxlen )
+{
+  GET_REMOTEDATA( rd );
+  wchar_t *cwd = rd->owgetdcwd( drive,buffer,maxlen );
+  if( !cwd || buffer ) return( cwd );
+
+  size_t l = rd->fstrlenW( cwd ) + 1;
+  if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
+  l *= 2;
+
+  wchar_t *cwd_copy = rd->pm_alloc( rd,l );
+  if( cwd_copy )
+    rd->fMoveMemory( cwd_copy,cwd,l );
+
+  rd->ofree( cwd );
+
+  return( cwd_copy );
+}
+
+static char *protect_fullpath( char *absPath,const char *relPath,
+    size_t maxLength )
+{
+  GET_REMOTEDATA( rd );
+  char *fp = rd->ofullpath( absPath,relPath,maxLength );
+  if( !fp || absPath ) return( fp );
+
+  size_t l = rd->fstrlen( fp ) + 1;
+
+  char *fp_copy = rd->pm_alloc( rd,l );
+  if( fp_copy )
+    rd->fMoveMemory( fp_copy,fp,l );
+
+  rd->ofree( fp );
+
+  return( fp_copy );
+}
+
+static wchar_t *protect_wfullpath( wchar_t *absPath,const wchar_t *relPath,
+    size_t maxLength )
+{
+  GET_REMOTEDATA( rd );
+  wchar_t *fp = rd->owfullpath( absPath,relPath,maxLength );
+  if( !fp || absPath ) return( fp );
+
+  size_t l = rd->fstrlenW( fp ) + 1;
+  l *= 2;
+
+  wchar_t *fp_copy = rd->pm_alloc( rd,l );
+  if( fp_copy )
+    rd->fMoveMemory( fp_copy,fp,l );
+
+  rd->ofree( fp );
+
+  return( fp_copy );
+}
+
+static char *protect_tempnam( char *dir,char *prefix )
+{
+  GET_REMOTEDATA( rd );
+  char *tn = rd->otempnam( dir,prefix );
+  if( !tn ) return( tn );
+
+  size_t l = rd->fstrlen( tn ) + 1;
+
+  char *tn_copy = rd->pm_alloc( rd,l );
+  if( tn_copy )
+    rd->fMoveMemory( tn_copy,tn,l );
+
+  rd->ofree( tn );
+
+  return( tn_copy );
+}
+
+static wchar_t *protect_wtempnam( wchar_t *dir,wchar_t *prefix )
+{
+  GET_REMOTEDATA( rd );
+  wchar_t *tn = rd->owtempnam( dir,prefix );
+  if( !tn ) return( tn );
+
+  size_t l = rd->fstrlenW( tn ) + 1;
+  l *= 2;
+
+  wchar_t *tn_copy = rd->pm_alloc( rd,l );
+  if( tn_copy )
+    rd->fMoveMemory( tn_copy,tn,l );
+
+  rd->ofree( tn );
+
+  return( tn_copy );
 }
 
 #ifdef _WIN64
@@ -1435,6 +1787,14 @@ static void replaceModFuncs( struct remoteData *rd )
   char fname_op_new_a[] = "??_U@YAPEAX_K@Z";
   char fname_op_delete_a[] = "??_V@YAXPEAX@Z";
 #endif
+  char fname_getcwd[] = "_getcwd";
+  char fname_wgetcwd[] = "_wgetcwd";
+  char fname_getdcwd[] = "_getdcwd";
+  char fname_wgetdcwd[] = "_wgetdcwd";
+  char fname_fullpath[] = "_fullpath";
+  char fname_wfullpath[] = "_wfullpath";
+  char fname_tempnam[] = "_tempnam";
+  char fname_wtempnam[] = "_wtempnam";
   replaceData rep[] = {
     { fname_malloc         ,&rd->fmalloc         ,rd->mmalloc          },
     { fname_calloc         ,&rd->fcalloc         ,rd->mcalloc          },
@@ -1446,6 +1806,14 @@ static void replaceModFuncs( struct remoteData *rd )
     { fname_op_delete      ,&rd->fop_delete      ,rd->mop_delete       },
     { fname_op_new_a       ,&rd->fop_new_a       ,rd->mop_new_a        },
     { fname_op_delete_a    ,&rd->fop_delete_a    ,rd->mop_delete_a     },
+    { fname_getcwd         ,&rd->fgetcwd         ,rd->mgetcwd          },
+    { fname_wgetcwd        ,&rd->fwgetcwd        ,rd->mwgetcwd         },
+    { fname_getdcwd        ,&rd->fgetdcwd        ,rd->mgetdcwd         },
+    { fname_wgetdcwd       ,&rd->fwgetdcwd       ,rd->mwgetdcwd        },
+    { fname_fullpath       ,&rd->ffullpath       ,rd->mfullpath        },
+    { fname_wfullpath      ,&rd->fwfullpath      ,rd->mwfullpath       },
+    { fname_tempnam        ,&rd->ftempnam        ,rd->mtempnam         },
+    { fname_wtempnam       ,&rd->fwtempnam       ,rd->mwtempnam        },
   };
 
   char fname_ExitProcess[] = "ExitProcess";
@@ -1481,6 +1849,19 @@ static void replaceModFuncs( struct remoteData *rd )
         return;
       }
       rd->maddModule( rd,dll_msvcrt );
+
+      if( rd->opt.protect )
+      {
+        rd->ofree = rd->fGetProcAddress( dll_msvcrt,fname_free );
+        rd->ogetcwd = rd->fGetProcAddress( dll_msvcrt,fname_getcwd );
+        rd->owgetcwd = rd->fGetProcAddress( dll_msvcrt,fname_wgetcwd );
+        rd->ogetdcwd = rd->fGetProcAddress( dll_msvcrt,fname_getdcwd );
+        rd->owgetdcwd = rd->fGetProcAddress( dll_msvcrt,fname_wgetdcwd );
+        rd->ofullpath = rd->fGetProcAddress( dll_msvcrt,fname_fullpath );
+        rd->owfullpath = rd->fGetProcAddress( dll_msvcrt,fname_wfullpath );
+        rd->otempnam = rd->fGetProcAddress( dll_msvcrt,fname_tempnam );
+        rd->owtempnam = rd->fGetProcAddress( dll_msvcrt,fname_wtempnam );
+      }
     }
 
     unsigned int i;
@@ -1987,6 +2368,14 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
     { &new_op_delete               ,&rd->mop_delete               },
     { &new_op_new_a                ,&rd->mop_new_a                },
     { &new_op_delete_a             ,&rd->mop_delete_a             },
+    { &new_getcwd                  ,&rd->mgetcwd                  },
+    { &new_wgetcwd                 ,&rd->mwgetcwd                 },
+    { &new_getdcwd                 ,&rd->mgetdcwd                 },
+    { &new_wgetdcwd                ,&rd->mwgetdcwd                },
+    { &new_fullpath                ,&rd->mfullpath                },
+    { &new_wfullpath               ,&rd->mwfullpath               },
+    { &new_tempnam                 ,&rd->mtempnam                 },
+    { &new_wtempnam                ,&rd->mwtempnam                },
     { &new_ExitProcess             ,&rd->mExitProcess             },
     { &protect_malloc              ,&rd->pmalloc                  },
     { &protect_calloc              ,&rd->pcalloc                  },
@@ -1994,6 +2383,14 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
     { &protect_realloc             ,&rd->prealloc                 },
     { &protect_strdup              ,&rd->pstrdup                  },
     { &protect_wcsdup              ,&rd->pwcsdup                  },
+    { &protect_getcwd              ,&rd->pgetcwd                  },
+    { &protect_wgetcwd             ,&rd->pwgetcwd                 },
+    { &protect_getdcwd             ,&rd->pgetdcwd                 },
+    { &protect_wgetdcwd            ,&rd->pwgetdcwd                },
+    { &protect_fullpath            ,&rd->pfullpath                },
+    { &protect_wfullpath           ,&rd->pwfullpath               },
+    { &protect_tempnam             ,&rd->ptempnam                 },
+    { &protect_wtempnam            ,&rd->pwtempnam                },
     { &exceptionWalker             ,&exceptionWalkerV             },
     { &new_LoadLibraryA            ,&rd->mLoadLibraryA            },
     { &new_LoadLibraryW            ,&rd->mLoadLibraryW            },
@@ -2031,6 +2428,14 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
     rd->fop_delete = rd->pfree;
     rd->fop_new_a = rd->pmalloc;
     rd->fop_delete_a = rd->pfree;
+    rd->fgetcwd = rd->pgetcwd;
+    rd->fwgetcwd = rd->pwgetcwd;
+    rd->fgetdcwd = rd->pgetdcwd;
+    rd->fwgetdcwd = rd->pwgetdcwd;
+    rd->ffullpath = rd->pfullpath;
+    rd->fwfullpath = rd->pwfullpath;
+    rd->ftempnam = rd->ptempnam;
+    rd->fwtempnam = rd->pwtempnam;
   }
 
   if( rd->opt.handleException )

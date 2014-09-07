@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <windows.h>
+#include <direct.h>
 
 
 #ifdef __GNUC__
@@ -38,6 +39,20 @@ void choose( int arg )
         mem[3] = wcopy[0];
         char *newChars = new char[50];
         mem[4] = newChars[0];
+
+        chdir( "\\" );
+        char *cwd = _getcwd( NULL,0 );
+        mem[5] = cwd[0];
+        wchar_t *wcwd = _wgetcwd( NULL,0 );
+        mem[6] = wcwd[0];
+        cwd = _getdcwd( 0,NULL,0 );
+        mem[7] = cwd[0];
+        wcwd = _wgetdcwd( 0,NULL,0 );
+        mem[8] = wcwd[0];
+        char *fp = _fullpath( NULL,".",0 );
+        mem[9] = fp[0];
+        wchar_t *wfp = _wfullpath( NULL,L".",0 );
+        mem[10] = wfp[0];
       }
       break;
 
