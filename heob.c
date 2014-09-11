@@ -733,7 +733,7 @@ static void new_free( void *b )
   GET_REMOTEDATA( rd );
   rd->ffree( b );
 
-  rd->mtrackAllocs( rd,b,NULL,0,AT_MALLOC );
+  rd->mtrackAllocs( rd,b,NULL,-1,AT_MALLOC );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_free\n";
@@ -821,7 +821,7 @@ static void new_op_delete( void *b )
   GET_REMOTEDATA( rd );
   rd->fop_delete( b );
 
-  rd->mtrackAllocs( rd,b,NULL,0,AT_NEW );
+  rd->mtrackAllocs( rd,b,NULL,-1,AT_NEW );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_op_delete\n";
@@ -855,7 +855,7 @@ static void new_op_delete_a( void *b )
   GET_REMOTEDATA( rd );
   rd->fop_delete_a( b );
 
-  rd->mtrackAllocs( rd,b,NULL,0,AT_NEW_ARR );
+  rd->mtrackAllocs( rd,b,NULL,-1,AT_NEW_ARR );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_op_delete_a\n";
@@ -1127,10 +1127,8 @@ static void *protect_alloc_m( remoteData *rd,size_t s )
 {
   while( s%rd->opt.align ) s++;
 
-  if( !s ) return( NULL );
-
   DWORD pageSize = rd->pageSize;
-  size_t pages = ( s-1 )/pageSize + 2;
+  size_t pages = s ? ( s-1 )/pageSize + 2 : 1;
 
   unsigned char *b = (unsigned char*)rd->fVirtualAlloc(
       NULL,pages*pageSize,MEM_RESERVE,PAGE_NOACCESS );
@@ -1142,7 +1140,8 @@ static void *protect_alloc_m( remoteData *rd,size_t s )
   if( rd->opt.protect>1 )
     b += pageSize;
 
-  rd->fVirtualAlloc( b,(pages-1)*pageSize,MEM_COMMIT,PAGE_READWRITE );
+  if( pages>1 )
+    rd->fVirtualAlloc( b,(pages-1)*pageSize,MEM_COMMIT,PAGE_READWRITE );
 
   if( slackSize && rd->opt.slackInit )
   {
@@ -1162,10 +1161,10 @@ static void protect_free_m( remoteData *rd,void *b )
   if( !b ) return;
 
   size_t s = rd->pm_alloc_size( rd,b );
-  if( !s ) return;
+  if( s==(size_t)-1 ) return;
 
   DWORD pageSize = rd->pageSize;
-  size_t pages = ( s-1 )/pageSize + 2;
+  size_t pages = s ? ( s-1 )/pageSize + 2 : 1;
 
   uintptr_t p = (uintptr_t)b;
   unsigned char *slackStart;
@@ -1229,7 +1228,7 @@ static size_t alloc_size( remoteData *rd,void *p )
 
   int i;
   for( i=rd->alloc_q-1; i>=0 && rd->alloc_a[i].ptr!=p; i-- );
-  size_t s = i>=0 ? rd->alloc_a[i].size : 0;
+  size_t s = i>=0 ? rd->alloc_a[i].size : (size_t)-1;
 
   rd->fLeaveCriticalSection( &rd->cs );
 
@@ -1270,19 +1269,21 @@ static void *protect_realloc( void *b,size_t s )
   if( !s )
   {
     rd->pm_free( rd,b );
-    return( NULL );
+    return( rd->pm_alloc(rd,s) );
   }
 
   if( !b )
     return( rd->pm_alloc(rd,s) );
 
   size_t os = rd->pm_alloc_size( rd,b );
-  if( !os ) return( NULL );
+  if( os==(size_t)-1 ) return( NULL );
 
   void *nb = rd->pm_alloc( rd,s );
   if( !nb ) return( NULL );
 
-  rd->fMoveMemory( nb,b,os<s?os:s );
+  size_t cs = os<s ? os : s;
+  if( cs )
+    rd->fMoveMemory( nb,b,cs );
 
   if( s>os && rd->opt.init )
     rd->fFillMemory( ((char*)nb)+os,s-os,rd->opt.init );
@@ -1542,7 +1543,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
         else
         {
           noAccessStart = ptr - rd->pageSize;
-          noAccessEnd = ptr + ( (size-1)/rd->pageSize+1 )*rd->pageSize;
+          noAccessEnd = ptr + ( size?(size-1)/rd->pageSize+1:0 )*rd->pageSize;
         }
 
         if( addr>=noAccessStart && addr<noAccessEnd )
@@ -2024,7 +2025,7 @@ static void trackAllocs( struct remoteData *rd,
 
     rd->fLeaveCriticalSection( &rd->cs );
   }
-  else if( alloc_size )
+  else if( alloc_size!=(size_t)-1 )
   {
     allocation a;
     a.ptr = NULL;
