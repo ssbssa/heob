@@ -193,6 +193,7 @@ typedef struct
   intptr_t leakDetails;
   intptr_t useSp;
   intptr_t dlls;
+  intptr_t pid;
 }
 options;
 
@@ -2131,6 +2132,7 @@ static void exitWait( struct remoteData *rd,UINT c )
       while( rd->fReadConsoleInput(in,&ir,1,&didread) &&
           (ir.EventType!=KEY_EVENT || !ir.Event.KeyEvent.bKeyDown ||
            ir.Event.KeyEvent.wVirtualKeyCode==VK_SHIFT ||
+           ir.Event.KeyEvent.wVirtualKeyCode==VK_CAPITAL ||
            ir.Event.KeyEvent.wVirtualKeyCode==VK_CONTROL ||
            ir.Event.KeyEvent.wVirtualKeyCode==VK_MENU ||
            ir.Event.KeyEvent.wVirtualKeyCode==VK_LWIN ||
@@ -2604,6 +2606,7 @@ void smain( void )
     1,
     0,
     0,
+    0,
   };
   options opt = defopt;
   while( args )
@@ -2661,6 +2664,10 @@ void smain( void )
       case 'd':
         opt.dlls = atoi( args+2 );
         break;
+
+      case 'P':
+        opt.pid = atoi( args+2 );
+        break;
     }
     while( args[0] && args[0]!=' ' ) args++;
   }
@@ -2705,6 +2712,8 @@ void smain( void )
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.useSp,ATT_NORMAL );
     printf( "    %c-d%cX%c    monitor dlls [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.dlls,ATT_NORMAL );
+    printf( "    %c-P%cX%c    show process ID and wait [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.pid,ATT_NORMAL );
     printf( "\nheap-observer " HEOB_VER " (" BITS "bit)\n" );
     ExitProcess( -1 );
   }
@@ -2788,6 +2797,30 @@ void smain( void )
       fSymInitialize( pi.hProcess,exePath,TRUE );
     }
 #endif
+
+    if( opt.pid )
+    {
+      HANDLE in = GetStdHandle( STD_INPUT_HANDLE );
+      if( FlushConsoleInputBuffer(in) )
+      {
+        HANDLE out = tc->out;
+        tc->out = GetStdHandle( STD_ERROR_HANDLE );
+        printf( "-------------------- PID %u --------------------\n",
+            (uintptr_t)pi.dwProcessId );
+        tc->out = out;
+
+        INPUT_RECORD ir;
+        DWORD didread;
+        while( ReadConsoleInput(in,&ir,1,&didread) &&
+            (ir.EventType!=KEY_EVENT || !ir.Event.KeyEvent.bKeyDown ||
+             ir.Event.KeyEvent.wVirtualKeyCode==VK_SHIFT ||
+             ir.Event.KeyEvent.wVirtualKeyCode==VK_CAPITAL ||
+             ir.Event.KeyEvent.wVirtualKeyCode==VK_CONTROL ||
+             ir.Event.KeyEvent.wVirtualKeyCode==VK_MENU ||
+             ir.Event.KeyEvent.wVirtualKeyCode==VK_LWIN ||
+             ir.Event.KeyEvent.wVirtualKeyCode==VK_RWIN) );
+      }
+    }
 
     ResumeThread( pi.hThread );
 
