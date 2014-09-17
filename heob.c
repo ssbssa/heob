@@ -2511,12 +2511,18 @@ static void locFunc(
   }
 #endif
 
+  char absPath[MAX_PATH];
   if( !dh->opt->fullPath )
   {
     const char *sep1 = strrchr( filename,'/' );
     const char *sep2 = strrchr( filename,'\\' );
     if( sep2>sep1 ) sep1 = sep2;
     if( sep1 ) filename = sep1 + 1;
+  }
+  else
+  {
+    if( GetFullPathNameA(filename,sizeof(absPath),absPath,NULL) )
+      filename = absPath;
   }
 
   switch( lineno )
