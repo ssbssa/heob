@@ -63,6 +63,8 @@ typedef DWORD WINAPI func_SymSetOptions( DWORD );
 typedef BOOL WINAPI func_SymInitialize( HANDLE,PCSTR,BOOL );
 typedef BOOL WINAPI func_SymGetLineFromAddr64(
     HANDLE,DWORD64,PDWORD,PIMAGEHLP_LINE64 );
+typedef BOOL WINAPI func_SymFromAddr(
+    HANDLE,DWORD64,PDWORD64,PSYMBOL_INFO );
 typedef BOOL WINAPI func_SymCleanup( HANDLE );
 #if USE_STACKWALK
 typedef BOOL WINAPI func_StackWalk64(
@@ -75,7 +77,8 @@ typedef BOOL WINAPI func_StackWalk64(
 struct dbghelp;
 #ifndef NO_DWARFSTACK
 typedef int func_dwstOfFile( const char*,uint64_t,uint64_t*,int,
-    void(*)(uint64_t,const char*,int,struct dbghelp*),struct dbghelp* );
+    void(*)(uint64_t,const char*,int,const char*,struct dbghelp*),
+    struct dbghelp* );
 #endif
 
 typedef int WINAPI func_strlen( LPCSTR );
@@ -2467,6 +2470,7 @@ typedef struct dbghelp
   HANDLE process;
 #ifndef NO_DBGHELP
   func_SymGetLineFromAddr64 *fSymGetLineFromAddr64;
+  func_SymFromAddr *fSymFromAddr;
 #endif
 #ifndef NO_DWARFSTACK
   func_dwstOfFile *fdwstOfFile;
@@ -2477,12 +2481,15 @@ typedef struct dbghelp
 dbghelp;
 
 static void locFunc(
-    uint64_t addr,const char *filename,int lineno,dbghelp *dh )
+    uint64_t addr,const char *filename,int lineno,const char *funcname,
+    dbghelp *dh )
 {
   textColor *tc = dh->tc;
 
 #ifndef NO_DBGHELP
   IMAGEHLP_LINE64 il;
+  char buffer[sizeof(SYMBOL_INFO)+100];
+  SYMBOL_INFO *si = (SYMBOL_INFO*)&buffer;
   if( lineno==DWST_NO_DBG_SYM && dh->fSymGetLineFromAddr64 )
   {
     RtlZeroMemory( &il,sizeof(IMAGEHLP_LINE64) );
@@ -2492,6 +2499,14 @@ static void locFunc(
     {
       filename = il.FileName;
       lineno = il.LineNumber;
+    }
+
+    if( dh->fSymFromAddr )
+    {
+      DWORD64 dis64;
+      si->MaxNameLen = 100;
+      if( dh->fSymFromAddr(dh->process,addr,&dis64,si) )
+        funcname = si->Name;
     }
   }
 #endif
@@ -2517,13 +2532,19 @@ static void locFunc(
     case DWST_NO_SRC_FILE:
     case DWST_NOT_FOUND:
 #endif
-      printf( "%c      %p\n",ATT_NORMAL,(uintptr_t)addr );
+      printf( "%c      %p",ATT_NORMAL,(uintptr_t)addr );
+      if( funcname )
+        printf( "   [%c%s%c]",ATT_INFO,funcname,ATT_NORMAL );
+      printf( "\n" );
       break;
 
     default:
-      printf( "%c      %p   %c%s%c:%d\n",
+      printf( "%c      %p   %c%s%c:%d",
           ATT_NORMAL,(uintptr_t)addr,
           ATT_OK,filename,ATT_NORMAL,(intptr_t)lineno );
+      if( funcname )
+        printf( " [%c%s%c]",ATT_INFO,funcname,ATT_NORMAL );
+      printf( "\n" );
       break;
   }
 }
@@ -2546,7 +2567,7 @@ static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbghelp *dh )
           frame>=mi_a[k].base+mi_a[k].size); k++ );
     if( k>=mi_q )
     {
-      locFunc( frame,"?",DWST_BASE_ADDR,dh );
+      locFunc( frame,"?",DWST_BASE_ADDR,NULL,dh );
       continue;
     }
     modInfo *mi = mi_a + k;
@@ -2561,10 +2582,10 @@ static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbghelp *dh )
     else
 #endif
     {
-      locFunc( mi->base,mi->path,DWST_BASE_ADDR,dh );
+      locFunc( mi->base,mi->path,DWST_BASE_ADDR,NULL,dh );
       int i;
       for( i=j; i<l; i++ )
-        locFunc( frames[i],mi->path,DWST_NO_DBG_SYM,dh );
+        locFunc( frames[i],mi->path,DWST_NO_DBG_SYM,NULL,dh );
     }
 
     j = l - 1;
@@ -2760,6 +2781,7 @@ void smain( void )
       pi.hProcess,
 #ifndef NO_DBGHELP
       NULL,
+      NULL,
 #endif
 #ifndef NO_DWARFSTACK
       NULL,
@@ -2779,6 +2801,8 @@ void smain( void )
       dh.fSymGetLineFromAddr64 =
         (func_SymGetLineFromAddr64*)GetProcAddress(
             symMod,"SymGetLineFromAddr64" );
+      dh.fSymFromAddr =
+        (func_SymFromAddr*)GetProcAddress( symMod,"SymFromAddr" );
     }
 #endif
 #ifndef NO_DWARFSTACK
