@@ -570,7 +570,7 @@ static void TextColorHtml( textColor *tc,textColorAtt color )
     WriteFile( tc->out,span2,sizeof(span2)-1,&written,NULL );
   }
 }
-static void checkOutputVariant( textColor *tc )
+static void checkOutputVariant( textColor *tc,const char *cmdLine )
 {
   tc->fTextColor = NULL;
   tc->out = GetStdHandle( STD_OUTPUT_HANDLE );
@@ -654,6 +654,7 @@ static void checkOutputVariant( textColor *tc )
           !memcmp(oni->Name.Buffer+(oni->Name.Length/2-hl),html,hl*2) )
       {
         char styleInit[] =
+          "<head>\n"
           "<style type=\"text/css\">\n"
           "body { color:lightgrey; background-color:black; }\n"
           ".ok { color:lime; }\n"
@@ -662,9 +663,16 @@ static void checkOutputVariant( textColor *tc )
           ".warn { color:red; }\n"
           ".base { color:black; background-color:grey; }\n"
           "</style>\n"
-          "<body><pre>\n";
+          "<title>heob</title>\n"
+          "</head><body>\n"
+          "<h3>";
+        char styleInit2[] =
+          "</h3>\n"
+          "<pre>\n";
         DWORD written;
         WriteFile( tc->out,styleInit,sizeof(styleInit)-1,&written,NULL );
+        WriteFile( tc->out,cmdLine,lstrlen(cmdLine),&written,NULL );
+        WriteFile( tc->out,styleInit2,sizeof(styleInit2)-1,&written,NULL );
 
         tc->fTextColor = &TextColorHtml;
 
@@ -2609,9 +2617,9 @@ void smain( void )
 {
   textColor tc_o;
   textColor *tc = &tc_o;
-  checkOutputVariant( tc );
 
   char *cmdLine = GetCommandLineA();
+  checkOutputVariant( tc,cmdLine );
   char *args;
   if( cmdLine[0]=='"' && (args=strchr(cmdLine+1,'"')) )
     args++;
