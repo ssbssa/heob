@@ -2512,6 +2512,7 @@ static void locFunc(
     if( dh->fSymFromAddr )
     {
       DWORD64 dis64;
+      si->SizeOfStruct = sizeof(SYMBOL_INFO);
       si->MaxNameLen = 100;
       if( dh->fSymFromAddr(dh->process,addr,&dis64,si) )
         funcname = si->Name;
