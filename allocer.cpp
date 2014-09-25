@@ -174,6 +174,10 @@ void choose( int arg )
           FreeLibrary( mod );
         }
       }
+      break;
+
+    case 11:
+      exit( arg );
   }
 
   mem = (char*)realloc( mem,30 );

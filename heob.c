@@ -113,6 +113,7 @@ typedef enum
   AT_MALLOC,
   AT_NEW,
   AT_NEW_ARR,
+  AT_EXIT,
 }
 allocType;
 
@@ -197,6 +198,7 @@ typedef struct
   intptr_t useSp;
   intptr_t dlls;
   intptr_t pid;
+  intptr_t exitTrace;
 }
 options;
 
@@ -1055,6 +1057,9 @@ static VOID WINAPI new_ExitProcess( UINT c )
 #endif
 
   rd->fEnterCriticalSection( &rd->cs );
+
+  if( rd->opt.exitTrace )
+    rd->mtrackAllocs( rd,NULL,(void*)-1,0,AT_EXIT );
 
   if( rd->alloc_q )
     rd->mwriteMods( rd,rd->alloc_a,rd->alloc_q );
@@ -2644,6 +2649,7 @@ void smain( void )
     0,
     0,
     0,
+    0,
   };
   options opt = defopt;
   while( args )
@@ -2705,6 +2711,10 @@ void smain( void )
       case 'P':
         opt.pid = atoi( args+2 );
         break;
+
+      case 'e':
+        opt.exitTrace = atoi( args+2 );
+        break;
     }
     while( args[0] && args[0]!=' ' ) args++;
   }
@@ -2751,6 +2761,8 @@ void smain( void )
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.dlls,ATT_NORMAL );
     printf( "    %c-P%cX%c    show process ID and wait [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.pid,ATT_NORMAL );
+    printf( "    %c-e%cX%c    show exit trace [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.exitTrace,ATT_NORMAL );
     printf( "\nheap-observer " HEOB_VER " (" BITS "bit)\n" );
     ExitProcess( -1 );
   }
@@ -3083,9 +3095,22 @@ void smain( void )
       }
     }
 
+    allocation exitTrace;
+    exitTrace.at = AT_MALLOC;
+    if( alloc_q>0 && alloc_a[alloc_q-1].at==AT_EXIT )
+    {
+      alloc_q--;
+      exitTrace = alloc_a[alloc_q];
+    }
+
     if( !alloc_q )
     {
       printf( "%c\nno leaks found\n",ATT_OK );
+      if( exitTrace.at==AT_EXIT )
+      {
+        printf( "%cexit on:\n",ATT_SECTION );
+        printStack( exitTrace.frames,mi_a,mi_q,&dh );
+      }
       printf( "%cexit code: %u (%x)\n",
           ATT_SECTION,(uintptr_t)exitCode,exitCode );
     }
@@ -3162,6 +3187,11 @@ void smain( void )
         }
       }
       printf( "%c  sum: %u B / %d\n",ATT_WARN,sumSize,(intptr_t)alloc_q );
+      if( exitTrace.at==AT_EXIT )
+      {
+        printf( "%cexit on:\n",ATT_SECTION );
+        printStack( exitTrace.frames,mi_a,mi_q,&dh );
+      }
       printf( "%cexit code: %u (%x)\n",
           ATT_SECTION,(uintptr_t)exitCode,exitCode );
     }
