@@ -21,6 +21,7 @@
 
 
 #define PTRS 48
+#define SPLIT_MASK 0x3ff
 
 #define USE_STACKWALK       0
 #define WRITE_DEBUG_STRINGS 0
@@ -128,6 +129,14 @@ typedef struct
   allocType at;
 }
 allocation;
+
+typedef struct
+{
+  allocation *alloc_a;
+  int alloc_q;
+  int alloc_s;
+}
+splitAllocation;
 
 typedef struct
 {
@@ -327,9 +336,7 @@ typedef struct remoteData
   HANDLE master;
   HANDLE initFinished;
 
-  allocation *alloc_a;
-  int alloc_q;
-  int alloc_s;
+  splitAllocation *splits;
 
   freed *freed_a;
   int freed_q;
@@ -1061,16 +1068,44 @@ static VOID WINAPI new_ExitProcess( UINT c )
   if( rd->opt.exitTrace )
     rd->mtrackAllocs( rd,NULL,(void*)-1,0,AT_EXIT );
 
-  if( rd->alloc_q )
-    rd->mwriteMods( rd,rd->alloc_a,rd->alloc_q );
+  int i;
+  int alloc_q = 0;
+  for( i=0; i<=SPLIT_MASK; i++ )
+    alloc_q += rd->splits[i].alloc_q;
+  allocation *alloc_a = NULL;
+  if( alloc_q )
+  {
+    alloc_a = rd->fHeapAlloc( rd->heap,0,alloc_q*sizeof(allocation) );
+    if( !alloc_a )
+    {
+      type = WRITE_MAIN_ALLOC_FAIL;
+      rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
+      rd->mexitWait( rd,1 );
+    }
+    alloc_q = 0;
+    for( i=0; i<=SPLIT_MASK; i++ )
+    {
+      splitAllocation *sa = rd->splits + i;
+      if( !sa->alloc_q ) continue;
+      rd->fMoveMemory( alloc_a+alloc_q,sa->alloc_a,
+          sa->alloc_q*sizeof(allocation) );
+      alloc_q += sa->alloc_q;
+    }
+
+    rd->mwriteMods( rd,alloc_a,alloc_q );
+  }
 
   type = WRITE_LEAKS;
   rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
   rd->fWriteFile( rd->master,&c,sizeof(UINT),&written,NULL );
-  rd->fWriteFile( rd->master,&rd->alloc_q,sizeof(int),&written,NULL );
-  if( rd->alloc_q )
-    rd->fWriteFile( rd->master,rd->alloc_a,rd->alloc_q*sizeof(allocation),
+  rd->fWriteFile( rd->master,&alloc_q,sizeof(int),&written,NULL );
+  if( alloc_q )
+  {
+    rd->fWriteFile( rd->master,alloc_a,alloc_q*sizeof(allocation),
         &written,NULL );
+
+    rd->fHeapFree( rd->heap,0,alloc_a );
+  }
 
   rd->fLeaveCriticalSection( &rd->cs );
 
@@ -1206,12 +1241,15 @@ static void protect_free_m( remoteData *rd,void *b )
     {
       rd->fEnterCriticalSection( &rd->cs );
 
+      int splitIdx = (((uintptr_t)b)>>4)&SPLIT_MASK;
+      splitAllocation *sa = rd->splits + splitIdx;
+
       int j;
-      for( j=rd->alloc_q-1; j>=0 && rd->alloc_a[j].ptr!=b; j-- );
+      for( j=sa->alloc_q-1; j>=0 && sa->alloc_a[j].ptr!=b; j-- );
       if( j>=0 )
       {
         allocation aa[2];
-        rd->fMoveMemory( aa,rd->alloc_a+j,sizeof(allocation) );
+        rd->fMoveMemory( aa,sa->alloc_a+j,sizeof(allocation) );
         void **frames = aa[1].frames;
         int ptrs = rd->fCaptureStackBackTrace( 3,PTRS,frames,NULL );
         if( ptrs<PTRS )
@@ -1242,9 +1280,12 @@ static size_t alloc_size( remoteData *rd,void *p )
 {
   rd->fEnterCriticalSection( &rd->cs );
 
+  int splitIdx = (((uintptr_t)p)>>4)&SPLIT_MASK;
+  splitAllocation *sa = rd->splits + splitIdx;
+
   int i;
-  for( i=rd->alloc_q-1; i>=0 && rd->alloc_a[i].ptr!=p; i-- );
-  size_t s = i>=0 ? rd->alloc_a[i].size : (size_t)-1;
+  for( i=sa->alloc_q-1; i>=0 && sa->alloc_a[i].ptr!=p; i-- );
+  size_t s = i>=0 ? sa->alloc_a[i].size : (size_t)-1;
 
   rd->fLeaveCriticalSection( &rd->cs );
 
@@ -1514,10 +1555,12 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   {
     char *addr = (char*)ep->ExceptionRecord->ExceptionInformation[1];
 
-    int i;
-    for( i=rd->alloc_q-1; i>=0; i-- )
+    int i,j;
+    splitAllocation *sa;
+    for( j=SPLIT_MASK,sa=rd->splits; j>=0;
+        j--,sa++ ) for( i=sa->alloc_q-1; i>=0; i-- )
     {
-      allocation *a = rd->alloc_a + i;
+      allocation *a = sa->alloc_a + i;
 
       char *ptr = a->ptr;
       char *noAccessStart;
@@ -1921,8 +1964,11 @@ static void trackAllocs( struct remoteData *rd,
   {
     rd->fEnterCriticalSection( &rd->cs );
 
+    int splitIdx = (((uintptr_t)free_ptr)>>4)&SPLIT_MASK;
+    splitAllocation *sa = rd->splits + splitIdx;
+
     int i;
-    for( i=rd->alloc_q-1; i>=0 && rd->alloc_a[i].ptr!=free_ptr; i-- );
+    for( i=sa->alloc_q-1; i>=0 && sa->alloc_a[i].ptr!=free_ptr; i-- );
     if( i>=0 )
     {
       if( rd->opt.protectFree )
@@ -1949,7 +1995,7 @@ static void trackAllocs( struct remoteData *rd,
 
         freed *f = rd->freed_a + rd->freed_q;
         rd->freed_q++;
-        rd->fMoveMemory( &f->a,&rd->alloc_a[i],sizeof(allocation) );
+        rd->fMoveMemory( &f->a,&sa->alloc_a[i],sizeof(allocation) );
 
         void **frames = f->frames;
         int ptrs = rd->fCaptureStackBackTrace( 2,PTRS,frames,NULL );
@@ -1957,10 +2003,10 @@ static void trackAllocs( struct remoteData *rd,
           rd->fZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
       }
 
-      if( rd->opt.allocMethod && rd->alloc_a[i].at!=at )
+      if( rd->opt.allocMethod && sa->alloc_a[i].at!=at )
       {
         allocation aa[2];
-        rd->fMoveMemory( aa,rd->alloc_a+i,sizeof(allocation) );
+        rd->fMoveMemory( aa,sa->alloc_a+i,sizeof(allocation) );
         void **frames = aa[1].frames;
         int ptrs = rd->fCaptureStackBackTrace( 2,PTRS,frames,NULL );
         if( ptrs<PTRS )
@@ -1977,8 +2023,8 @@ static void trackAllocs( struct remoteData *rd,
         rd->fWriteFile( rd->master,aa,2*sizeof(allocation),&written,NULL );
       }
 
-      rd->alloc_q--;
-      if( i<rd->alloc_q ) rd->alloc_a[i] = rd->alloc_a[rd->alloc_q];
+      sa->alloc_q--;
+      if( i<sa->alloc_q ) sa->alloc_a[i] = sa->alloc_a[sa->alloc_q];
     }
     else
     {
@@ -2009,16 +2055,19 @@ static void trackAllocs( struct remoteData *rd,
 
     while( alloc_size%rd->opt.align ) alloc_size++;
 
-    if( rd->alloc_q>=rd->alloc_s )
+    int splitIdx = (((uintptr_t)alloc_ptr)>>4)&SPLIT_MASK;
+    splitAllocation *sa = rd->splits + splitIdx;
+
+    if( sa->alloc_q>=sa->alloc_s )
     {
-      rd->alloc_s += 65536;
+      sa->alloc_s += 64;
       allocation *alloc_an;
-      if( !rd->alloc_a )
+      if( !sa->alloc_a )
         alloc_an = rd->fHeapAlloc(
-            rd->heap,0,rd->alloc_s*sizeof(allocation) );
+            rd->heap,0,sa->alloc_s*sizeof(allocation) );
       else
         alloc_an = rd->fHeapReAlloc(
-            rd->heap,0,rd->alloc_a,rd->alloc_s*sizeof(allocation) );
+            rd->heap,0,sa->alloc_a,sa->alloc_s*sizeof(allocation) );
       if( !alloc_an )
       {
         DWORD written;
@@ -2026,10 +2075,10 @@ static void trackAllocs( struct remoteData *rd,
         rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
         rd->mexitWait( rd,1 );
       }
-      rd->alloc_a = alloc_an;
+      sa->alloc_a = alloc_an;
     }
-    allocation *a = rd->alloc_a + rd->alloc_q;
-    rd->alloc_q++;
+    allocation *a = sa->alloc_a + sa->alloc_q;
+    sa->alloc_q++;
     a->ptr = alloc_ptr;
     a->size = alloc_size;
     a->at = at;
@@ -2327,6 +2376,9 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
   SYSTEM_INFO si;
   rd->fGetSystemInfo( &si );
   rd->pageSize = si.dwPageSize;
+
+  rd->splits = rd->fHeapAlloc( rd->heap,HEAP_ZERO_MEMORY,
+      (SPLIT_MASK+1)*sizeof(splitAllocation) );
 
   unsigned int i;
   remoteData **dataPtr;
