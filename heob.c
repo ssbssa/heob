@@ -1176,7 +1176,8 @@ static BOOL WINAPI new_FreeLibrary( HMODULE mod )
 
 static void *protect_alloc_m( remoteData *rd,size_t s )
 {
-  while( s%rd->opt.align ) s++;
+  intptr_t align = rd->opt.align;
+  s += ( align - (s%align) )%align;
 
   DWORD pageSize = rd->pageSize;
   size_t pages = s ? ( s-1 )/pageSize + 2 : 1;
@@ -2051,7 +2052,8 @@ static void trackAllocs( struct remoteData *rd,
 
   if( alloc_ptr )
   {
-    while( alloc_size%rd->opt.align ) alloc_size++;
+    intptr_t align = rd->opt.align;
+    alloc_size += ( align - (alloc_size%align) )%align;
 
     int splitIdx = (((uintptr_t)alloc_ptr)>>4)&SPLIT_MASK;
     splitAllocation *sa = rd->splits + splitIdx;
