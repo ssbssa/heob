@@ -337,6 +337,7 @@ typedef struct remoteData
   HANDLE initFinished;
 
   splitAllocation *splits;
+  int ptrShift;
 
   freed *freed_a;
   int freed_q;
@@ -1240,7 +1241,7 @@ static void protect_free_m( remoteData *rd,void *b )
     for( i=0; i<slackSize && slackStart[i]==rd->opt.slackInit; i++ );
     if( i<slackSize )
     {
-      int splitIdx = (((uintptr_t)b)>>4)&SPLIT_MASK;
+      int splitIdx = (((uintptr_t)b)>>rd->ptrShift)&SPLIT_MASK;
       splitAllocation *sa = rd->splits + splitIdx;
 
       rd->fEnterCriticalSection( &rd->cs );
@@ -1279,7 +1280,7 @@ static void protect_free_m( remoteData *rd,void *b )
 
 static size_t alloc_size( remoteData *rd,void *p )
 {
-  int splitIdx = (((uintptr_t)p)>>4)&SPLIT_MASK;
+  int splitIdx = (((uintptr_t)p)>>rd->ptrShift)&SPLIT_MASK;
   splitAllocation *sa = rd->splits + splitIdx;
 
   rd->fEnterCriticalSection( &rd->cs );
@@ -1963,7 +1964,7 @@ static void trackAllocs( struct remoteData *rd,
 {
   if( free_ptr )
   {
-    int splitIdx = (((uintptr_t)free_ptr)>>4)&SPLIT_MASK;
+    int splitIdx = (((uintptr_t)free_ptr)>>rd->ptrShift)&SPLIT_MASK;
     splitAllocation *sa = rd->splits + splitIdx;
 
     rd->fEnterCriticalSection( &rd->cs );
@@ -2055,7 +2056,7 @@ static void trackAllocs( struct remoteData *rd,
     intptr_t align = rd->opt.align;
     alloc_size += ( align - (alloc_size%align) )%align;
 
-    int splitIdx = (((uintptr_t)alloc_ptr)>>4)&SPLIT_MASK;
+    int splitIdx = (((uintptr_t)alloc_ptr)>>rd->ptrShift)&SPLIT_MASK;
     splitAllocation *sa = rd->splits + splitIdx;
 
     rd->fEnterCriticalSection( &rd->cs );
@@ -2381,6 +2382,13 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
 
   rd->splits = rd->fHeapAlloc( rd->heap,HEAP_ZERO_MEMORY,
       (SPLIT_MASK+1)*sizeof(splitAllocation) );
+
+  rd->ptrShift = 4;
+  if( rd->opt.protect )
+  {
+    rd->ptrShift = __builtin_ffs( si.dwPageSize ) - 1;
+    if( rd->ptrShift<4 ) rd->ptrShift = 4;
+  }
 
   unsigned int i;
   remoteData **dataPtr;
