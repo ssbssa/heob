@@ -1239,10 +1239,10 @@ static void protect_free_m( remoteData *rd,void *b )
     for( i=0; i<slackSize && slackStart[i]==rd->opt.slackInit; i++ );
     if( i<slackSize )
     {
-      rd->fEnterCriticalSection( &rd->cs );
-
       int splitIdx = (((uintptr_t)b)>>4)&SPLIT_MASK;
       splitAllocation *sa = rd->splits + splitIdx;
+
+      rd->fEnterCriticalSection( &rd->cs );
 
       int j;
       for( j=sa->alloc_q-1; j>=0 && sa->alloc_a[j].ptr!=b; j-- );
@@ -1278,10 +1278,10 @@ static void protect_free_m( remoteData *rd,void *b )
 
 static size_t alloc_size( remoteData *rd,void *p )
 {
-  rd->fEnterCriticalSection( &rd->cs );
-
   int splitIdx = (((uintptr_t)p)>>4)&SPLIT_MASK;
   splitAllocation *sa = rd->splits + splitIdx;
+
+  rd->fEnterCriticalSection( &rd->cs );
 
   int i;
   for( i=sa->alloc_q-1; i>=0 && sa->alloc_a[i].ptr!=p; i-- );
@@ -1962,10 +1962,10 @@ static void trackAllocs( struct remoteData *rd,
 {
   if( free_ptr )
   {
-    rd->fEnterCriticalSection( &rd->cs );
-
     int splitIdx = (((uintptr_t)free_ptr)>>4)&SPLIT_MASK;
     splitAllocation *sa = rd->splits + splitIdx;
+
+    rd->fEnterCriticalSection( &rd->cs );
 
     int i;
     for( i=sa->alloc_q-1; i>=0 && sa->alloc_a[i].ptr!=free_ptr; i-- );
@@ -2051,12 +2051,12 @@ static void trackAllocs( struct remoteData *rd,
 
   if( alloc_ptr )
   {
-    rd->fEnterCriticalSection( &rd->cs );
-
     while( alloc_size%rd->opt.align ) alloc_size++;
 
     int splitIdx = (((uintptr_t)alloc_ptr)>>4)&SPLIT_MASK;
     splitAllocation *sa = rd->splits + splitIdx;
+
+    rd->fEnterCriticalSection( &rd->cs );
 
     if( sa->alloc_q>=sa->alloc_s )
     {
