@@ -338,6 +338,7 @@ typedef struct remoteData
 
   splitAllocation *splits;
   int ptrShift;
+  allocType newArrAllocMethod;
 
   freed *freed_a;
   int freed_q;
@@ -858,7 +859,7 @@ static void *new_op_new_a( size_t s )
   GET_REMOTEDATA( rd );
   void *b = rd->fop_new_a( s );
 
-  rd->mtrackAllocs( rd,NULL,b,s,AT_NEW_ARR );
+  rd->mtrackAllocs( rd,NULL,b,s,rd->newArrAllocMethod );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_op_new_a\n";
@@ -876,7 +877,7 @@ static void new_op_delete_a( void *b )
   GET_REMOTEDATA( rd );
   rd->fop_delete_a( b );
 
-  rd->mtrackAllocs( rd,b,NULL,-1,AT_NEW_ARR );
+  rd->mtrackAllocs( rd,b,NULL,-1,rd->newArrAllocMethod );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_op_delete_a\n";
@@ -2389,6 +2390,8 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
     rd->ptrShift = __builtin_ffs( si.dwPageSize ) - 1;
     if( rd->ptrShift<4 ) rd->ptrShift = 4;
   }
+
+  rd->newArrAllocMethod = rd->opt.allocMethod>1 ? AT_NEW_ARR : AT_NEW;
 
   unsigned int i;
   remoteData **dataPtr;
