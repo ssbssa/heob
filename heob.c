@@ -2551,6 +2551,8 @@ typedef struct dbghelp
 #ifndef NO_DBGHELP
   func_SymGetLineFromAddr64 *fSymGetLineFromAddr64;
   func_SymFromAddr *fSymFromAddr;
+  IMAGEHLP_LINE64 *il;
+  SYMBOL_INFO *si;
 #endif
 #ifndef NO_DWARFSTACK
   func_dwstOfFile *fdwstOfFile;
@@ -2567,27 +2569,29 @@ static void locFunc(
   textColor *tc = dh->tc;
 
 #ifndef NO_DBGHELP
-  IMAGEHLP_LINE64 il;
-  char buffer[sizeof(SYMBOL_INFO)+100];
-  SYMBOL_INFO *si = (SYMBOL_INFO*)&buffer;
   if( lineno==DWST_NO_DBG_SYM && dh->fSymGetLineFromAddr64 )
   {
-    RtlZeroMemory( &il,sizeof(IMAGEHLP_LINE64) );
-    il.SizeOfStruct = sizeof(IMAGEHLP_LINE64);
+    IMAGEHLP_LINE64 *il = dh->il;
+    RtlZeroMemory( il,sizeof(IMAGEHLP_LINE64) );
+    il->SizeOfStruct = sizeof(IMAGEHLP_LINE64);
     DWORD dis;
-    if( dh->fSymGetLineFromAddr64(dh->process,addr,&dis,&il) )
+    if( dh->fSymGetLineFromAddr64(dh->process,addr,&dis,il) )
     {
-      filename = il.FileName;
-      lineno = il.LineNumber;
+      filename = il->FileName;
+      lineno = il->LineNumber;
     }
 
     if( dh->fSymFromAddr )
     {
+      SYMBOL_INFO *si = dh->si;
       DWORD64 dis64;
       si->SizeOfStruct = sizeof(SYMBOL_INFO);
-      si->MaxNameLen = 100;
+      si->MaxNameLen = MAX_SYM_NAME;
       if( dh->fSymFromAddr(dh->process,addr,&dis64,si) )
+      {
+        si->Name[MAX_SYM_NAME] = 0;
         funcname = si->Name;
+      }
     }
   }
 #endif
@@ -2858,6 +2862,7 @@ void smain( void )
   UINT exitCode = -1;
   if( readPipe )
   {
+    HANDLE heap = GetProcessHeap();
 #ifndef NO_DBGHELP
     HMODULE symMod = LoadLibrary( "dbghelp.dll" );
 #endif
@@ -2874,6 +2879,8 @@ void smain( void )
     dbghelp dh = {
       pi.hProcess,
 #ifndef NO_DBGHELP
+      NULL,
+      NULL,
       NULL,
       NULL,
 #endif
@@ -2897,6 +2904,8 @@ void smain( void )
             symMod,"SymGetLineFromAddr64" );
       dh.fSymFromAddr =
         (func_SymFromAddr*)GetProcAddress( symMod,"SymFromAddr" );
+      dh.il = HeapAlloc( heap,0,sizeof(IMAGEHLP_LINE64) );
+      dh.si = HeapAlloc( heap,0,sizeof(SYMBOL_INFO)+MAX_SYM_NAME );
     }
 #endif
 #ifndef NO_DWARFSTACK
@@ -2949,7 +2958,6 @@ void smain( void )
     int mi_q = 0;
     allocation *alloc_a = NULL;
     int alloc_q = -2;
-    HANDLE heap = GetProcessHeap();
     while( ReadFile(readPipe,&type,sizeof(int),&didread,NULL) )
     {
       switch( type )
@@ -3270,6 +3278,8 @@ void smain( void )
 #ifndef NO_DBGHELP
     if( fSymCleanup ) fSymCleanup( pi.hProcess );
     if( symMod ) FreeLibrary( symMod );
+    if( dh.il ) HeapFree( heap,0,dh.il );
+    if( dh.si ) HeapFree( heap,0,dh.si );
 #endif
 #ifndef NO_DWARFSTACK
     if( dwstMod ) FreeLibrary( dwstMod );
