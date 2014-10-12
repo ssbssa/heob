@@ -2178,8 +2178,10 @@ static void writeMods( struct remoteData *rd,allocation *alloc_a,int alloc_q )
   rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
   rd->fWriteFile( rd->master,&mi_q,sizeof(int),&written,NULL );
   if( mi_q )
+  {
     rd->fWriteFile( rd->master,mi_a,mi_q*sizeof(modInfo),&written,NULL );
-  rd->fHeapFree( rd->heap,0,mi_a );
+    rd->fHeapFree( rd->heap,0,mi_a );
+  }
 }
 
 static void exitWait( struct remoteData *rd,UINT c )
@@ -2985,7 +2987,7 @@ void smain( void )
             break;
           }
           if( !alloc_q ) break;
-          HeapFree( heap,0,alloc_a );
+          if( alloc_a ) HeapFree( heap,0,alloc_a );
           alloc_a = HeapAlloc( heap,0,alloc_q*sizeof(allocation) );
           if( !ReadFile(readPipe,alloc_a,alloc_q*sizeof(allocation),
                 &didread,NULL) )
@@ -2999,7 +3001,7 @@ void smain( void )
           if( !ReadFile(readPipe,&mi_q,sizeof(int),&didread,NULL) )
             mi_q = 0;
           if( !mi_q ) break;
-          HeapFree( heap,0,mi_a );
+          if( mi_a ) HeapFree( heap,0,mi_a );
           mi_a = HeapAlloc( heap,0,mi_q*sizeof(modInfo) );
           if( !ReadFile(readPipe,mi_a,mi_q*sizeof(modInfo),&didread,NULL) )
           {
@@ -3272,8 +3274,8 @@ void smain( void )
 #ifndef NO_DWARFSTACK
     if( dwstMod ) FreeLibrary( dwstMod );
 #endif
-    HeapFree( heap,0,alloc_a );
-    HeapFree( heap,0,mi_a );
+    if( alloc_a ) HeapFree( heap,0,alloc_a );
+    if( mi_a ) HeapFree( heap,0,mi_a );
     CloseHandle( readPipe );
   }
   CloseHandle( pi.hThread );
