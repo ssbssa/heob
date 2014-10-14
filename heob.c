@@ -208,6 +208,7 @@ typedef struct
   intptr_t dlls;
   intptr_t pid;
   intptr_t exitTrace;
+  intptr_t sourceCode;
 }
 options;
 
@@ -546,6 +547,17 @@ static int mmemcmp( const void *p1,const void *p2,size_t s )
   return( 0 );
 }
 #define memcmp mmemcmp
+
+static const void *mmemchr( const void *p,int ch,size_t s )
+{
+  const unsigned char *b = p;
+  const unsigned char *eob = b + s;
+  unsigned char c = ch;
+  for( ; b<eob; b++ )
+    if( *b==c ) return( b );
+  return( NULL );
+}
+#define memchr mmemchr
 
 
 static void TextColorConsole( textColor *tc,textColorAtt color )
@@ -2565,6 +2577,7 @@ typedef struct dbghelp
 #ifndef NO_DWARFSTACK
   func_dwstOfFile *fdwstOfFile;
 #endif
+  char *absPath;
   textColor *tc;
   options *opt;
 }
@@ -2604,7 +2617,12 @@ static void locFunc(
   }
 #endif
 
-  char absPath[MAX_PATH];
+  if( dh->opt->fullPath || dh->opt->sourceCode )
+  {
+    if( !GetFullPathNameA(filename,MAX_PATH,dh->absPath,NULL) )
+      dh->absPath[0] = 0;
+  }
+
   if( !dh->opt->fullPath )
   {
     const char *sep1 = strrchr( filename,'/' );
@@ -2614,8 +2632,8 @@ static void locFunc(
   }
   else
   {
-    if( GetFullPathNameA(filename,sizeof(absPath),absPath,NULL) )
-      filename = absPath;
+    if( dh->absPath[0] )
+      filename = dh->absPath;
   }
 
   switch( lineno )
@@ -2644,6 +2662,67 @@ static void locFunc(
       if( funcname )
         printf( " [%c%s%c]",ATT_INFO,funcname,ATT_NORMAL );
       printf( "\n" );
+
+      if( dh->opt->sourceCode && dh->absPath[0] )
+      {
+        HANDLE file = CreateFile( dh->absPath,GENERIC_READ,FILE_SHARE_READ,
+            NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,0 );
+        if( file!=INVALID_HANDLE_VALUE )
+        {
+          BY_HANDLE_FILE_INFORMATION fileInfo;
+          if( GetFileInformationByHandle(file,&fileInfo) &&
+              fileInfo.nFileSizeLow && !fileInfo.nFileSizeHigh )
+          {
+            HANDLE mapping = CreateFileMapping(
+                file,NULL,PAGE_READONLY,0,0,NULL );
+            if( mapping )
+            {
+              const char *map = MapViewOfFile( mapping,FILE_MAP_READ,0,0,0 );
+              if( map )
+              {
+                const char *bol = map;
+                const char *eof = map + fileInfo.nFileSizeLow;
+                int firstLine = lineno + 1 - dh->opt->sourceCode;
+                if( firstLine<1 ) firstLine = 1;
+                int lastLine = lineno - 1 + dh->opt->sourceCode;
+                if( firstLine>1 )
+                  printf( "\t...\n" );
+                int i;
+                for( i=1; i<=lastLine; i++ )
+                {
+                  const char *eol = memchr( bol,'\n',eof-bol );
+                  if( !eol ) eol = eof;
+                  else eol++;
+
+                  if( i>=firstLine )
+                  {
+                    if( i==lineno ) printf( "%c>",ATT_SECTION );
+                    printf( "\t" );
+                    DWORD written;
+                    WriteFile( tc->out,bol,eol-bol,&written,NULL );
+                    if( i==lineno ) printf( "%c",ATT_NORMAL );
+                  }
+
+                  bol = eol;
+                  if( bol==eof ) break;
+                }
+                if( bol>map && bol[-1]!='\n' )
+                  printf( "\n" );
+                if( bol!=eof )
+                  printf( "\t...\n\n" );
+                else
+                  printf( "\n" );
+
+                UnmapViewOfFile( map );
+              }
+
+              CloseHandle( mapping );
+            }
+          }
+
+          CloseHandle( file );
+        }
+      }
       break;
   }
 }
@@ -2729,6 +2808,7 @@ void smain( void )
     0,
     0,
     0,
+    0,
   };
   options opt = defopt;
   while( args )
@@ -2794,6 +2874,10 @@ void smain( void )
       case 'e':
         opt.exitTrace = atoi( args+2 );
         break;
+
+      case 'C':
+        opt.sourceCode = atoi( args+2 );
+        break;
     }
     while( args[0] && args[0]!=' ' ) args++;
   }
@@ -2842,6 +2926,8 @@ void smain( void )
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.pid,ATT_NORMAL );
     printf( "    %c-e%cX%c    show exit trace [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.exitTrace,ATT_NORMAL );
+    printf( "    %c-C%cX%c    show source code [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.sourceCode,ATT_NORMAL );
     printf( "\nheap-observer " HEOB_VER " (" BITS "bit)\n" );
     ExitProcess( -1 );
   }
@@ -2895,6 +2981,7 @@ void smain( void )
 #ifndef NO_DWARFSTACK
       NULL,
 #endif
+      NULL,
       tc,
       &opt,
     };
@@ -2933,6 +3020,7 @@ void smain( void )
       fSymInitialize( pi.hProcess,exePath,TRUE );
     }
 #endif
+    dh.absPath = HeapAlloc( heap,0,MAX_PATH );
 
     if( opt.pid )
     {
@@ -3292,6 +3380,7 @@ void smain( void )
 #ifndef NO_DWARFSTACK
     if( dwstMod ) FreeLibrary( dwstMod );
 #endif
+    if( dh.absPath ) HeapFree( heap,0,dh.absPath );
     if( alloc_a ) HeapFree( heap,0,alloc_a );
     if( mi_a ) HeapFree( heap,0,mi_a );
     CloseHandle( readPipe );
