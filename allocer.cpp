@@ -21,6 +21,28 @@ __declspec(dllimport) void operator delete[]( void* );
 extern "C" __declspec(dllimport) void *dll_alloc( size_t );
 
 
+static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
+{
+  printf( "handled exception code: %08lX\n",
+      ep->ExceptionRecord->ExceptionCode );
+  fflush( stdout );
+
+  static int wasHere = 0;
+  if( wasHere ||
+      ep->ExceptionRecord->ExceptionCode!=STATUS_ACCESS_VIOLATION )
+    ExitProcess( -1 );
+  wasHere++;
+
+#ifndef _WIN64
+  ep->ContextRecord->Eip += 10;
+#else
+  ep->ContextRecord->Rip += 10;
+#endif
+
+  return( EXCEPTION_CONTINUE_EXECUTION );
+}
+
+
 void choose( int arg )
 {
   char *mem = (char*)malloc( 15 );
@@ -178,6 +200,13 @@ void choose( int arg )
 
     case 11:
       exit( arg );
+
+    case 12:
+      // exception handler
+      SetUnhandledExceptionFilter( &exceptionWalker );
+      void *ptr = (void*)&choose;
+      *(int*)ptr = 5;
+      break;
   }
 
   mem = (char*)realloc( mem,30 );

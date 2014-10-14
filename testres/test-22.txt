@@ -1,0 +1,5 @@
+allocer: main()
+
+unhandled exception code: 0xPTR (ACCESS_VIOLATION)
+  exception on:
+  write access violation at 0xPTR

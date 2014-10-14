@@ -277,7 +277,6 @@ typedef struct remoteData
   func_strdup *mstrdup;
   func_wcsdup *mwcsdup;
   func_ExitProcess *mExitProcess;
-  func_SetUnhandledExceptionFilter *mSUEF;
   func_malloc *mop_new;
   func_free *mop_delete;
   func_malloc *mop_new_a;
@@ -1114,14 +1113,6 @@ static VOID WINAPI new_ExitProcess( UINT c )
   rd->mexitWait( rd,c );
 }
 
-static LPTOP_LEVEL_EXCEPTION_FILTER WINAPI new_SUEF(
-    LPTOP_LEVEL_EXCEPTION_FILTER plTopLevelExceptionFilter )
-{
-  (void)plTopLevelExceptionFilter;
-
-  return( NULL );
-}
-
 static HMODULE WINAPI new_LoadLibraryA( LPCSTR name )
 {
   GET_REMOTEDATA( rd );
@@ -1881,14 +1872,10 @@ static void replaceModFuncs( struct remoteData *rd )
   };
 
   char fname_ExitProcess[] = "ExitProcess";
-  char fname_SUEF[] = "SetUnhandledExceptionFilter";
   replaceData rep2[] = {
     { fname_ExitProcess,&rd->fExitProcess                ,rd->mExitProcess },
-    { fname_SUEF       ,&rd->fSetUnhandledExceptionFilter,rd->mSUEF        },
   };
   unsigned int rep2count = sizeof(rep2)/sizeof(replaceData);
-  if( !rd->opt.handleException )
-    rep2count--;
 
   char fname_LoadLibraryA[] = "LoadLibraryA";
   char fname_LoadLibraryW[] = "LoadLibraryW";
@@ -2414,7 +2401,6 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
     { &protect_alloc_m          ,&rd->pm_alloc                   },
     { &protect_free_m           ,&rd->pm_free                    },
     { &alloc_size               ,&rd->pm_alloc_size              },
-    { &new_SUEF                 ,&rd->mSUEF                      },
     { &new_FreeLibrary          ,&rd->mFreeLibrary               },
   };
   for( i=0; i<sizeof(funcs)/sizeof(funcs[0]); i++ )
@@ -2525,7 +2511,29 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
   }
 
   if( rd->opt.handleException )
+  {
     rd->fSetUnhandledExceptionFilter( exceptionWalkerV );
+
+    void *fp = rd->fSetUnhandledExceptionFilter;
+#ifndef _WIN64
+    unsigned char doNothing[] = {
+      0x31,0xc0,        // xor  %eax,%eax
+      0xc2,0x04,0x00    // ret  $0x4
+    };
+#else
+    unsigned char doNothing[] = {
+      0x31,0xc0,        // xor  %eax,%eax
+      0xc3              // retq
+    };
+#endif
+    MEMORY_BASIC_INFORMATION mbi;
+    rd->fVirtualQuery( fp,&mbi,sizeof(MEMORY_BASIC_INFORMATION) );
+    rd->fVirtualProtect( mbi.BaseAddress,mbi.RegionSize,
+        PAGE_EXECUTE_READWRITE,&mbi.Protect );
+    rd->fMoveMemory( fp,doNothing,sizeof(doNothing) );
+    rd->fVirtualProtect( mbi.BaseAddress,mbi.RegionSize,
+        mbi.Protect,&mbi.Protect );
+  }
 
   rd->maddModule( rd,rd->fGetModuleHandle(NULL) );
   rd->mreplaceModFuncs( rd );

@@ -1,0 +1,5 @@
+allocer: main()
+handled exception code: C0000005
+
+no leaks found
+exit code: 12 (0xPTR)
