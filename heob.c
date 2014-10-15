@@ -23,7 +23,7 @@
 #define PTRS 48
 #define SPLIT_MASK 0x3ff
 
-#define USE_STACKWALK       0
+#define USE_STACKWALK       1
 #define WRITE_DEBUG_STRINGS 0
 
 
@@ -1629,27 +1629,33 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   void **frames = ei.aa[0].frames;
 
 #if USE_STACKWALK
-  wchar_t dll_dbghelp[] = { 'd','b','g','h','e','l','p','.','d','l','l',0 };
-  HMODULE symMod = rd->fLoadLibraryW( dll_dbghelp );
+  char dll_dbghelp[] = "dbghelp.dll";
+  HMODULE symMod = rd->fLoadLibraryA( dll_dbghelp );
+  func_SymInitialize *fSymInitialize = NULL;
   func_StackWalk64 *fStackWalk64 = NULL;
+  func_SymCleanup *fSymCleanup = NULL;
   if( symMod )
   {
+    char syminitialize[] = "SymInitialize";
+    fSymInitialize = rd->fGetProcAddress( symMod,syminitialize );
     char stackwalk64[] = "StackWalk64";
-    fStackWalk64 =
-      (func_StackWalk64*)rd->fGetProcAddress( symMod,stackwalk64 );
+    fStackWalk64 = rd->fGetProcAddress( symMod,stackwalk64 );
+    char symcleanup[] = "SymCleanup";
+    fSymCleanup = rd->fGetProcAddress( symMod,symcleanup );
   }
 
-  if( fStackWalk64 )
+  if( fSymInitialize && fStackWalk64 && fSymCleanup )
   {
-    STACKFRAME64 stack;
-    CONTEXT *context = ep->ContextRecord;
+    CONTEXT context;
+    rd->fMoveMemory( &context,ep->ContextRecord,sizeof(CONTEXT) );
 
+    STACKFRAME64 stack;
     rd->fZeroMemory( &stack,sizeof(STACKFRAME64) );
-    stack.AddrPC.Offset = context->cip;
+    stack.AddrPC.Offset = context.cip;
     stack.AddrPC.Mode = AddrModeFlat;
-    stack.AddrStack.Offset = context->csp;
+    stack.AddrStack.Offset = context.csp;
     stack.AddrStack.Mode = AddrModeFlat;
-    stack.AddrFrame.Offset = context->cfp;
+    stack.AddrFrame.Offset = context.cfp;
     stack.AddrFrame.Mode = AddrModeFlat;
 
     char dll_kernel32[] = "kernel32.dll";
@@ -1663,6 +1669,8 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
       rd->fGetProcAddress( kernel32,getcurrentthread );
     HANDLE thread = fGetCurrentThread();
 
+    fSymInitialize( process,NULL,TRUE );
+
     char symfunctiontableaccess[] = "SymFunctionTableAccess64";
     PFUNCTION_TABLE_ACCESS_ROUTINE64 fSymFunctionTableAccess64 =
       rd->fGetProcAddress( symMod,symfunctiontableaccess );
@@ -1672,7 +1680,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 
     while( count<PTRS )
     {
-      if( !fStackWalk64(MACH_TYPE,process,thread,&stack,context,
+      if( !fStackWalk64(MACH_TYPE,process,thread,&stack,&context,
             NULL,fSymFunctionTableAccess64,fSymGetModuleBase64,NULL) )
         break;
 
@@ -1681,7 +1689,15 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 
       if( !count ) frame++;
       frames[count++] = (void*)frame;
+
+      if( count==1 && rd->opt.useSp )
+      {
+        ULONG_PTR csp = *(ULONG_PTR*)ep->ContextRecord->csp;
+        if( csp ) frames[count++] = (void*)csp;
+      }
     }
+
+    fSymCleanup( process );
   }
   else
 #endif
@@ -1706,6 +1722,11 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   }
   if( count<PTRS )
     rd->fZeroMemory( frames+count,(PTRS-count)*sizeof(void*) );
+
+#if USE_STACKWALK
+  if( symMod )
+    rd->fFreeLibrary( symMod );
+#endif
 
   rd->mwriteMods( rd,ei.aa,ei.aq );
 
@@ -2271,6 +2292,8 @@ static HANDLE inject( HANDLE process,options *opt,char *exePath,textColor *tc )
     (func_LoadLibraryA*)GetProcAddress( kernel32,"LoadLibraryA" );
   data->fLoadLibraryW =
     (func_LoadLibraryW*)GetProcAddress( kernel32,"LoadLibraryW" );
+  data->fFreeLibrary =
+    (func_FreeLibrary*)GetProcAddress( kernel32,"FreeLibrary" );
   data->fGetProcAddress =
     (func_GetProcAddress*)GetProcAddress( kernel32,"GetProcAddress" );
   data->fGetModuleFileName =
