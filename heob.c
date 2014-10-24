@@ -375,9 +375,11 @@ typedef enum
 }
 textColorAtt;
 struct textColor;
+typedef void func_WriteText( struct textColor*,const char*,size_t );
 typedef void func_TextColor( struct textColor*,textColorAtt );
 typedef struct textColor
 {
+  func_WriteText *fWriteText;
   func_TextColor *fTextColor;
   HANDLE out;
   union {
@@ -400,14 +402,12 @@ static __attribute__((noinline)) void mprintf(
   va_list vl;
   va_start( vl,format );
   const char *ptr = format;
-  HANDLE out = tc->out;
-  DWORD written;
   while( ptr[0] )
   {
     if( ptr[0]=='%' && ptr[1] )
     {
       if( ptr>format )
-        WriteFile( out,format,ptr-format,&written,NULL );
+        tc->fWriteText( tc,format,ptr-format );
       switch( ptr[1] )
       {
         case 's':
@@ -417,7 +417,7 @@ static __attribute__((noinline)) void mprintf(
             {
               size_t l = 0;
               while( arg[l] ) l++;
-              WriteFile( out,arg,l,&written,NULL );
+              tc->fWriteText( tc,arg,l );
             }
           }
           break;
@@ -452,7 +452,7 @@ static __attribute__((noinline)) void mprintf(
             }
             if( minus )
               (--start)[0] = '-';
-            WriteFile( out,start,end-start,&written,NULL );
+            tc->fWriteText( tc,start,end-start );
           }
           break;
 
@@ -484,7 +484,7 @@ static __attribute__((noinline)) void mprintf(
               else
                 end++[0] = bits + '0';
             }
-            WriteFile( out,str,end-str,&written,NULL );
+            tc->fWriteText( tc,str,end-str );
           }
           break;
 
@@ -506,7 +506,7 @@ static __attribute__((noinline)) void mprintf(
     ptr++;
   }
   if( ptr>format )
-    WriteFile( out,format,ptr-format,&written,NULL );
+    tc->fWriteText( tc,format,ptr-format );
   va_end( vl );
 }
 #define printf(a...) mprintf(tc,a)
@@ -560,6 +560,11 @@ static const void *mmemchr( const void *p,int ch,size_t s )
 #define memchr mmemchr
 
 
+static void WriteText( textColor *tc,const char *t,size_t l )
+{
+  DWORD written;
+  WriteFile( tc->out,t,l,&written,NULL );
+}
 static void TextColorConsole( textColor *tc,textColorAtt color )
 {
   SetConsoleTextAttribute( tc->out,tc->colors[color] );
@@ -571,6 +576,32 @@ static void TextColorTerminal( textColor *tc,textColorAtt color )
     (c/10)%10+'0',c%10+'0','m' };
   DWORD written;
   WriteFile( tc->out,text,sizeof(text),&written,NULL );
+}
+static void WriteTextHtml( textColor *tc,const char *t,size_t l )
+{
+  const char *end = t + l;
+  const char *next;
+  char lt[] = "&lt;";
+  char gt[] = "&gt;";
+  char amp[] = "&amp;";
+  DWORD written;
+  for( next=t; next<end; next++ )
+  {
+    char c = next[0];
+    if( c!='<' && c!='>' && c!='&' ) continue;
+
+    if( next>t )
+      WriteFile( tc->out,t,next-t,&written,NULL );
+    if( c=='<' )
+      WriteFile( tc->out,lt,sizeof(lt)-1,&written,NULL );
+    else if( c=='>' )
+      WriteFile( tc->out,gt,sizeof(gt)-1,&written,NULL );
+    else
+      WriteFile( tc->out,amp,sizeof(amp)-1,&written,NULL );
+    t = next + 1;
+  }
+  if( next>t )
+    WriteFile( tc->out,t,next-t,&written,NULL );
 }
 static void TextColorHtml( textColor *tc,textColorAtt color )
 {
@@ -594,6 +625,7 @@ static void TextColorHtml( textColor *tc,textColorAtt color )
 }
 static void checkOutputVariant( textColor *tc,const char *cmdLine )
 {
+  tc->fWriteText = &WriteText;
   tc->fTextColor = NULL;
   tc->out = GetStdHandle( STD_OUTPUT_HANDLE );
   tc->color = ATT_NORMAL;
@@ -693,9 +725,10 @@ static void checkOutputVariant( textColor *tc,const char *cmdLine )
           "<pre>\n";
         DWORD written;
         WriteFile( tc->out,styleInit,sizeof(styleInit)-1,&written,NULL );
-        WriteFile( tc->out,cmdLine,lstrlen(cmdLine),&written,NULL );
+        WriteTextHtml( tc,cmdLine,lstrlen(cmdLine) );
         WriteFile( tc->out,styleInit2,sizeof(styleInit2)-1,&written,NULL );
 
+        tc->fWriteText = &WriteTextHtml;
         tc->fTextColor = &TextColorHtml;
 
         tc->styles[ATT_NORMAL]  = NULL;
@@ -2721,8 +2754,7 @@ static void locFunc(
                   {
                     if( i==lineno ) printf( "%c>",ATT_SECTION );
                     printf( "\t" );
-                    DWORD written;
-                    WriteFile( tc->out,bol,eol-bol,&written,NULL );
+                    tc->fWriteText( tc,bol,eol-bol );
                     if( i==lineno ) printf( "%c",ATT_NORMAL );
                   }
 
