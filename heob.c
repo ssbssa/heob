@@ -2548,7 +2548,7 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
     rd->fVirtualProtect( mbi.BaseAddress,mbi.RegionSize,
         PAGE_EXECUTE_READWRITE,&mbi.Protect );
     rd->mfixDataFuncAddr( fp,
-        (char*)(mbi.BaseAddress+mbi.RegionSize)-(char*)fp,dataPtr );
+        ((char*)mbi.BaseAddress+mbi.RegionSize)-(char*)fp,dataPtr );
     rd->fVirtualProtect( mbi.BaseAddress,mbi.RegionSize,
         mbi.Protect,&mbi.Protect );
 #else
