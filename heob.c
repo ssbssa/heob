@@ -1620,6 +1620,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
         rd->fMoveMemory( &ei.aa[1],a,sizeof(allocation) );
         ei.aq++;
 
+        j = 0;
         break;
       }
     }
