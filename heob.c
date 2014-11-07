@@ -176,6 +176,8 @@ typedef void func_replaceModFuncs( struct remoteData* );
 typedef void *func_pm_alloc( struct remoteData*,size_t );
 typedef void func_pm_free( struct remoteData*,void* );
 typedef size_t func_pm_alloc_size( struct remoteData*,void* );
+typedef allocation *func_find_allocation( char* );
+typedef freed *func_find_freed( char* );
 
 enum
 {
@@ -332,6 +334,8 @@ typedef struct remoteData
 #endif
   func_writeMods *mwriteMods;
   func_exitWait *mexitWait;
+  func_find_allocation *mfind_allocation;
+  func_find_freed *mfind_freed;
 
   HANDLE master;
   HANDLE initFinished;
@@ -1096,14 +1100,14 @@ static wchar_t *new_wtempnam( wchar_t *dir,wchar_t *prefix )
   return( tn );
 }
 
-static VOID WINAPI new_ExitProcess( UINT c )
+__declspec(dllexport) VOID heob_exit( UINT c )
 {
   GET_REMOTEDATA( rd );
 
   int type;
   DWORD written;
 #if WRITE_DEBUG_STRINGS
-  char t[] = "called: new_ExitProcess\n";
+  char t[] = "called: heob_exit\n";
   type = WRITE_STRING;
   rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
   rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
@@ -1594,65 +1598,20 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   {
     char *addr = (char*)ep->ExceptionRecord->ExceptionInformation[1];
 
-    int i,j;
-    splitAllocation *sa;
-    for( j=SPLIT_MASK,sa=rd->splits; j>=0;
-        j--,sa++ ) for( i=sa->alloc_q-1; i>=0; i-- )
+    allocation *a = rd->mfind_allocation( addr );
+    if( a )
     {
-      allocation *a = sa->alloc_a + i;
-
-      char *ptr = a->ptr;
-      char *noAccessStart;
-      char *noAccessEnd;
-      if( rd->opt.protect==1 )
-      {
-        noAccessStart = ptr + a->size;
-        noAccessEnd = noAccessStart + rd->pageSize;
-      }
-      else
-      {
-        noAccessStart = ptr - rd->pageSize;
-        noAccessEnd = ptr;
-      }
-
-      if( addr>=noAccessStart && addr<noAccessEnd )
-      {
-        rd->fMoveMemory( &ei.aa[1],a,sizeof(allocation) );
-        ei.aq++;
-
-        j = 0;
-        break;
-      }
+      rd->fMoveMemory( &ei.aa[1],a,sizeof(allocation) );
+      ei.aq++;
     }
-    if( i<0 )
+    else
     {
-      for( i=rd->freed_q-1; i>=0; i-- )
+      freed *f = rd->mfind_freed( addr );
+      if( f )
       {
-        freed *f = rd->freed_a + i;
-
-        char *ptr = f->a.ptr;
-        size_t size = f->a.size;
-        char *noAccessStart;
-        char *noAccessEnd;
-        if( rd->opt.protect==1 )
-        {
-          noAccessStart = ptr - ( ((uintptr_t)ptr)%rd->pageSize );
-          noAccessEnd = ptr + f->a.size + rd->pageSize;
-        }
-        else
-        {
-          noAccessStart = ptr - rd->pageSize;
-          noAccessEnd = ptr + ( size?(size-1)/rd->pageSize+1:0 )*rd->pageSize;
-        }
-
-        if( addr>=noAccessStart && addr<noAccessEnd )
-        {
-          rd->fMoveMemory( &ei.aa[1],&f->a,sizeof(allocation) );
-          rd->fMoveMemory( &ei.aa[2].frames,&f->frames,PTRS*sizeof(void*) );
-          ei.aq += 2;
-
-          break;
-        }
+        rd->fMoveMemory( &ei.aa[1],&f->a,sizeof(allocation) );
+        rd->fMoveMemory( &ei.aa[2].frames,&f->frames,PTRS*sizeof(void*) );
+        ei.aq += 2;
       }
     }
   }
@@ -2270,6 +2229,70 @@ static void exitWait( struct remoteData *rd,UINT c )
 }
 
 
+__declspec(dllexport) allocation *heob_find_allocation( char *addr )
+{
+  GET_REMOTEDATA( rd );
+
+  int i,j;
+  splitAllocation *sa;
+  for( j=SPLIT_MASK,sa=rd->splits; j>=0; j--,sa++ )
+    for( i=sa->alloc_q-1; i>=0; i-- )
+    {
+      allocation *a = sa->alloc_a + i;
+
+      char *ptr = a->ptr;
+      char *noAccessStart;
+      char *noAccessEnd;
+      if( rd->opt.protect==1 )
+      {
+        noAccessStart = ptr + a->size;
+        noAccessEnd = noAccessStart + rd->pageSize;
+      }
+      else
+      {
+        noAccessStart = ptr - rd->pageSize;
+        noAccessEnd = ptr;
+      }
+
+      if( addr>=noAccessStart && addr<noAccessEnd )
+        return( a );
+    }
+
+  return( NULL );
+}
+
+__declspec(dllexport) freed *heob_find_freed( char *addr )
+{
+  GET_REMOTEDATA( rd );
+
+  int i;
+  for( i=rd->freed_q-1; i>=0; i-- )
+  {
+    freed *f = rd->freed_a + i;
+
+    char *ptr = f->a.ptr;
+    size_t size = f->a.size;
+    char *noAccessStart;
+    char *noAccessEnd;
+    if( rd->opt.protect==1 )
+    {
+      noAccessStart = ptr - ( ((uintptr_t)ptr)%rd->pageSize );
+      noAccessEnd = ptr + f->a.size + rd->pageSize;
+    }
+    else
+    {
+      noAccessStart = ptr - rd->pageSize;
+      noAccessEnd = ptr + ( size?(size-1)/rd->pageSize+1:0 )*rd->pageSize;
+    }
+
+    if( addr>=noAccessStart && addr<noAccessEnd )
+      return( f );
+  }
+
+  return( NULL );
+}
+
+
 static DWORD WINAPI remoteCall( remoteData *rd )
 {
   HMODULE app = rd->fLoadLibraryW( rd->exePath );
@@ -2517,7 +2540,7 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
     { &new_wfullpath               ,&rd->mwfullpath               },
     { &new_tempnam                 ,&rd->mtempnam                 },
     { &new_wtempnam                ,&rd->mwtempnam                },
-    { &new_ExitProcess             ,&rd->mExitProcess             },
+    { &heob_exit                   ,&rd->mExitProcess             },
     { &protect_malloc              ,&rd->pmalloc                  },
     { &protect_calloc              ,&rd->pcalloc                  },
     { &protect_free                ,&rd->pfree                    },
@@ -2535,6 +2558,8 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
     { &exceptionWalker             ,&exceptionWalkerV             },
     { &new_LoadLibraryA            ,&rd->mLoadLibraryA            },
     { &new_LoadLibraryW            ,&rd->mLoadLibraryW            },
+    { &heob_find_allocation        ,&rd->mfind_allocation         },
+    { &heob_find_freed             ,&rd->mfind_freed              },
   };
 
   for( i=0; i<sizeof(fix_funcs)/sizeof(fix_funcs[0]); i++ )
