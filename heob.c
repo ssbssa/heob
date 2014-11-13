@@ -2293,7 +2293,8 @@ __declspec(dllexport) freed *heob_find_freed( char *addr )
 }
 
 
-static DWORD WINAPI remoteCall( remoteData *rd )
+static DWORD WINAPI __attribute__((section("heob$1"))) remoteCall(
+    remoteData *rd )
 {
   HMODULE app = rd->fLoadLibraryW( rd->exePath );
   char inj_name[] = "inj";
@@ -2308,7 +2309,8 @@ static DWORD WINAPI remoteCall( remoteData *rd )
 }
 
 
-static HANDLE inject( HANDLE process,options *opt,char *exePath,textColor *tc )
+static HANDLE __attribute__((section("heob$2"))) inject(
+    HANDLE process,options *opt,char *exePath,textColor *tc )
 {
   size_t funcSize = (size_t)&inject - (size_t)&remoteCall;
   size_t fullSize = funcSize + sizeof(remoteData);
