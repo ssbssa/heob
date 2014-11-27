@@ -621,9 +621,7 @@ static void TextColorHtml( textColor *tc,textColorAtt color )
     const char *style = tc->styles[color];
     char span2[] = "\">";
     WriteFile( tc->out,span1,sizeof(span1)-1,&written,NULL );
-    size_t len;
-    for( len=0; style[len]; len++ );
-    WriteFile( tc->out,style,len,&written,NULL );
+    WriteFile( tc->out,style,lstrlen(style),&written,NULL );
     WriteFile( tc->out,span2,sizeof(span2)-1,&written,NULL );
   }
 }
