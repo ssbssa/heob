@@ -660,7 +660,7 @@ static void checkOutputVariant( textColor *tc,const char *cmdLine )
     ObjectNameInformation=1,
   }
   OBJECT_INFORMATION_CLASS;
-  typedef LONG func_NtQueryObject(
+  typedef LONG NTAPI func_NtQueryObject(
       HANDLE,OBJECT_INFORMATION_CLASS,PVOID,ULONG,PULONG );
   func_NtQueryObject *fNtQueryObject =
     (func_NtQueryObject*)GetProcAddress( ntdll,"NtQueryObject" );
