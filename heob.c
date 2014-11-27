@@ -27,6 +27,11 @@
 #define WRITE_DEBUG_STRINGS 0
 
 
+#define NOINLINE __attribute__((noinline))
+#define CODE_SEG(seg) __attribute__((section(seg)))
+#define DEF_SEG()
+
+
 typedef HMODULE WINAPI func_LoadLibraryA( LPCSTR );
 typedef HMODULE WINAPI func_LoadLibraryW( LPCWSTR );
 typedef BOOL WINAPI func_FreeLibrary( HMODULE );
@@ -400,8 +405,7 @@ VOID WINAPI RtlMoveMemory( PVOID,const VOID*,SIZE_T );
 #undef RtlZeroMemory
 VOID WINAPI RtlZeroMemory( PVOID,SIZE_T );
 
-static __attribute__((noinline)) void mprintf(
-    textColor *tc,const char *format,... )
+static NOINLINE void mprintf( textColor *tc,const char *format,... )
 {
   va_list vl;
   va_start( vl,format );
@@ -515,7 +519,7 @@ static __attribute__((noinline)) void mprintf(
 }
 #define printf(a...) mprintf(tc,a)
 
-static __attribute__((noinline)) char *mstrchr( const char *s,char c )
+static NOINLINE char *mstrchr( const char *s,char c )
 {
   for( ; *s; s++ )
     if( *s==c ) return( (char*)s );
@@ -523,7 +527,7 @@ static __attribute__((noinline)) char *mstrchr( const char *s,char c )
 }
 #define strchr mstrchr
 
-static __attribute__((noinline)) char *mstrrchr( const char *s,char c )
+static NOINLINE char *mstrrchr( const char *s,char c )
 {
   char *ret = NULL;
   for( ; *s; s++ )
@@ -532,7 +536,7 @@ static __attribute__((noinline)) char *mstrrchr( const char *s,char c )
 }
 #define strrchr mstrrchr
 
-static __attribute__((noinline)) int matoi( const char *s )
+static NOINLINE int matoi( const char *s )
 {
   int ret = 0;
   for( ; *s>='0' && *s<='9'; s++ )
@@ -2290,8 +2294,7 @@ __declspec(dllexport) freed *heob_find_freed( char *addr )
 }
 
 
-static DWORD WINAPI __attribute__((section("heob$1"))) remoteCall(
-    remoteData *rd )
+static DWORD WINAPI CODE_SEG("heob$1") remoteCall( remoteData *rd )
 {
   HMODULE app = rd->fLoadLibraryW( rd->exePath );
   char inj_name[] = "inj";
@@ -2306,7 +2309,7 @@ static DWORD WINAPI __attribute__((section("heob$1"))) remoteCall(
 }
 
 
-static HANDLE __attribute__((section("heob$2"))) inject(
+static HANDLE CODE_SEG("heob$2") inject(
     HANDLE process,options *opt,char *exePath,textColor *tc )
 {
   size_t funcSize = (size_t)&inject - (size_t)&remoteCall;
@@ -2451,6 +2454,8 @@ static HANDLE __attribute__((section("heob$2"))) inject(
 
   return( readPipe );
 }
+DEF_SEG()
+
 
 __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
 {
