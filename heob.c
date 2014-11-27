@@ -1799,18 +1799,17 @@ static HMODULE replaceFuncs( remoteData *rd,HMODULE app,
       repModName = curModName;
       repModule = curModule;
 
-      MEMORY_BASIC_INFORMATION mbi;
-      rd->fVirtualQuery( thunk,&mbi,sizeof(MEMORY_BASIC_INFORMATION) );
-      if( !rd->fVirtualProtect(mbi.BaseAddress,mbi.RegionSize,
-            PAGE_EXECUTE_READWRITE,&mbi.Protect) )
+      DWORD prot;
+      if( !rd->fVirtualProtect(thunk,sizeof(size_t),
+            PAGE_EXECUTE_READWRITE,&prot) )
         break;
 
       if( !*origFunc )
         *origFunc = (void*)thunk->u1.Function;
       thunk->u1.Function = (DWORD_PTR)myFunc;
 
-      if( !rd->fVirtualProtect(mbi.BaseAddress,mbi.RegionSize,
-            mbi.Protect,&mbi.Protect) )
+      if( !rd->fVirtualProtect(thunk,sizeof(size_t),
+            prot,&prot) )
         break;
     }
 
@@ -2510,13 +2509,12 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
   }
 
   {
-    MEMORY_BASIC_INFORMATION mbi;
-    rd->fVirtualQuery( dataPtr,&mbi,sizeof(MEMORY_BASIC_INFORMATION) );
-    rd->fVirtualProtect( mbi.BaseAddress,mbi.RegionSize,
-        PAGE_EXECUTE_READWRITE,&mbi.Protect );
+    DWORD prot;
+    rd->fVirtualProtect( dataPtr,sizeof(void*),
+        PAGE_EXECUTE_READWRITE,&prot );
     *dataPtr = rd;
-    rd->fVirtualProtect( mbi.BaseAddress,mbi.RegionSize,
-        mbi.Protect,&mbi.Protect );
+    rd->fVirtualProtect( dataPtr,sizeof(void*),
+        prot,&prot );
   }
 
   LONG WINAPI (*exceptionWalkerV)( LPEXCEPTION_POINTERS );
@@ -2622,13 +2620,12 @@ __declspec(dllexport) DWORD inj( remoteData *rd,unsigned char *func_addr )
       0xc3              // retq
     };
 #endif
-    MEMORY_BASIC_INFORMATION mbi;
-    rd->fVirtualQuery( fp,&mbi,sizeof(MEMORY_BASIC_INFORMATION) );
-    rd->fVirtualProtect( mbi.BaseAddress,mbi.RegionSize,
-        PAGE_EXECUTE_READWRITE,&mbi.Protect );
+    DWORD prot;
+    rd->fVirtualProtect( fp,sizeof(doNothing),
+        PAGE_EXECUTE_READWRITE,&prot );
     rd->fMoveMemory( fp,doNothing,sizeof(doNothing) );
-    rd->fVirtualProtect( mbi.BaseAddress,mbi.RegionSize,
-        mbi.Protect,&mbi.Protect );
+    rd->fVirtualProtect( fp,sizeof(doNothing),
+        prot,&prot );
   }
 
   rd->maddModule( rd,rd->fGetModuleHandle(NULL) );
