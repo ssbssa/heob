@@ -42,35 +42,12 @@ typedef HMODULE WINAPI func_LoadLibraryA( LPCSTR );
 typedef HMODULE WINAPI func_LoadLibraryW( LPCWSTR );
 typedef BOOL WINAPI func_FreeLibrary( HMODULE );
 typedef LPVOID WINAPI func_GetProcAddress( HMODULE,LPCSTR );
-typedef BOOL WINAPI func_WriteFile( HANDLE,LPCVOID,DWORD,LPDWORD,LPOVERLAPPED );
-typedef HMODULE WINAPI func_GetModuleHandle( LPCSTR );
-typedef SIZE_T WINAPI func_VirtualQuery(
-    LPCVOID,PMEMORY_BASIC_INFORMATION,SIZE_T );
 typedef BOOL WINAPI func_VirtualProtect( LPVOID,SIZE_T,DWORD,PDWORD );
 typedef HANDLE WINAPI func_GetCurrentProcess( VOID );
 typedef BOOL WINAPI func_FlushInstructionCache( HANDLE,LPCVOID,SIZE_T );
-typedef LPVOID WINAPI func_VirtualAlloc( LPVOID,SIZE_T,DWORD,DWORD );
-typedef BOOL WINAPI func_VirtualFree( LPVOID,SIZE_T,DWORD );
-typedef VOID WINAPI func_Sleep( DWORD );
-typedef BOOL WINAPI func_SetEvent( HANDLE );
 typedef VOID WINAPI func_ExitProcess( UINT );
-typedef USHORT WINAPI func_CaptureStackBackTrace( ULONG,ULONG,PVOID*,PULONG );
-typedef DWORD WINAPI func_GetModuleFileNameA( HMODULE,LPSTR,DWORD );
-typedef VOID WINAPI func_CriticalSection( LPCRITICAL_SECTION );
-typedef LPVOID WINAPI func_HeapAlloc( HANDLE,DWORD,SIZE_T );
-typedef LPVOID WINAPI func_HeapReAlloc( HANDLE,DWORD,LPVOID,SIZE_T );
-typedef BOOL WINAPI func_HeapFree( HANDLE,DWORD,LPVOID );
-typedef HANDLE WINAPI func_GetProcessHeap( VOID );
-typedef VOID WINAPI func_ZeroMemory( PVOID,SIZE_T );
-typedef VOID WINAPI func_MoveMemory( PVOID,const VOID*,SIZE_T );
-typedef VOID WINAPI func_FillMemory( PVOID,SIZE_T,UCHAR );
-typedef VOID WINAPI func_GetSystemInfo( LPSYSTEM_INFO );
 typedef LPTOP_LEVEL_EXCEPTION_FILTER WINAPI func_SetUnhandledExceptionFilter(
     LPTOP_LEVEL_EXCEPTION_FILTER );
-typedef BOOL WINAPI func_IsBadReadPtr( const VOID*,UINT_PTR );
-typedef HANDLE WINAPI func_GetStdHandle( DWORD );
-typedef BOOL WINAPI func_ReadConsoleInput(
-    HANDLE,PINPUT_RECORD,DWORD,LPDWORD );
 
 #ifndef NO_DBGHELP
 typedef DWORD WINAPI func_SymSetOptions( DWORD );
@@ -94,10 +71,6 @@ typedef int func_dwstOfFile( const char*,uint64_t,uint64_t*,int,
     void(*)(uint64_t,const char*,int,const char*,struct dbghelp*),
     struct dbghelp* );
 #endif
-
-typedef int WINAPI func_strlen( LPCSTR );
-typedef int WINAPI func_strlenW( LPCWSTR );
-typedef int WINAPI func_strcmp( LPCSTR,LPCSTR );
 
 typedef void *func_malloc( size_t );
 typedef void *func_calloc( size_t,size_t );
@@ -211,44 +184,15 @@ options;
 
 typedef struct remoteData
 {
-  func_WriteFile *fWriteFile;
-  func_GetModuleHandle *fGetModuleHandle;
-  func_VirtualQuery *fVirtualQuery;
+  HMODULE kernel32;
   func_VirtualProtect *fVirtualProtect;
   func_GetCurrentProcess *fGetCurrentProcess;
   func_FlushInstructionCache *fFlushInstructionCache;
-  func_VirtualAlloc *fVirtualAlloc;
-  func_VirtualFree *fVirtualFree;
-  func_Sleep *fSleep;
-  func_SetEvent *fSetEvent;
-  func_CaptureStackBackTrace *fCaptureStackBackTrace;
   func_LoadLibraryA *fLoadLibraryA;
   func_LoadLibraryW *fLoadLibraryW;
   func_FreeLibrary *fFreeLibrary;
   func_GetProcAddress *fGetProcAddress;
-  func_GetModuleFileNameA *fGetModuleFileName;
-  func_CriticalSection *fInitializeCriticalSection;
-  func_CriticalSection *fEnterCriticalSection;
-  func_CriticalSection *fLeaveCriticalSection;
-  func_HeapAlloc *fHeapAlloc;
-  func_HeapReAlloc *fHeapReAlloc;
-  func_HeapFree *fHeapFree;
-  func_GetProcessHeap *fGetProcessHeap;
-  func_ZeroMemory *fZeroMemory;
-  func_MoveMemory *fMoveMemory;
-  func_FillMemory *fFillMemory;
-  func_GetSystemInfo *fGetSystemInfo;
   func_SetUnhandledExceptionFilter *fSetUnhandledExceptionFilter;
-  func_IsBadReadPtr *fIsBadReadPtr;
-  func_SetEvent *fCloseHandle;
-  func_GetStdHandle *fGetStdHandle;
-  func_SetEvent *fFlushConsoleInputBuffer;
-  func_ReadConsoleInput *fReadConsoleInput;
-
-  func_strlen *fstrlen;
-  func_strlenW *fstrlenW;
-  func_strcmp *fstrcmp;
-  func_strcmp *fstrcmpi;
 
   func_malloc *fmalloc;
   func_calloc *fcalloc;
@@ -345,6 +289,8 @@ remoteData *g_rd = NULL;
 VOID WINAPI RtlMoveMemory( PVOID,const VOID*,SIZE_T );
 #undef RtlZeroMemory
 VOID WINAPI RtlZeroMemory( PVOID,SIZE_T );
+#undef RtlFillMemory
+VOID WINAPI RtlFillMemory( PVOID,SIZE_T,UCHAR );
 
 static NOINLINE void mprintf( textColor *tc,const char *format,... )
 {
@@ -719,8 +665,8 @@ static void *new_malloc( size_t s )
   char t[] = "called: new_malloc\n";
   DWORD written;
   int type = WRITE_STRING;
-  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
 #endif
 
   return( b );
@@ -737,8 +683,8 @@ static void *new_calloc( size_t n,size_t s )
   char t[] = "called: new_calloc\n";
   DWORD written;
   int type = WRITE_STRING;
-  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
 #endif
 
   return( b );
@@ -755,8 +701,8 @@ static void new_free( void *b )
   char t[] = "called: new_free\n";
   DWORD written;
   int type = WRITE_STRING;
-  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
 #endif
 }
 
@@ -771,8 +717,8 @@ static void *new_realloc( void *b,size_t s )
   char t[] = "called: new_realloc\n";
   DWORD written;
   int type = WRITE_STRING;
-  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
 #endif
 
   return( nb );
@@ -783,14 +729,14 @@ static char *new_strdup( const char *s )
   GET_REMOTEDATA( rd );
   char *b = rd->fstrdup( s );
 
-  trackAllocs( NULL,b,rd->fstrlen(s)+1,AT_MALLOC );
+  trackAllocs( NULL,b,lstrlen(s)+1,AT_MALLOC );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_strdup\n";
   DWORD written;
   int type = WRITE_STRING;
-  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
 #endif
 
   return( b );
@@ -801,14 +747,14 @@ static wchar_t *new_wcsdup( const wchar_t *s )
   GET_REMOTEDATA( rd );
   wchar_t *b = rd->fwcsdup( s );
 
-  trackAllocs( NULL,b,(rd->fstrlenW(s)+1)*2,AT_MALLOC );
+  trackAllocs( NULL,b,(lstrlenW(s)+1)*2,AT_MALLOC );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_wcsdup\n";
   DWORD written;
   int type = WRITE_STRING;
-  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
 #endif
 
   return( b );
@@ -825,8 +771,8 @@ static void *new_op_new( size_t s )
   char t[] = "called: new_op_new\n";
   DWORD written;
   int type = WRITE_STRING;
-  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
 #endif
 
   return( b );
@@ -843,8 +789,8 @@ static void new_op_delete( void *b )
   char t[] = "called: new_op_delete\n";
   DWORD written;
   int type = WRITE_STRING;
-  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
 #endif
 }
 
@@ -859,8 +805,8 @@ static void *new_op_new_a( size_t s )
   char t[] = "called: new_op_new_a\n";
   DWORD written;
   int type = WRITE_STRING;
-  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
 #endif
 
   return( b );
@@ -877,8 +823,8 @@ static void new_op_delete_a( void *b )
   char t[] = "called: new_op_delete_a\n";
   DWORD written;
   int type = WRITE_STRING;
-  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
 #endif
 }
 
@@ -888,7 +834,7 @@ static char *new_getcwd( char *buffer,int maxlen )
   char *cwd = rd->fgetcwd( buffer,maxlen );
   if( !cwd || buffer ) return( cwd );
 
-  size_t l = rd->fstrlen( cwd ) + 1;
+  size_t l = lstrlen( cwd ) + 1;
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
   trackAllocs( NULL,cwd,l,AT_MALLOC );
 
@@ -896,8 +842,8 @@ static char *new_getcwd( char *buffer,int maxlen )
   char t[] = "called: new_getcwd\n";
   DWORD written;
   int type = WRITE_STRING;
-  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
 #endif
 
   return( cwd );
@@ -909,7 +855,7 @@ static wchar_t *new_wgetcwd( wchar_t *buffer,int maxlen )
   wchar_t *cwd = rd->fwgetcwd( buffer,maxlen );
   if( !cwd || buffer ) return( cwd );
 
-  size_t l = rd->fstrlenW( cwd ) + 1;
+  size_t l = lstrlenW( cwd ) + 1;
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
   trackAllocs( NULL,cwd,l*2,AT_MALLOC );
 
@@ -917,8 +863,8 @@ static wchar_t *new_wgetcwd( wchar_t *buffer,int maxlen )
   char t[] = "called: new_wgetcwd\n";
   DWORD written;
   int type = WRITE_STRING;
-  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
 #endif
 
   return( cwd );
@@ -930,7 +876,7 @@ static char *new_getdcwd( int drive,char *buffer,int maxlen )
   char *cwd = rd->fgetdcwd( drive,buffer,maxlen );
   if( !cwd || buffer ) return( cwd );
 
-  size_t l = rd->fstrlen( cwd ) + 1;
+  size_t l = lstrlen( cwd ) + 1;
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
   trackAllocs( NULL,cwd,l,AT_MALLOC );
 
@@ -938,8 +884,8 @@ static char *new_getdcwd( int drive,char *buffer,int maxlen )
   char t[] = "called: new_getdcwd\n";
   DWORD written;
   int type = WRITE_STRING;
-  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
 #endif
 
   return( cwd );
@@ -951,7 +897,7 @@ static wchar_t *new_wgetdcwd( int drive,wchar_t *buffer,int maxlen )
   wchar_t *cwd = rd->fwgetdcwd( drive,buffer,maxlen );
   if( !cwd || buffer ) return( cwd );
 
-  size_t l = rd->fstrlenW( cwd ) + 1;
+  size_t l = lstrlenW( cwd ) + 1;
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
   trackAllocs( NULL,cwd,l*2,AT_MALLOC );
 
@@ -959,8 +905,8 @@ static wchar_t *new_wgetdcwd( int drive,wchar_t *buffer,int maxlen )
   char t[] = "called: new_wgetdcwd\n";
   DWORD written;
   int type = WRITE_STRING;
-  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
 #endif
 
   return( cwd );
@@ -979,8 +925,8 @@ static char *new_fullpath( char *absPath,const char *relPath,
   char t[] = "called: new_fullpath\n";
   DWORD written;
   int type = WRITE_STRING;
-  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
 #endif
 
   return( fp );
@@ -999,8 +945,8 @@ static wchar_t *new_wfullpath( wchar_t *absPath,const wchar_t *relPath,
   char t[] = "called: new_wfullpath\n";
   DWORD written;
   int type = WRITE_STRING;
-  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
 #endif
 
   return( fp );
@@ -1012,15 +958,15 @@ static char *new_tempnam( char *dir,char *prefix )
   char *tn = rd->ftempnam( dir,prefix );
   if( !tn ) return( tn );
 
-  size_t l = rd->fstrlen( tn ) + 1;
+  size_t l = lstrlen( tn ) + 1;
   trackAllocs( NULL,tn,l,AT_MALLOC );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_tempnam\n";
   DWORD written;
   int type = WRITE_STRING;
-  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
 #endif
 
   return( tn );
@@ -1032,15 +978,15 @@ static wchar_t *new_wtempnam( wchar_t *dir,wchar_t *prefix )
   wchar_t *tn = rd->fwtempnam( dir,prefix );
   if( !tn ) return( tn );
 
-  size_t l = rd->fstrlenW( tn ) + 1;
+  size_t l = lstrlenW( tn ) + 1;
   trackAllocs( NULL,tn,l*2,AT_MALLOC );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_wtempnam\n";
   DWORD written;
   int type = WRITE_STRING;
-  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
 #endif
 
   return( tn );
@@ -1055,11 +1001,11 @@ __declspec(dllexport) VOID heob_exit( UINT c )
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: heob_exit\n";
   type = WRITE_STRING;
-  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
 #endif
 
-  rd->fEnterCriticalSection( &rd->cs );
+  EnterCriticalSection( &rd->cs );
 
   if( rd->opt.exitTrace )
     trackAllocs( NULL,(void*)-1,0,AT_EXIT );
@@ -1071,11 +1017,11 @@ __declspec(dllexport) VOID heob_exit( UINT c )
   allocation *alloc_a = NULL;
   if( alloc_q )
   {
-    alloc_a = rd->fHeapAlloc( rd->heap,0,alloc_q*sizeof(allocation) );
+    alloc_a = HeapAlloc( rd->heap,0,alloc_q*sizeof(allocation) );
     if( !alloc_a )
     {
       type = WRITE_MAIN_ALLOC_FAIL;
-      rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
+      WriteFile( rd->master,&type,sizeof(int),&written,NULL );
       exitWait( 1 );
     }
     alloc_q = 0;
@@ -1083,7 +1029,7 @@ __declspec(dllexport) VOID heob_exit( UINT c )
     {
       splitAllocation *sa = rd->splits + i;
       if( !sa->alloc_q ) continue;
-      rd->fMoveMemory( alloc_a+alloc_q,sa->alloc_a,
+      RtlMoveMemory( alloc_a+alloc_q,sa->alloc_a,
           sa->alloc_q*sizeof(allocation) );
       alloc_q += sa->alloc_q;
     }
@@ -1092,18 +1038,18 @@ __declspec(dllexport) VOID heob_exit( UINT c )
   }
 
   type = WRITE_LEAKS;
-  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,&c,sizeof(UINT),&written,NULL );
-  rd->fWriteFile( rd->master,&alloc_q,sizeof(int),&written,NULL );
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,&c,sizeof(UINT),&written,NULL );
+  WriteFile( rd->master,&alloc_q,sizeof(int),&written,NULL );
   if( alloc_q )
   {
-    rd->fWriteFile( rd->master,alloc_a,alloc_q*sizeof(allocation),
+    WriteFile( rd->master,alloc_a,alloc_q*sizeof(allocation),
         &written,NULL );
 
-    rd->fHeapFree( rd->heap,0,alloc_a );
+    HeapFree( rd->heap,0,alloc_a );
   }
 
-  rd->fLeaveCriticalSection( &rd->cs );
+  LeaveCriticalSection( &rd->cs );
 
   exitWait( c );
 }
@@ -1117,16 +1063,16 @@ static HMODULE WINAPI new_LoadLibraryA( LPCSTR name )
   DWORD written;
   char t[] = "called: new_LoadLibraryA\n";
   type = WRITE_STRING;
-  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
 #endif
 
   HMODULE mod = rd->fLoadLibraryA( name );
 
-  rd->fEnterCriticalSection( &rd->cs );
+  EnterCriticalSection( &rd->cs );
   addModule( mod );
   replaceModFuncs();
-  rd->fLeaveCriticalSection( &rd->cs );
+  LeaveCriticalSection( &rd->cs );
 
   return( mod );
 }
@@ -1140,16 +1086,16 @@ static HMODULE WINAPI new_LoadLibraryW( LPCWSTR name )
   DWORD written;
   char t[] = "called: new_LoadLibraryW\n";
   type = WRITE_STRING;
-  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
 #endif
 
   HMODULE mod = rd->fLoadLibraryW( name );
 
-  rd->fEnterCriticalSection( &rd->cs );
+  EnterCriticalSection( &rd->cs );
   addModule( mod );
   replaceModFuncs();
-  rd->fLeaveCriticalSection( &rd->cs );
+  LeaveCriticalSection( &rd->cs );
 
   return( mod );
 }
@@ -1172,7 +1118,7 @@ static void *protect_alloc_m( size_t s )
   DWORD pageSize = rd->pageSize;
   size_t pages = s ? ( s-1 )/pageSize + 2 : 1;
 
-  unsigned char *b = (unsigned char*)rd->fVirtualAlloc(
+  unsigned char *b = (unsigned char*)VirtualAlloc(
       NULL,pages*pageSize,MEM_RESERVE,PAGE_NOACCESS );
   if( !b )
     return( NULL );
@@ -1183,13 +1129,13 @@ static void *protect_alloc_m( size_t s )
     b += pageSize;
 
   if( pages>1 )
-    rd->fVirtualAlloc( b,(pages-1)*pageSize,MEM_COMMIT,PAGE_READWRITE );
+    VirtualAlloc( b,(pages-1)*pageSize,MEM_COMMIT,PAGE_READWRITE );
 
   if( slackSize && rd->opt.slackInit )
   {
     unsigned char *slackStart = b;
     if( rd->opt.protect>1 ) slackStart += s;
-    rd->fFillMemory( slackStart,slackSize,(UCHAR)rd->opt.slackInit );
+    RtlFillMemory( slackStart,slackSize,(UCHAR)rd->opt.slackInit );
   }
 
   if( rd->opt.protect==1 )
@@ -1235,38 +1181,38 @@ static NOINLINE void protect_free_m( void *b )
       int splitIdx = (((uintptr_t)b)>>rd->ptrShift)&SPLIT_MASK;
       splitAllocation *sa = rd->splits + splitIdx;
 
-      rd->fEnterCriticalSection( &rd->cs );
+      EnterCriticalSection( &rd->cs );
 
       int j;
       for( j=sa->alloc_q-1; j>=0 && sa->alloc_a[j].ptr!=b; j-- );
       if( j>=0 )
       {
         allocation aa[2];
-        rd->fMoveMemory( aa,sa->alloc_a+j,sizeof(allocation) );
+        RtlMoveMemory( aa,sa->alloc_a+j,sizeof(allocation) );
         void **frames = aa[1].frames;
-        int ptrs = rd->fCaptureStackBackTrace( 3,PTRS,frames,NULL );
+        int ptrs = CaptureStackBackTrace( 3,PTRS,frames,NULL );
         if( ptrs<PTRS )
-          rd->fZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
+          RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
         aa[1].ptr = slackStart + i;
 
         writeMods( aa,2 );
 
         int type = WRITE_SLACK;
         DWORD written;
-        rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-        rd->fWriteFile( rd->master,aa,2*sizeof(allocation),&written,NULL );
+        WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+        WriteFile( rd->master,aa,2*sizeof(allocation),&written,NULL );
       }
 
-      rd->fLeaveCriticalSection( &rd->cs );
+      LeaveCriticalSection( &rd->cs );
     }
   }
 
   b = (void*)p;
 
-  rd->fVirtualFree( b,pages*pageSize,MEM_DECOMMIT );
+  VirtualFree( b,pages*pageSize,MEM_DECOMMIT );
 
   if( !rd->opt.protectFree )
-    rd->fVirtualFree( b,0,MEM_RELEASE );
+    VirtualFree( b,0,MEM_RELEASE );
 }
 
 static size_t alloc_size( void *p )
@@ -1276,13 +1222,13 @@ static size_t alloc_size( void *p )
   int splitIdx = (((uintptr_t)p)>>rd->ptrShift)&SPLIT_MASK;
   splitAllocation *sa = rd->splits + splitIdx;
 
-  rd->fEnterCriticalSection( &rd->cs );
+  EnterCriticalSection( &rd->cs );
 
   int i;
   for( i=sa->alloc_q-1; i>=0 && sa->alloc_a[i].ptr!=p; i-- );
   size_t s = i>=0 ? sa->alloc_a[i].size : (size_t)-1;
 
-  rd->fLeaveCriticalSection( &rd->cs );
+  LeaveCriticalSection( &rd->cs );
 
   return( s );
 }
@@ -1295,7 +1241,7 @@ static void *protect_malloc( size_t s )
   if( !b ) return( NULL );
 
   if( rd->opt.init )
-    rd->fFillMemory( b,s,(UCHAR)rd->opt.init );
+    RtlFillMemory( b,s,(UCHAR)rd->opt.init );
 
   return( b );
 }
@@ -1331,10 +1277,10 @@ static void *protect_realloc( void *b,size_t s )
 
   size_t cs = os<s ? os : s;
   if( cs )
-    rd->fMoveMemory( nb,b,cs );
+    RtlMoveMemory( nb,b,cs );
 
   if( s>os && rd->opt.init )
-    rd->fFillMemory( ((char*)nb)+os,s-os,(UCHAR)rd->opt.init );
+    RtlFillMemory( ((char*)nb)+os,s-os,(UCHAR)rd->opt.init );
 
   protect_free_m( b );
 
@@ -1343,29 +1289,25 @@ static void *protect_realloc( void *b,size_t s )
 
 static char *protect_strdup( const char *s )
 {
-  GET_REMOTEDATA( rd );
-
-  size_t l = rd->fstrlen( s ) + 1;
+  size_t l = lstrlen( s ) + 1;
 
   char *b = protect_alloc_m( l );
   if( !b ) return( NULL );
 
-  rd->fMoveMemory( b,s,l );
+  RtlMoveMemory( b,s,l );
 
   return( b );
 }
 
 static wchar_t *protect_wcsdup( const wchar_t *s )
 {
-  GET_REMOTEDATA( rd );
-
-  size_t l = rd->fstrlenW( s ) + 1;
+  size_t l = lstrlenW( s ) + 1;
   l *= 2;
 
   wchar_t *b = protect_alloc_m( l );
   if( !b ) return( NULL );
 
-  rd->fMoveMemory( b,s,l );
+  RtlMoveMemory( b,s,l );
 
   return( b );
 }
@@ -1376,12 +1318,12 @@ static char *protect_getcwd( char *buffer,int maxlen )
   char *cwd = rd->ogetcwd( buffer,maxlen );
   if( !cwd || buffer ) return( cwd );
 
-  size_t l = rd->fstrlen( cwd ) + 1;
+  size_t l = lstrlen( cwd ) + 1;
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
 
   char *cwd_copy = protect_alloc_m( l );
   if( cwd_copy )
-    rd->fMoveMemory( cwd_copy,cwd,l );
+    RtlMoveMemory( cwd_copy,cwd,l );
 
   rd->ofree( cwd );
 
@@ -1394,13 +1336,13 @@ static wchar_t *protect_wgetcwd( wchar_t *buffer,int maxlen )
   wchar_t *cwd = rd->owgetcwd( buffer,maxlen );
   if( !cwd || buffer ) return( cwd );
 
-  size_t l = rd->fstrlenW( cwd ) + 1;
+  size_t l = lstrlenW( cwd ) + 1;
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
   l *= 2;
 
   wchar_t *cwd_copy = protect_alloc_m( l );
   if( cwd_copy )
-    rd->fMoveMemory( cwd_copy,cwd,l );
+    RtlMoveMemory( cwd_copy,cwd,l );
 
   rd->ofree( cwd );
 
@@ -1413,12 +1355,12 @@ static char *protect_getdcwd( int drive,char *buffer,int maxlen )
   char *cwd = rd->ogetdcwd( drive,buffer,maxlen );
   if( !cwd || buffer ) return( cwd );
 
-  size_t l = rd->fstrlen( cwd ) + 1;
+  size_t l = lstrlen( cwd ) + 1;
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
 
   char *cwd_copy = protect_alloc_m( l );
   if( cwd_copy )
-    rd->fMoveMemory( cwd_copy,cwd,l );
+    RtlMoveMemory( cwd_copy,cwd,l );
 
   rd->ofree( cwd );
 
@@ -1431,13 +1373,13 @@ static wchar_t *protect_wgetdcwd( int drive,wchar_t *buffer,int maxlen )
   wchar_t *cwd = rd->owgetdcwd( drive,buffer,maxlen );
   if( !cwd || buffer ) return( cwd );
 
-  size_t l = rd->fstrlenW( cwd ) + 1;
+  size_t l = lstrlenW( cwd ) + 1;
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
   l *= 2;
 
   wchar_t *cwd_copy = protect_alloc_m( l );
   if( cwd_copy )
-    rd->fMoveMemory( cwd_copy,cwd,l );
+    RtlMoveMemory( cwd_copy,cwd,l );
 
   rd->ofree( cwd );
 
@@ -1451,11 +1393,11 @@ static char *protect_fullpath( char *absPath,const char *relPath,
   char *fp = rd->ofullpath( absPath,relPath,maxLength );
   if( !fp || absPath ) return( fp );
 
-  size_t l = rd->fstrlen( fp ) + 1;
+  size_t l = lstrlen( fp ) + 1;
 
   char *fp_copy = protect_alloc_m( l );
   if( fp_copy )
-    rd->fMoveMemory( fp_copy,fp,l );
+    RtlMoveMemory( fp_copy,fp,l );
 
   rd->ofree( fp );
 
@@ -1469,12 +1411,12 @@ static wchar_t *protect_wfullpath( wchar_t *absPath,const wchar_t *relPath,
   wchar_t *fp = rd->owfullpath( absPath,relPath,maxLength );
   if( !fp || absPath ) return( fp );
 
-  size_t l = rd->fstrlenW( fp ) + 1;
+  size_t l = lstrlenW( fp ) + 1;
   l *= 2;
 
   wchar_t *fp_copy = protect_alloc_m( l );
   if( fp_copy )
-    rd->fMoveMemory( fp_copy,fp,l );
+    RtlMoveMemory( fp_copy,fp,l );
 
   rd->ofree( fp );
 
@@ -1487,11 +1429,11 @@ static char *protect_tempnam( char *dir,char *prefix )
   char *tn = rd->otempnam( dir,prefix );
   if( !tn ) return( tn );
 
-  size_t l = rd->fstrlen( tn ) + 1;
+  size_t l = lstrlen( tn ) + 1;
 
   char *tn_copy = protect_alloc_m( l );
   if( tn_copy )
-    rd->fMoveMemory( tn_copy,tn,l );
+    RtlMoveMemory( tn_copy,tn,l );
 
   rd->ofree( tn );
 
@@ -1504,12 +1446,12 @@ static wchar_t *protect_wtempnam( wchar_t *dir,wchar_t *prefix )
   wchar_t *tn = rd->owtempnam( dir,prefix );
   if( !tn ) return( tn );
 
-  size_t l = rd->fstrlenW( tn ) + 1;
+  size_t l = lstrlenW( tn ) + 1;
   l *= 2;
 
   wchar_t *tn_copy = protect_alloc_m( l );
   if( tn_copy )
-    rd->fMoveMemory( tn_copy,tn,l );
+    RtlMoveMemory( tn_copy,tn,l );
 
   rd->ofree( tn );
 
@@ -1549,7 +1491,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
     allocation *a = heob_find_allocation( addr );
     if( a )
     {
-      rd->fMoveMemory( &ei.aa[1],a,sizeof(allocation) );
+      RtlMoveMemory( &ei.aa[1],a,sizeof(allocation) );
       ei.aq++;
     }
     else
@@ -1557,8 +1499,8 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
       freed *f = heob_find_freed( addr );
       if( f )
       {
-        rd->fMoveMemory( &ei.aa[1],&f->a,sizeof(allocation) );
-        rd->fMoveMemory( &ei.aa[2].frames,&f->frames,PTRS*sizeof(void*) );
+        RtlMoveMemory( &ei.aa[1],&f->a,sizeof(allocation) );
+        RtlMoveMemory( &ei.aa[2].frames,&f->frames,PTRS*sizeof(void*) );
         ei.aq += 2;
       }
     }
@@ -1588,10 +1530,10 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   if( fSymInitialize && fStackWalk64 && fSymCleanup )
   {
     CONTEXT context;
-    rd->fMoveMemory( &context,ep->ContextRecord,sizeof(CONTEXT) );
+    RtlMoveMemory( &context,ep->ContextRecord,sizeof(CONTEXT) );
 
     STACKFRAME64 stack;
-    rd->fZeroMemory( &stack,sizeof(STACKFRAME64) );
+    RtlZeroMemory( &stack,sizeof(STACKFRAME64) );
     stack.AddrPC.Offset = context.cip;
     stack.AddrPC.Mode = AddrModeFlat;
     stack.AddrStack.Offset = context.csp;
@@ -1599,16 +1541,8 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
     stack.AddrFrame.Offset = context.cfp;
     stack.AddrFrame.Mode = AddrModeFlat;
 
-    char dll_kernel32[] = "kernel32.dll";
-    HMODULE kernel32 = rd->fGetModuleHandle( dll_kernel32 );
-    char getcurrentprocess[] = "GetCurrentProcess";
-    func_GetProcessHeap *fGetCurrentProcess =
-      rd->fGetProcAddress( kernel32,getcurrentprocess );
-    HANDLE process = fGetCurrentProcess();
-    char getcurrentthread[] = "GetCurrentThread";
-    func_GetProcessHeap *fGetCurrentThread =
-      rd->fGetProcAddress( kernel32,getcurrentthread );
-    HANDLE thread = fGetCurrentThread();
+    HANDLE process = GetCurrentProcess();
+    HANDLE thread = GetCurrentThread();
 
     fSymInitialize( process,NULL,TRUE );
 
@@ -1652,7 +1586,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
     ULONG_PTR *sp = (ULONG_PTR*)ep->ContextRecord->cfp;
     while( count<PTRS )
     {
-      if( rd->fIsBadReadPtr(sp,2*sizeof(ULONG_PTR)) || !sp[0] || !sp[1] )
+      if( IsBadReadPtr(sp,2*sizeof(ULONG_PTR)) || !sp[0] || !sp[1] )
         break;
 
       ULONG_PTR *np = (ULONG_PTR*)sp[0];
@@ -1662,7 +1596,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
     }
   }
   if( count<PTRS )
-    rd->fZeroMemory( frames+count,(PTRS-count)*sizeof(void*) );
+    RtlZeroMemory( frames+count,(PTRS-count)*sizeof(void*) );
 
 #if USE_STACKWALK
   if( symMod )
@@ -1671,9 +1605,9 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 
   writeMods( ei.aa,ei.aq );
 
-  rd->fMoveMemory( &ei.er,ep->ExceptionRecord,sizeof(EXCEPTION_RECORD) );
-  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,&ei,sizeof(exceptionInfo),&written,NULL );
+  RtlMoveMemory( &ei.er,ep->ExceptionRecord,sizeof(EXCEPTION_RECORD) );
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,&ei,sizeof(exceptionInfo),&written,NULL );
 
   exitWait( 1 );
 
@@ -1708,12 +1642,12 @@ static HMODULE replaceFuncs( HMODULE app,
       break;
 
     PSTR curModName = (PSTR)REL_PTR( idh,iid[i].Name );
-    if( rd->fIsBadReadPtr(curModName,1) || !curModName[0] ) continue;
-    HMODULE curModule = rd->fGetModuleHandle( curModName );
+    if( IsBadReadPtr(curModName,1) || !curModName[0] ) continue;
+    HMODULE curModule = GetModuleHandle( curModName );
     if( !curModule ) continue;
     if( rd->opt.dlls )
       addModule( curModule );
-    if( called && rd->fstrcmpi(curModName,called) )
+    if( called && lstrcmpi(curModName,called) )
       continue;
 
     PIMAGE_THUNK_DATA thunk =
@@ -1739,7 +1673,7 @@ static HMODULE replaceFuncs( HMODULE app,
       unsigned int j;
       for( j=0; j<count; j++ )
       {
-        if( rd->fstrcmp((LPCSTR)import->Name,rep[j].funcName) ) continue;
+        if( lstrcmp((LPCSTR)import->Name,rep[j].funcName) ) continue;
         origFunc = rep[j].origFunc;
         myFunc = rep[j].myFunc;
         break;
@@ -1750,7 +1684,7 @@ static HMODULE replaceFuncs( HMODULE app,
       repModule = curModule;
 
       DWORD prot;
-      if( !rd->fVirtualProtect(thunk,sizeof(size_t),
+      if( !VirtualProtect(thunk,sizeof(size_t),
             PAGE_EXECUTE_READWRITE,&prot) )
         break;
 
@@ -1758,7 +1692,7 @@ static HMODULE replaceFuncs( HMODULE app,
         *origFunc = (void*)thunk->u1.Function;
       thunk->u1.Function = (DWORD_PTR)myFunc;
 
-      if( !rd->fVirtualProtect(thunk,sizeof(size_t),
+      if( !VirtualProtect(thunk,sizeof(size_t),
             prot,&prot) )
         break;
     }
@@ -1782,16 +1716,16 @@ static void addModule( HMODULE mod )
     rd->mod_s += 64;
     HMODULE *mod_an;
     if( !rd->mod_a )
-      mod_an = rd->fHeapAlloc(
+      mod_an = HeapAlloc(
           rd->heap,0,rd->mod_s*sizeof(HMODULE) );
     else
-      mod_an = rd->fHeapReAlloc(
+      mod_an = HeapReAlloc(
           rd->heap,0,rd->mod_a,rd->mod_s*sizeof(HMODULE) );
     if( !mod_an )
     {
       DWORD written;
       int type = WRITE_MAIN_ALLOC_FAIL;
-      rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
+      WriteFile( rd->master,&type,sizeof(int),&written,NULL );
       exitWait( 1 );
     }
     rd->mod_a = mod_an;
@@ -1913,7 +1847,7 @@ static NOINLINE void trackAllocs(
     int splitIdx = (((uintptr_t)free_ptr)>>rd->ptrShift)&SPLIT_MASK;
     splitAllocation *sa = rd->splits + splitIdx;
 
-    rd->fEnterCriticalSection( &rd->cs );
+    EnterCriticalSection( &rd->cs );
 
     int i;
     for( i=sa->alloc_q-1; i>=0 && sa->alloc_a[i].ptr!=free_ptr; i-- );
@@ -1926,16 +1860,16 @@ static NOINLINE void trackAllocs(
           rd->freed_s += 65536;
           freed *freed_an;
           if( !rd->freed_a )
-            freed_an = rd->fHeapAlloc(
+            freed_an = HeapAlloc(
                 rd->heap,0,rd->freed_s*sizeof(freed) );
           else
-            freed_an = rd->fHeapReAlloc(
+            freed_an = HeapReAlloc(
                 rd->heap,0,rd->freed_a,rd->freed_s*sizeof(freed) );
           if( !freed_an )
           {
             DWORD written;
             int type = WRITE_MAIN_ALLOC_FAIL;
-            rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
+            WriteFile( rd->master,&type,sizeof(int),&written,NULL );
             exitWait( 1 );
           }
           rd->freed_a = freed_an;
@@ -1943,22 +1877,22 @@ static NOINLINE void trackAllocs(
 
         freed *f = rd->freed_a + rd->freed_q;
         rd->freed_q++;
-        rd->fMoveMemory( &f->a,&sa->alloc_a[i],sizeof(allocation) );
+        RtlMoveMemory( &f->a,&sa->alloc_a[i],sizeof(allocation) );
 
         void **frames = f->frames;
-        int ptrs = rd->fCaptureStackBackTrace( 2,PTRS,frames,NULL );
+        int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
         if( ptrs<PTRS )
-          rd->fZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
+          RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
       }
 
       if( rd->opt.allocMethod && sa->alloc_a[i].at!=at )
       {
         allocation aa[2];
-        rd->fMoveMemory( aa,sa->alloc_a+i,sizeof(allocation) );
+        RtlMoveMemory( aa,sa->alloc_a+i,sizeof(allocation) );
         void **frames = aa[1].frames;
-        int ptrs = rd->fCaptureStackBackTrace( 2,PTRS,frames,NULL );
+        int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
         if( ptrs<PTRS )
-          rd->fZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
+          RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
         aa[1].ptr = free_ptr;
         aa[1].size = 0;
         aa[1].at = at;
@@ -1967,8 +1901,8 @@ static NOINLINE void trackAllocs(
 
         int type = WRITE_WRONG_DEALLOC;
         DWORD written;
-        rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-        rd->fWriteFile( rd->master,aa,2*sizeof(allocation),&written,NULL );
+        WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+        WriteFile( rd->master,aa,2*sizeof(allocation),&written,NULL );
       }
 
       sa->alloc_q--;
@@ -1982,19 +1916,19 @@ static NOINLINE void trackAllocs(
       a.at = at;
 
       void **frames = a.frames;
-      int ptrs = rd->fCaptureStackBackTrace( 2,PTRS,frames,NULL );
+      int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
       if( ptrs<PTRS )
-        rd->fZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
+        RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
 
       writeMods( &a,1 );
 
       DWORD written;
       int type = WRITE_FREE_FAIL;
-      rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-      rd->fWriteFile( rd->master,&a,sizeof(allocation),&written,NULL );
+      WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+      WriteFile( rd->master,&a,sizeof(allocation),&written,NULL );
     }
 
-    rd->fLeaveCriticalSection( &rd->cs );
+    LeaveCriticalSection( &rd->cs );
   }
 
   if( alloc_ptr )
@@ -2005,23 +1939,23 @@ static NOINLINE void trackAllocs(
     int splitIdx = (((uintptr_t)alloc_ptr)>>rd->ptrShift)&SPLIT_MASK;
     splitAllocation *sa = rd->splits + splitIdx;
 
-    rd->fEnterCriticalSection( &rd->cs );
+    EnterCriticalSection( &rd->cs );
 
     if( sa->alloc_q>=sa->alloc_s )
     {
       sa->alloc_s += 64;
       allocation *alloc_an;
       if( !sa->alloc_a )
-        alloc_an = rd->fHeapAlloc(
+        alloc_an = HeapAlloc(
             rd->heap,0,sa->alloc_s*sizeof(allocation) );
       else
-        alloc_an = rd->fHeapReAlloc(
+        alloc_an = HeapReAlloc(
             rd->heap,0,sa->alloc_a,sa->alloc_s*sizeof(allocation) );
       if( !alloc_an )
       {
         DWORD written;
         int type = WRITE_MAIN_ALLOC_FAIL;
-        rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
+        WriteFile( rd->master,&type,sizeof(int),&written,NULL );
         exitWait( 1 );
       }
       sa->alloc_a = alloc_an;
@@ -2033,11 +1967,11 @@ static NOINLINE void trackAllocs(
     a->at = at;
 
     void **frames = a->frames;
-    int ptrs = rd->fCaptureStackBackTrace( 2,PTRS,frames,NULL );
+    int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
     if( ptrs<PTRS )
-      rd->fZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
+      RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
 
-    rd->fLeaveCriticalSection( &rd->cs );
+    LeaveCriticalSection( &rd->cs );
   }
   else if( alloc_size!=(size_t)-1 )
   {
@@ -2047,20 +1981,20 @@ static NOINLINE void trackAllocs(
     a.at = at;
 
     void **frames = a.frames;
-    int ptrs = rd->fCaptureStackBackTrace( 2,PTRS,frames,NULL );
+    int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
     if( ptrs<PTRS )
-      rd->fZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
+      RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
 
-    rd->fEnterCriticalSection( &rd->cs );
+    EnterCriticalSection( &rd->cs );
 
     writeMods( &a,1 );
 
     DWORD written;
     int type = WRITE_ALLOC_FAIL;
-    rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-    rd->fWriteFile( rd->master,&a,sizeof(allocation),&written,NULL );
+    WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+    WriteFile( rd->master,&a,sizeof(allocation),&written,NULL );
 
-    rd->fLeaveCriticalSection( &rd->cs );
+    LeaveCriticalSection( &rd->cs );
   }
 }
 
@@ -2087,7 +2021,7 @@ static void writeMods( allocation *alloc_a,int alloc_q )
       if( k<mi_q ) continue;
 
       MEMORY_BASIC_INFORMATION mbi;
-      if( !rd->fVirtualQuery((void*)ptr,&mbi,
+      if( !VirtualQuery((void*)ptr,&mbi,
             sizeof(MEMORY_BASIC_INFORMATION)) )
         continue;
       size_t base = (size_t)mbi.AllocationBase;
@@ -2103,31 +2037,31 @@ static void writeMods( allocation *alloc_a,int alloc_q )
 
       mi_q++;
       if( !mi_a )
-        mi_a = rd->fHeapAlloc( rd->heap,0,mi_q*sizeof(modInfo) );
+        mi_a = HeapAlloc( rd->heap,0,mi_q*sizeof(modInfo) );
       else
-        mi_a = rd->fHeapReAlloc(
+        mi_a = HeapReAlloc(
             rd->heap,0,mi_a,mi_q*sizeof(modInfo) );
       if( !mi_a )
       {
         DWORD written;
         int type = WRITE_MAIN_ALLOC_FAIL;
-        rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
+        WriteFile( rd->master,&type,sizeof(int),&written,NULL );
         exitWait( 1 );
       }
       mi_a[mi_q-1].base = base;
       mi_a[mi_q-1].size = size;
-      if( !rd->fGetModuleFileName((void*)base,mi_a[mi_q-1].path,MAX_PATH) )
+      if( !GetModuleFileName((void*)base,mi_a[mi_q-1].path,MAX_PATH) )
         mi_q--;
     }
   }
   int type = WRITE_MODS;
   DWORD written;
-  rd->fWriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  rd->fWriteFile( rd->master,&mi_q,sizeof(int),&written,NULL );
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,&mi_q,sizeof(int),&written,NULL );
   if( mi_q )
   {
-    rd->fWriteFile( rd->master,mi_a,mi_q*sizeof(modInfo),&written,NULL );
-    rd->fHeapFree( rd->heap,0,mi_a );
+    WriteFile( rd->master,mi_a,mi_q*sizeof(modInfo),&written,NULL );
+    HeapFree( rd->heap,0,mi_a );
   }
 }
 
@@ -2135,22 +2069,22 @@ static void exitWait( UINT c )
 {
   GET_REMOTEDATA( rd );
 
-  rd->fCloseHandle( rd->master );
+  CloseHandle( rd->master );
 
   if( rd->opt.newConsole )
   {
-    HANDLE in = rd->fGetStdHandle( STD_INPUT_HANDLE );
-    if( rd->fFlushConsoleInputBuffer(in) )
+    HANDLE in = GetStdHandle( STD_INPUT_HANDLE );
+    if( FlushConsoleInputBuffer(in) )
     {
-      HANDLE out = rd->fGetStdHandle( STD_OUTPUT_HANDLE );
+      HANDLE out = GetStdHandle( STD_OUTPUT_HANDLE );
       DWORD written;
       char exitText[] =
         "\n\n-------------------- APPLICATION EXIT --------------------\n";
-      rd->fWriteFile( out,exitText,sizeof(exitText)-1,&written,NULL );
+      WriteFile( out,exitText,sizeof(exitText)-1,&written,NULL );
 
       INPUT_RECORD ir;
       DWORD didread;
-      while( rd->fReadConsoleInput(in,&ir,1,&didread) &&
+      while( ReadConsoleInput(in,&ir,1,&didread) &&
           (ir.EventType!=KEY_EVENT || !ir.Event.KeyEvent.bKeyDown ||
            ir.Event.KeyEvent.wVirtualKeyCode==VK_SHIFT ||
            ir.Event.KeyEvent.wVirtualKeyCode==VK_CAPITAL ||
@@ -2237,9 +2171,6 @@ static DWORD WINAPI CODE_SEG("heob$1") remoteCall( remoteData *rd )
   func_inj = rd->fGetProcAddress( app,inj_name );
   func_inj( rd,app );
 
-  rd->fSetEvent( rd->initFinished );
-  while( 1 ) rd->fSleep( INFINITE );
-
   return( 0 );
 }
 
@@ -2263,12 +2194,7 @@ static HANDLE CODE_SEG("heob$2") inject(
     (LPTHREAD_START_ROUTINE)( fullDataRemote );
 
   HMODULE kernel32 = GetModuleHandle( "kernel32.dll" );
-  data->fWriteFile =
-    (func_WriteFile*)GetProcAddress( kernel32,"WriteFile" );
-  data->fGetModuleHandle =
-    (func_GetModuleHandle*)GetProcAddress( kernel32,"GetModuleHandleA" );
-  data->fVirtualQuery =
-    (func_VirtualQuery*)GetProcAddress( kernel32,"VirtualQuery" );
+  data->kernel32 = kernel32;
   data->fVirtualProtect =
     (func_VirtualProtect*)GetProcAddress( kernel32,"VirtualProtect" );
   data->fGetCurrentProcess =
@@ -2276,17 +2202,6 @@ static HANDLE CODE_SEG("heob$2") inject(
   data->fFlushInstructionCache =
     (func_FlushInstructionCache*)GetProcAddress(
         kernel32,"FlushInstructionCache" );
-  data->fVirtualAlloc =
-    (func_VirtualAlloc*)GetProcAddress( kernel32,"VirtualAlloc" );
-  data->fVirtualFree =
-    (func_VirtualFree*)GetProcAddress( kernel32,"VirtualFree" );
-  data->fSleep =
-    (func_Sleep*)GetProcAddress( kernel32,"Sleep" );
-  data->fSetEvent =
-    (func_SetEvent*)GetProcAddress( kernel32,"SetEvent" );
-  data->fCaptureStackBackTrace =
-    (func_CaptureStackBackTrace*)GetProcAddress(
-        kernel32,"RtlCaptureStackBackTrace" );
   data->fLoadLibraryA =
     (func_LoadLibraryA*)GetProcAddress( kernel32,"LoadLibraryA" );
   data->fLoadLibraryW =
@@ -2295,57 +2210,11 @@ static HANDLE CODE_SEG("heob$2") inject(
     (func_FreeLibrary*)GetProcAddress( kernel32,"FreeLibrary" );
   data->fGetProcAddress =
     (func_GetProcAddress*)GetProcAddress( kernel32,"GetProcAddress" );
-  data->fGetModuleFileName =
-    (func_GetModuleFileNameA*)GetProcAddress( kernel32,"GetModuleFileNameA" );
-  data->fInitializeCriticalSection =
-    (func_CriticalSection*)GetProcAddress(
-        kernel32,"InitializeCriticalSection" );
-  data->fEnterCriticalSection =
-    (func_CriticalSection*)GetProcAddress(
-        kernel32,"EnterCriticalSection" );
-  data->fLeaveCriticalSection =
-    (func_CriticalSection*)GetProcAddress(
-        kernel32,"LeaveCriticalSection" );
-  data->fHeapAlloc =
-    (func_HeapAlloc*)GetProcAddress( kernel32,"HeapAlloc" );
-  data->fHeapReAlloc =
-    (func_HeapReAlloc*)GetProcAddress( kernel32,"HeapReAlloc" );
-  data->fHeapFree =
-    (func_HeapFree*)GetProcAddress( kernel32,"HeapFree" );
-  data->fGetProcessHeap =
-    (func_GetProcessHeap*)GetProcAddress( kernel32,"GetProcessHeap" );
-  data->fZeroMemory =
-    (func_ZeroMemory*)GetProcAddress( kernel32,"RtlZeroMemory" );
-  data->fMoveMemory =
-    (func_MoveMemory*)GetProcAddress( kernel32,"RtlMoveMemory" );
-  data->fFillMemory =
-    (func_FillMemory*)GetProcAddress( kernel32,"RtlFillMemory" );
-  data->fGetSystemInfo =
-    (func_GetSystemInfo*)GetProcAddress( kernel32,"GetSystemInfo" );
   data->fSetUnhandledExceptionFilter =
     (func_SetUnhandledExceptionFilter*)GetProcAddress(
         kernel32,"SetUnhandledExceptionFilter" );
-  data->fIsBadReadPtr =
-    (func_IsBadReadPtr*)GetProcAddress( kernel32,"IsBadReadPtr" );
-  data->fCloseHandle =
-    (func_SetEvent*)GetProcAddress( kernel32,"CloseHandle" );
-  data->fGetStdHandle =
-    (func_GetStdHandle*)GetProcAddress( kernel32,"GetStdHandle" );
-  data->fFlushConsoleInputBuffer =
-    (func_SetEvent*)GetProcAddress( kernel32,"FlushConsoleInputBuffer" );
-  data->fReadConsoleInput =
-    (func_ReadConsoleInput*)GetProcAddress( kernel32,"ReadConsoleInputA" );
   data->fExitProcess =
     (func_ExitProcess*)GetProcAddress( kernel32,"ExitProcess" );
-
-  data->fstrlen =
-    (func_strlen*)GetProcAddress( kernel32,"lstrlen" );
-  data->fstrlenW =
-    (func_strlenW*)GetProcAddress( kernel32,"lstrlenW" );
-  data->fstrcmp =
-    (func_strcmp*)GetProcAddress( kernel32,"lstrcmp" );
-  data->fstrcmpi =
-    (func_strcmp*)GetProcAddress( kernel32,"lstrcmpi" );
 
   GetModuleFileNameW( NULL,data->exePath,MAX_PATH );
 
@@ -2399,11 +2268,11 @@ DEF_SEG()
 
 __declspec(dllexport) DWORD inj( remoteData *rd,void *app )
 {
+  PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)app;
+  PIMAGE_NT_HEADERS inh = (PIMAGE_NT_HEADERS)REL_PTR( idh,idh->e_lfanew );
+
 #ifndef _WIN64
   {
-    PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)app;
-    PIMAGE_NT_HEADERS inh = (PIMAGE_NT_HEADERS)REL_PTR( idh,idh->e_lfanew );
-
     PIMAGE_OPTIONAL_HEADER32 ioh = (PIMAGE_OPTIONAL_HEADER32)REL_PTR(
         inh,sizeof(DWORD)+sizeof(IMAGE_FILE_HEADER) );
     size_t imageBase = ioh->ImageBase;
@@ -2449,22 +2318,59 @@ __declspec(dllexport) DWORD inj( remoteData *rd,void *app )
       }
     }
   }
+#endif
+
+  {
+    PIMAGE_DATA_DIRECTORY idd =
+      &inh->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+    if( idd->Size>0 )
+    {
+      PIMAGE_IMPORT_DESCRIPTOR iid =
+        (PIMAGE_IMPORT_DESCRIPTOR)REL_PTR( idh,idd->VirtualAddress );
+      uintptr_t *thunk;
+      if( iid->OriginalFirstThunk )
+        thunk = (uintptr_t*)REL_PTR( idh,iid->OriginalFirstThunk );
+      else
+        thunk = (uintptr_t*)REL_PTR( idh,iid->FirstThunk );
+      void **funcPtr = (void**)REL_PTR( idh,iid->FirstThunk );
+      for( ; *thunk; thunk++,funcPtr++ )
+      {
+        LPCSTR funcName;
+        if( IMAGE_SNAP_BY_ORDINAL(*thunk) )
+          funcName = (LPCSTR)IMAGE_ORDINAL( *thunk );
+        else
+        {
+          PIMAGE_IMPORT_BY_NAME iibn =
+            (PIMAGE_IMPORT_BY_NAME)REL_PTR( idh,*thunk );
+          funcName = (LPCSTR)&iibn->Name;
+        }
+        void *func = rd->fGetProcAddress( rd->kernel32,funcName );
+        if( !func ) break;
+
+        DWORD prot;
+        rd->fVirtualProtect( funcPtr,sizeof(void*),
+            PAGE_EXECUTE_READWRITE,&prot );
+
+        *funcPtr = func;
+
+        rd->fVirtualProtect( funcPtr,sizeof(void*),
+            prot,&prot );
+      }
+    }
+  }
 
   rd->fFlushInstructionCache( rd->fGetCurrentProcess(),NULL,0 );
-#else
-  (void)app;
-#endif
 
   g_rd = rd;
 
-  rd->fInitializeCriticalSection( &rd->cs );
-  rd->heap = rd->fGetProcessHeap();
+  InitializeCriticalSection( &rd->cs );
+  rd->heap = GetProcessHeap();
 
   SYSTEM_INFO si;
-  rd->fGetSystemInfo( &si );
+  GetSystemInfo( &si );
   rd->pageSize = si.dwPageSize;
 
-  rd->splits = rd->fHeapAlloc( rd->heap,HEAP_ZERO_MEMORY,
+  rd->splits = HeapAlloc( rd->heap,HEAP_ZERO_MEMORY,
       (SPLIT_MASK+1)*sizeof(splitAllocation) );
 
   rd->ptrShift = 4;
@@ -2521,17 +2427,18 @@ __declspec(dllexport) DWORD inj( remoteData *rd,void *app )
     };
 #endif
     DWORD prot;
-    rd->fVirtualProtect( fp,sizeof(doNothing),
-        PAGE_EXECUTE_READWRITE,&prot );
-    rd->fMoveMemory( fp,doNothing,sizeof(doNothing) );
-    rd->fVirtualProtect( fp,sizeof(doNothing),
-        prot,&prot );
+    VirtualProtect( fp,sizeof(doNothing),PAGE_EXECUTE_READWRITE,&prot );
+    RtlMoveMemory( fp,doNothing,sizeof(doNothing) );
+    VirtualProtect( fp,sizeof(doNothing),prot,&prot );
   }
 
-  addModule( rd->fGetModuleHandle(NULL) );
+  addModule( GetModuleHandle(NULL) );
   replaceModFuncs();
 
-  rd->fGetModuleFileName( NULL,rd->exePathA,MAX_PATH );
+  GetModuleFileName( NULL,rd->exePathA,MAX_PATH );
+
+  SetEvent( rd->initFinished );
+  while( 1 ) Sleep( INFINITE );
 
   return( 0 );
 }
