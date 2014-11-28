@@ -27,9 +27,15 @@
 #define WRITE_DEBUG_STRINGS 0
 
 
+#ifdef __MINGW32__
 #define NOINLINE __attribute__((noinline))
 #define CODE_SEG(seg) __attribute__((section(seg)))
 #define DEF_SEG()
+#else
+#define NOINLINE __declspec(noinline)
+#define CODE_SEG(seg) __pragma(code_seg(seg))
+#define DEF_SEG() __pragma(code_seg())
+#endif
 
 
 typedef HMODULE WINAPI func_LoadLibraryA( LPCSTR );
@@ -421,7 +427,7 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
             end++[0] = 'x';
             for( b=bytes*2-1; b>=0; b-- )
             {
-              uintptr_t bits = ( arg>>(b*4) )&0xf;
+              unsigned int bits = ( arg>>(b*4) )&0xf;
               if( bits>=10 )
                 end++[0] = bits - 10 + 'A';
               else
@@ -452,7 +458,11 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
     tc->fWriteText( tc,format,ptr-format );
   va_end( vl );
 }
+#ifdef __MINGW32__
 #define printf(a...) mprintf(tc,a)
+#else
+#define printf(...) mprintf(tc,__VA_ARGS__)
+#endif
 
 static NOINLINE char *mstrchr( const char *s,char c )
 {
@@ -506,7 +516,7 @@ static const void *mmemchr( const void *p,int ch,size_t s )
 static void WriteText( textColor *tc,const char *t,size_t l )
 {
   DWORD written;
-  WriteFile( tc->out,t,l,&written,NULL );
+  WriteFile( tc->out,t,(DWORD)l,&written,NULL );
 }
 static void TextColorConsole( textColor *tc,textColorAtt color )
 {
@@ -534,7 +544,7 @@ static void WriteTextHtml( textColor *tc,const char *t,size_t l )
     if( c!='<' && c!='>' && c!='&' ) continue;
 
     if( next>t )
-      WriteFile( tc->out,t,next-t,&written,NULL );
+      WriteFile( tc->out,t,(DWORD)(next-t),&written,NULL );
     if( c=='<' )
       WriteFile( tc->out,lt,sizeof(lt)-1,&written,NULL );
     else if( c=='>' )
@@ -544,7 +554,7 @@ static void WriteTextHtml( textColor *tc,const char *t,size_t l )
     t = next + 1;
   }
   if( next>t )
-    WriteFile( tc->out,t,next-t,&written,NULL );
+    WriteFile( tc->out,t,(DWORD)(next-t),&written,NULL );
 }
 static void TextColorHtml( textColor *tc,textColorAtt color )
 {
@@ -629,7 +639,7 @@ static void checkOutputVariant( textColor *tc,const char *cmdLine )
       size_t l2 = sizeof(toMaster)/2 - 1;
       wchar_t html[] = L".html";
       size_t hl = sizeof(html)/2 - 1;
-      if( oni->Name.Length/2>l1+l2 &&
+      if( (size_t)oni->Name.Length/2>l1+l2 &&
           !memcmp(oni->Name.Buffer,namedPipe,l1*2) &&
           !memcmp(oni->Name.Buffer+(oni->Name.Length/2-l2),toMaster,l2*2) )
       {
@@ -645,7 +655,7 @@ static void checkOutputVariant( textColor *tc,const char *cmdLine )
         TextColorTerminal( tc,ATT_NORMAL );
       }
       else if( GetFileType(tc->out)==FILE_TYPE_DISK &&
-          oni->Name.Length/2>hl &&
+          (size_t)oni->Name.Length/2>hl &&
           !memcmp(oni->Name.Buffer+(oni->Name.Length/2-hl),html,hl*2) )
       {
         char styleInit[] =
@@ -1179,7 +1189,7 @@ static void *protect_alloc_m( size_t s )
   {
     unsigned char *slackStart = b;
     if( rd->opt.protect>1 ) slackStart += s;
-    rd->fFillMemory( slackStart,slackSize,rd->opt.slackInit );
+    rd->fFillMemory( slackStart,slackSize,(UCHAR)rd->opt.slackInit );
   }
 
   if( rd->opt.protect==1 )
@@ -1285,7 +1295,7 @@ static void *protect_malloc( size_t s )
   if( !b ) return( NULL );
 
   if( rd->opt.init )
-    rd->fFillMemory( b,s,rd->opt.init );
+    rd->fFillMemory( b,s,(UCHAR)rd->opt.init );
 
   return( b );
 }
@@ -1324,7 +1334,7 @@ static void *protect_realloc( void *b,size_t s )
     rd->fMoveMemory( nb,b,cs );
 
   if( s>os && rd->opt.init )
-    rd->fFillMemory( ((char*)nb)+os,s-os,rd->opt.init );
+    rd->fFillMemory( ((char*)nb)+os,s-os,(UCHAR)rd->opt.init );
 
   protect_free_m( b );
 
@@ -1615,7 +1625,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
             NULL,fSymFunctionTableAccess64,fSymGetModuleBase64,NULL) )
         break;
 
-      uintptr_t frame = stack.AddrPC.Offset;
+      uintptr_t frame = (uintptr_t)stack.AddrPC.Offset;
       if( !frame ) break;
 
       if( !count ) frame++;
@@ -2222,7 +2232,7 @@ __declspec(dllexport) freed *heob_find_freed( char *addr )
 static DWORD WINAPI CODE_SEG("heob$1") remoteCall( remoteData *rd )
 {
   HMODULE app = rd->fLoadLibraryW( rd->exePath );
-  char inj_name[] = "inj";
+  char inj_name[] = { 'i','n','j',0 };
   DWORD (*func_inj)( remoteData*,void* );
   func_inj = rd->fGetProcAddress( app,inj_name );
   func_inj( rd,app );
@@ -2460,7 +2470,13 @@ __declspec(dllexport) DWORD inj( remoteData *rd,void *app )
   rd->ptrShift = 4;
   if( rd->opt.protect )
   {
+#ifdef __MINGW32__
     rd->ptrShift = __builtin_ffs( si.dwPageSize ) - 1;
+#else
+    long index;
+    _BitScanForward( &index,si.dwPageSize );
+    rd->ptrShift = index;
+#endif
     if( rd->ptrShift<4 ) rd->ptrShift = 4;
   }
 
@@ -2647,9 +2663,9 @@ static void locFunc(
               {
                 const char *bol = map;
                 const char *eof = map + fileInfo.nFileSizeLow;
-                int firstLine = lineno + 1 - dh->opt->sourceCode;
+                int firstLine = lineno + 1 - (int)dh->opt->sourceCode;
                 if( firstLine<1 ) firstLine = 1;
-                int lastLine = lineno - 1 + dh->opt->sourceCode;
+                int lastLine = lineno - 1 + (int)dh->opt->sourceCode;
                 if( firstLine>1 )
                   printf( "\t...\n" );
                 int i;
@@ -2736,7 +2752,9 @@ static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbghelp *dh )
 
 
 #ifdef _WIN64
+#ifdef __MINGW32__
 #define smain _smain
+#endif
 #define BITS "64"
 #else
 #define BITS "32"
@@ -2896,8 +2914,10 @@ void smain( void )
     ExitProcess( -1 );
   }
 
-  STARTUPINFO si = {0};
-  PROCESS_INFORMATION pi = {0};
+  STARTUPINFO si;
+  PROCESS_INFORMATION pi;
+  RtlZeroMemory( &si,sizeof(STARTUPINFO) );
+  RtlZeroMemory( &pi,sizeof(PROCESS_INFORMATION) );
   si.cb = sizeof(STARTUPINFO);
   BOOL result = CreateProcess( NULL,args,NULL,NULL,FALSE,
       CREATE_SUSPENDED|(opt.newConsole?CREATE_NEW_CONSOLE:0),
