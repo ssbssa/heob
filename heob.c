@@ -507,17 +507,17 @@ static void TextColorHtml( textColor *tc,textColorAtt color )
   DWORD written;
   if( tc->color )
   {
-    char spanEnd[] = "</span>";
-    WriteFile( tc->out,spanEnd,sizeof(spanEnd)-1,&written,NULL );
+    const char *spanEnd = "</span>";
+    WriteFile( tc->out,spanEnd,lstrlen(spanEnd),&written,NULL );
   }
   if( color )
   {
-    char span1[] = "<span class=\"";
+    const char *span1 = "<span class=\"";
     const char *style = tc->styles[color];
-    char span2[] = "\">";
-    WriteFile( tc->out,span1,sizeof(span1)-1,&written,NULL );
+    const char *span2 = "\">";
+    WriteFile( tc->out,span1,lstrlen(span1),&written,NULL );
     WriteFile( tc->out,style,lstrlen(style),&written,NULL );
-    WriteFile( tc->out,span2,sizeof(span2)-1,&written,NULL );
+    WriteFile( tc->out,span2,lstrlen(span2),&written,NULL );
   }
 }
 static void checkOutputVariant( textColor *tc,const char *cmdLine )
@@ -604,7 +604,7 @@ static void checkOutputVariant( textColor *tc,const char *cmdLine )
           (size_t)oni->Name.Length/2>hl &&
           !memcmp(oni->Name.Buffer+(oni->Name.Length/2-hl),html,hl*2) )
       {
-        char styleInit[] =
+        const char *styleInit =
           "<head>\n"
           "<style type=\"text/css\">\n"
           "body { color:lightgrey; background-color:black; }\n"
@@ -617,13 +617,13 @@ static void checkOutputVariant( textColor *tc,const char *cmdLine )
           "<title>heob</title>\n"
           "</head><body>\n"
           "<h3>";
-        char styleInit2[] =
+        const char *styleInit2 =
           "</h3>\n"
           "<pre>\n";
         DWORD written;
-        WriteFile( tc->out,styleInit,sizeof(styleInit)-1,&written,NULL );
+        WriteFile( tc->out,styleInit,lstrlen(styleInit),&written,NULL );
         WriteTextHtml( tc,cmdLine,lstrlen(cmdLine) );
-        WriteFile( tc->out,styleInit2,sizeof(styleInit2)-1,&written,NULL );
+        WriteFile( tc->out,styleInit2,lstrlen(styleInit2),&written,NULL );
 
         tc->fWriteText = &WriteTextHtml;
         tc->fTextColor = &TextColorHtml;
@@ -1512,19 +1512,15 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   void **frames = ei.aa[0].frames;
 
 #if USE_STACKWALK
-  char dll_dbghelp[] = "dbghelp.dll";
-  HMODULE symMod = rd->fLoadLibraryA( dll_dbghelp );
+  HMODULE symMod = rd->fLoadLibraryA( "dbghelp.dll" );
   func_SymInitialize *fSymInitialize = NULL;
   func_StackWalk64 *fStackWalk64 = NULL;
   func_SymCleanup *fSymCleanup = NULL;
   if( symMod )
   {
-    char syminitialize[] = "SymInitialize";
-    fSymInitialize = rd->fGetProcAddress( symMod,syminitialize );
-    char stackwalk64[] = "StackWalk64";
-    fStackWalk64 = rd->fGetProcAddress( symMod,stackwalk64 );
-    char symcleanup[] = "SymCleanup";
-    fSymCleanup = rd->fGetProcAddress( symMod,symcleanup );
+    fSymInitialize = rd->fGetProcAddress( symMod,"SymInitialize" );
+    fStackWalk64 = rd->fGetProcAddress( symMod,"StackWalk64" );
+    fSymCleanup = rd->fGetProcAddress( symMod,"SymCleanup" );
   }
 
   if( fSymInitialize && fStackWalk64 && fSymCleanup )
@@ -1546,12 +1542,10 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 
     fSymInitialize( process,NULL,TRUE );
 
-    char symfunctiontableaccess[] = "SymFunctionTableAccess64";
     PFUNCTION_TABLE_ACCESS_ROUTINE64 fSymFunctionTableAccess64 =
-      rd->fGetProcAddress( symMod,symfunctiontableaccess );
-    char symgetmodulebase[] = "SymGetModuleBase64";
+      rd->fGetProcAddress( symMod,"SymFunctionTableAccess64" );
     PGET_MODULE_BASE_ROUTINE64 fSymGetModuleBase64 =
-      rd->fGetProcAddress( symMod,symgetmodulebase );
+      rd->fGetProcAddress( symMod,"SymGetModuleBase64" );
 
     while( count<PTRS )
     {
@@ -1738,31 +1732,31 @@ static void replaceModFuncs( void )
 {
   GET_REMOTEDATA( rd );
 
-  char fname_malloc[] = "malloc";
-  char fname_calloc[] = "calloc";
-  char fname_free[] = "free";
-  char fname_realloc[] = "realloc";
-  char fname_strdup[] = "_strdup";
-  char fname_wcsdup[] = "_wcsdup";
+  const char *fname_malloc = "malloc";
+  const char *fname_calloc = "calloc";
+  const char *fname_free = "free";
+  const char *fname_realloc = "realloc";
+  const char *fname_strdup = "_strdup";
+  const char *fname_wcsdup = "_wcsdup";
 #ifndef _WIN64
-  char fname_op_new[] = "??2@YAPAXI@Z";
-  char fname_op_delete[] = "??3@YAXPAX@Z";
-  char fname_op_new_a[] = "??_U@YAPAXI@Z";
-  char fname_op_delete_a[] = "??_V@YAXPAX@Z";
+  const char *fname_op_new = "??2@YAPAXI@Z";
+  const char *fname_op_delete = "??3@YAXPAX@Z";
+  const char *fname_op_new_a = "??_U@YAPAXI@Z";
+  const char *fname_op_delete_a = "??_V@YAXPAX@Z";
 #else
-  char fname_op_new[] = "??2@YAPEAX_K@Z";
-  char fname_op_delete[] = "??3@YAXPEAX@Z";
-  char fname_op_new_a[] = "??_U@YAPEAX_K@Z";
-  char fname_op_delete_a[] = "??_V@YAXPEAX@Z";
+  const char *fname_op_new = "??2@YAPEAX_K@Z";
+  const char *fname_op_delete = "??3@YAXPEAX@Z";
+  const char *fname_op_new_a = "??_U@YAPEAX_K@Z";
+  const char *fname_op_delete_a = "??_V@YAXPEAX@Z";
 #endif
-  char fname_getcwd[] = "_getcwd";
-  char fname_wgetcwd[] = "_wgetcwd";
-  char fname_getdcwd[] = "_getdcwd";
-  char fname_wgetdcwd[] = "_wgetdcwd";
-  char fname_fullpath[] = "_fullpath";
-  char fname_wfullpath[] = "_wfullpath";
-  char fname_tempnam[] = "_tempnam";
-  char fname_wtempnam[] = "_wtempnam";
+  const char *fname_getcwd = "_getcwd";
+  const char *fname_wgetcwd = "_wgetcwd";
+  const char *fname_getdcwd = "_getdcwd";
+  const char *fname_wgetdcwd = "_wgetdcwd";
+  const char *fname_fullpath = "_fullpath";
+  const char *fname_wfullpath = "_wfullpath";
+  const char *fname_tempnam = "_tempnam";
+  const char *fname_wtempnam = "_wtempnam";
   replaceData rep[] = {
     { fname_malloc         ,&rd->fmalloc         ,&new_malloc          },
     { fname_calloc         ,&rd->fcalloc         ,&new_calloc          },
@@ -1784,15 +1778,15 @@ static void replaceModFuncs( void )
     { fname_wtempnam       ,&rd->fwtempnam       ,&new_wtempnam        },
   };
 
-  char fname_ExitProcess[] = "ExitProcess";
+  const char *fname_ExitProcess = "ExitProcess";
   replaceData rep2[] = {
     { fname_ExitProcess    ,&rd->fExitProcess    ,&heob_exit           },
   };
   unsigned int rep2count = sizeof(rep2)/sizeof(replaceData);
 
-  char fname_LoadLibraryA[] = "LoadLibraryA";
-  char fname_LoadLibraryW[] = "LoadLibraryW";
-  char fname_FreeLibrary[] = "FreeLibrary";
+  const char *fname_LoadLibraryA = "LoadLibraryA";
+  const char *fname_LoadLibraryW = "LoadLibraryW";
+  const char *fname_FreeLibrary = "FreeLibrary";
   replaceData repLL[] = {
     { fname_LoadLibraryA   ,&rd->fLoadLibraryA   ,&new_LoadLibraryA    },
     { fname_LoadLibraryW   ,&rd->fLoadLibraryW   ,&new_LoadLibraryW    },
@@ -2078,9 +2072,9 @@ static void exitWait( UINT c )
     {
       HANDLE out = GetStdHandle( STD_OUTPUT_HANDLE );
       DWORD written;
-      char exitText[] =
+      const char *exitText =
         "\n\n-------------------- APPLICATION EXIT --------------------\n";
-      WriteFile( out,exitText,sizeof(exitText)-1,&written,NULL );
+      WriteFile( out,exitText,lstrlen(exitText),&written,NULL );
 
       INPUT_RECORD ir;
       DWORD didread;
@@ -3134,14 +3128,14 @@ void smain( void )
 
             printf( "%c\nmismatching allocation/release method"
                 " of %p (size %u)\n",ATT_WARN,aa[0].ptr,aa[0].size );
-            char *allocMethods[] = {
+            const char *allocMethods[] = {
               "malloc",
               "new",
               "new[]",
             };
             printf( "%c  allocated with '%s'\n",
                 ATT_INFO,allocMethods[aa[0].at] );
-            char *deallocMethods[] = {
+            const char *deallocMethods[] = {
               "free",
               "delete",
               "delete[]",
