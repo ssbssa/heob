@@ -30,12 +30,11 @@
 #ifdef __MINGW32__
 #define NOINLINE __attribute__((noinline))
 #define CODE_SEG(seg) __attribute__((section(seg)))
-#define DEF_SEG()
 #else
 #define NOINLINE __declspec(noinline)
-#define CODE_SEG(seg) __pragma(code_seg(seg))
-#define DEF_SEG() __pragma(code_seg())
+#define CODE_SEG(seg) __declspec(code_seg(seg))
 #endif
+#define DLLEXPORT __declspec(dllexport)
 
 
 typedef HMODULE WINAPI func_LoadLibraryA( LPCSTR );
@@ -648,8 +647,8 @@ static void trackAllocs(
     void *free_ptr,void *alloc_ptr,size_t alloc_size,allocType at );
 static void writeMods( allocation *alloc_a,int alloc_q );
 static void exitWait( UINT c );
-__declspec(dllexport) allocation *heob_find_allocation( char *addr );
-__declspec(dllexport) freed *heob_find_freed( char *addr );
+DLLEXPORT allocation *heob_find_allocation( char *addr );
+DLLEXPORT freed *heob_find_freed( char *addr );
 
 
 #define GET_REMOTEDATA( rd ) remoteData *rd = g_rd
@@ -992,7 +991,7 @@ static wchar_t *new_wtempnam( wchar_t *dir,wchar_t *prefix )
   return( tn );
 }
 
-__declspec(dllexport) VOID heob_exit( UINT c )
+DLLEXPORT VOID heob_exit( UINT c )
 {
   GET_REMOTEDATA( rd );
 
@@ -2093,7 +2092,7 @@ static void exitWait( UINT c )
 }
 
 
-__declspec(dllexport) allocation *heob_find_allocation( char *addr )
+DLLEXPORT allocation *heob_find_allocation( char *addr )
 {
   GET_REMOTEDATA( rd );
 
@@ -2125,7 +2124,7 @@ __declspec(dllexport) allocation *heob_find_allocation( char *addr )
   return( NULL );
 }
 
-__declspec(dllexport) freed *heob_find_freed( char *addr )
+DLLEXPORT freed *heob_find_freed( char *addr )
 {
   GET_REMOTEDATA( rd );
 
@@ -2157,7 +2156,7 @@ __declspec(dllexport) freed *heob_find_freed( char *addr )
 }
 
 
-static DWORD WINAPI CODE_SEG("heob$1") remoteCall( remoteData *rd )
+static CODE_SEG(".text$1") DWORD WINAPI remoteCall( remoteData *rd )
 {
   HMODULE app = rd->fLoadLibraryW( rd->exePath );
   char inj_name[] = { 'i','n','j',0 };
@@ -2169,7 +2168,7 @@ static DWORD WINAPI CODE_SEG("heob$1") remoteCall( remoteData *rd )
 }
 
 
-static HANDLE CODE_SEG("heob$2") inject(
+static CODE_SEG(".text$2") HANDLE inject(
     HANDLE process,options *opt,char *exePath,textColor *tc )
 {
   size_t funcSize = (size_t)&inject - (size_t)&remoteCall;
@@ -2257,10 +2256,9 @@ static HANDLE CODE_SEG("heob$2") inject(
 
   return( readPipe );
 }
-DEF_SEG()
 
 
-__declspec(dllexport) DWORD inj( remoteData *rd,void *app )
+DLLEXPORT DWORD inj( remoteData *rd,void *app )
 {
   PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)app;
   PIMAGE_NT_HEADERS inh = (PIMAGE_NT_HEADERS)REL_PTR( idh,idh->e_lfanew );
