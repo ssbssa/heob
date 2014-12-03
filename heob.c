@@ -991,14 +991,14 @@ static wchar_t *new_wtempnam( wchar_t *dir,wchar_t *prefix )
   return( tn );
 }
 
-DLLEXPORT VOID heob_exit( UINT c )
+static VOID WINAPI new_ExitProcess( UINT c )
 {
   GET_REMOTEDATA( rd );
 
   int type;
   DWORD written;
 #if WRITE_DEBUG_STRINGS
-  char t[] = "called: heob_exit\n";
+  char t[] = "called: new_ExitProcess\n";
   type = WRITE_STRING;
   WriteFile( rd->master,&type,sizeof(int),&written,NULL );
   WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
@@ -1051,6 +1051,11 @@ DLLEXPORT VOID heob_exit( UINT c )
   LeaveCriticalSection( &rd->cs );
 
   exitWait( c );
+}
+
+DLLEXPORT VOID heob_exit( UINT c )
+{
+  new_ExitProcess( c );
 }
 
 static HMODULE WINAPI new_LoadLibraryA( LPCSTR name )
@@ -1779,7 +1784,7 @@ static void replaceModFuncs( void )
 
   const char *fname_ExitProcess = "ExitProcess";
   replaceData rep2[] = {
-    { fname_ExitProcess    ,&rd->fExitProcess    ,&heob_exit           },
+    { fname_ExitProcess    ,&rd->fExitProcess    ,&new_ExitProcess     },
   };
   unsigned int rep2count = sizeof(rep2)/sizeof(replaceData);
 
