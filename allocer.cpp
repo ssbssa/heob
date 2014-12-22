@@ -203,9 +203,11 @@ void choose( int arg )
 
     case 12:
       // exception handler
-      SetUnhandledExceptionFilter( &exceptionWalker );
-      void *ptr = (void*)&choose;
-      *(int*)ptr = 5;
+      {
+        SetUnhandledExceptionFilter( &exceptionWalker );
+        void *ptr = (void*)&choose;
+        *(int*)ptr = 5;
+      }
       break;
   }
 
