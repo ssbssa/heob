@@ -1,5 +1,5 @@
 
-HEOB_VERSION:=1.1
+HEOB_VERSION:=1.2-dev-$(shell date +%Y%m%d)
 
 BITS=32
 ifeq ($(BITS),32)
