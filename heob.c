@@ -2067,6 +2067,7 @@ static void exitWait( UINT c )
 {
   GET_REMOTEDATA( rd );
 
+  FlushFileBuffers( rd->master );
   CloseHandle( rd->master );
 
   if( rd->opt.newConsole )
