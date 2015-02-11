@@ -2657,14 +2657,11 @@ static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbghelp *dh )
 
 
 #ifdef _WIN64
-#ifdef __MINGW32__
-#define smain _smain
-#endif
 #define BITS "64"
 #else
 #define BITS "32"
 #endif
-void smain( void )
+void mainCRTStartup( void )
 {
   textColor tc_o;
   textColor *tc = &tc_o;

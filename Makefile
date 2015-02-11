@@ -16,7 +16,7 @@ CPPFLAGS=-DNO_DWARFSTACK
 CFLAGS=-Wall -Wextra -fno-omit-frame-pointer -fno-optimize-sibling-calls
 CFLAGS_HEOB=$(CPPFLAGS) $(CFLAGS) -O3 -DHEOB_VER="\"$(HEOB_VERSION)\"" \
 	    -ffreestanding
-LDFLAGS_HEOB=-s -Wl,--entry=_smain -nostdlib -lkernel32
+LDFLAGS_HEOB=-s -nostdlib -lkernel32
 CFLAGS_TEST=$(CFLAGS) -O3 -g
 
 
