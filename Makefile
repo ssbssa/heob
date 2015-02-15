@@ -22,8 +22,8 @@ CFLAGS_TEST=$(CFLAGS) -O3 -g
 
 all: heob$(BITS).exe allocer$(BITS).exe
 
-heob$(BITS).exe: heob.c
-	$(CC) $(CFLAGS_HEOB) -o$@ $^ $(LDFLAGS_HEOB)
+heob$(BITS).exe: heob.c heob-inj.c heob.h
+	$(CC) $(CFLAGS_HEOB) -o$@ heob.c heob-inj.c $(LDFLAGS_HEOB) || { rm -f $@; exit 1; }
 
 allocer$(BITS).exe: allocer.cpp libcrt$(BITS).a dll-alloc$(BITS).dll dll-alloc-shared$(BITS).dll
 	$(CXX) $(CFLAGS_TEST) -o$@ $^
