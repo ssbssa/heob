@@ -1188,6 +1188,25 @@ void mainCRTStartup( void )
           }
           break;
 
+        case WRITE_DOUBLE_FREE:
+          {
+            allocation aa[3];
+            if( !ReadFile(readPipe,aa,3*sizeof(allocation),&didread,NULL) )
+              break;
+
+            printf( "%c\ndouble free of %p (size %u)\n",
+                ATT_WARN,aa[1].ptr,aa[1].size );
+            printf( "%c  called on:\n",ATT_SECTION );
+            printStack( aa[0].frames,mi_a,mi_q,&dh );
+
+            printf( "%c  allocated on:\n",ATT_SECTION );
+            printStack( aa[1].frames,mi_a,mi_q,&dh );
+
+            printf( "%c  freed on:\n",ATT_SECTION );
+            printStack( aa[2].frames,mi_a,mi_q,&dh );
+          }
+          break;
+
         case WRITE_SLACK:
           {
             allocation aa[2];

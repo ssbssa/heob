@@ -206,22 +206,43 @@ static NOINLINE void trackAllocs(
     }
     else
     {
-      allocation a;
-      a.ptr = free_ptr;
-      a.size = 0;
-      a.at = at;
+      for( i=rd->freed_q-1; i>=0 && rd->freed_a[i].a.ptr!=free_ptr; i-- );
+      if( i>=0 )
+      {
+        allocation aa[3];
+        RtlMoveMemory( &aa[1],&rd->freed_a[i].a,sizeof(allocation) );
+        RtlMoveMemory( aa[2].frames,rd->freed_a[i].frames,PTRS*sizeof(void*) );
+        void **frames = aa[0].frames;
+        int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
+        if( ptrs<PTRS )
+          RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
 
-      void **frames = a.frames;
-      int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
-      if( ptrs<PTRS )
-        RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
+        writeMods( aa,3 );
 
-      writeMods( &a,1 );
+        int type = WRITE_DOUBLE_FREE;
+        DWORD written;
+        WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+        WriteFile( rd->master,aa,3*sizeof(allocation),&written,NULL );
+      }
+      else
+      {
+        allocation a;
+        a.ptr = free_ptr;
+        a.size = 0;
+        a.at = at;
 
-      DWORD written;
-      int type = WRITE_FREE_FAIL;
-      WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-      WriteFile( rd->master,&a,sizeof(allocation),&written,NULL );
+        void **frames = a.frames;
+        int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
+        if( ptrs<PTRS )
+          RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
+
+        writeMods( &a,1 );
+
+        DWORD written;
+        int type = WRITE_FREE_FAIL;
+        WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+        WriteFile( rd->master,&a,sizeof(allocation),&written,NULL );
+      }
     }
 
     LeaveCriticalSection( &rd->cs );
