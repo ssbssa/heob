@@ -18,10 +18,70 @@
 #define DLLEXPORT __declspec(dllexport)
 
 // }}}
-// remote data {{{
+// local data {{{
 
-static remoteData *g_rd = NULL;
-#define GET_REMOTEDATA( rd ) remoteData *rd = g_rd
+typedef struct localData
+{
+  func_LoadLibraryA *fLoadLibraryA;
+  func_LoadLibraryW *fLoadLibraryW;
+  func_FreeLibrary *fFreeLibrary;
+  func_GetProcAddress *fGetProcAddress;
+  func_ExitProcess *fExitProcess;
+
+  func_malloc *fmalloc;
+  func_calloc *fcalloc;
+  func_free *ffree;
+  func_realloc *frealloc;
+  func_strdup *fstrdup;
+  func_wcsdup *fwcsdup;
+  func_malloc *fop_new;
+  func_free *fop_delete;
+  func_malloc *fop_new_a;
+  func_free *fop_delete_a;
+  func_getcwd *fgetcwd;
+  func_wgetcwd *fwgetcwd;
+  func_getdcwd *fgetdcwd;
+  func_wgetdcwd *fwgetdcwd;
+  func_fullpath *ffullpath;
+  func_wfullpath *fwfullpath;
+  func_tempnam *ftempnam;
+  func_wtempnam *fwtempnam;
+
+  func_free *ofree;
+  func_getcwd *ogetcwd;
+  func_wgetcwd *owgetcwd;
+  func_getdcwd *ogetdcwd;
+  func_wgetdcwd *owgetdcwd;
+  func_fullpath *ofullpath;
+  func_wfullpath *owfullpath;
+  func_tempnam *otempnam;
+  func_wtempnam *owtempnam;
+
+  HANDLE master;
+
+  splitAllocation *splits;
+  int ptrShift;
+  allocType newArrAllocMethod;
+
+  freed *freed_a;
+  int freed_q;
+  int freed_s;
+
+  HMODULE *mod_a;
+  int mod_q;
+  int mod_s;
+  int mod_d;
+
+  CRITICAL_SECTION cs;
+  HANDLE heap;
+  DWORD pageSize;
+
+  options opt;
+}
+localData;
+
+static localData *g_ld = NULL;
+#define GET_REMOTEDATA( ld ) localData *ld = g_ld
 
 // }}}
 // process exit {{{
@@ -1687,53 +1747,63 @@ DLLEXPORT DWORD inj( remoteData *rd,void *app )
 
   rd->fFlushInstructionCache( rd->fGetCurrentProcess(),NULL,0 );
 
-  g_rd = rd;
+  HANDLE heap = GetProcessHeap();
+  localData *ld = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(localData) );;
+  g_ld = ld;
 
-  InitializeCriticalSection( &rd->cs );
-  rd->heap = GetProcessHeap();
+  RtlMoveMemory( &ld->opt,&rd->opt,sizeof(options) );
+  ld->fLoadLibraryA = rd->fLoadLibraryA;
+  ld->fLoadLibraryW = rd->fLoadLibraryW;
+  ld->fFreeLibrary = rd->fFreeLibrary;
+  ld->fGetProcAddress = rd->fGetProcAddress;
+  ld->fExitProcess = rd->fExitProcess;
+  ld->master = rd->master;
+
+  InitializeCriticalSection( &ld->cs );
+  ld->heap = heap;
 
   SYSTEM_INFO si;
   GetSystemInfo( &si );
-  rd->pageSize = si.dwPageSize;
+  ld->pageSize = si.dwPageSize;
 
-  rd->splits = HeapAlloc( rd->heap,HEAP_ZERO_MEMORY,
+  ld->splits = HeapAlloc( heap,HEAP_ZERO_MEMORY,
       (SPLIT_MASK+1)*sizeof(splitAllocation) );
 
-  rd->ptrShift = 4;
+  ld->ptrShift = 4;
   if( rd->opt.protect )
   {
 #ifdef __MINGW32__
-    rd->ptrShift = __builtin_ffs( si.dwPageSize ) - 1;
+    ld->ptrShift = __builtin_ffs( si.dwPageSize ) - 1;
 #else
     long index;
     _BitScanForward( &index,si.dwPageSize );
-    rd->ptrShift = index;
+    ld->ptrShift = index;
 #endif
-    if( rd->ptrShift<4 ) rd->ptrShift = 4;
+    if( ld->ptrShift<4 ) ld->ptrShift = 4;
   }
 
-  rd->newArrAllocMethod = rd->opt.allocMethod>1 ? AT_NEW_ARR : AT_NEW;
+  ld->newArrAllocMethod = rd->opt.allocMethod>1 ? AT_NEW_ARR : AT_NEW;
 
   if( rd->opt.protect )
   {
-    rd->fmalloc = &protect_malloc;
-    rd->fcalloc = &protect_calloc;
-    rd->ffree = &protect_free;
-    rd->frealloc = &protect_realloc;
-    rd->fstrdup = &protect_strdup;
-    rd->fwcsdup = &protect_wcsdup;
-    rd->fop_new = &protect_malloc;
-    rd->fop_delete = &protect_free;
-    rd->fop_new_a = &protect_malloc;
-    rd->fop_delete_a = &protect_free;
-    rd->fgetcwd = &protect_getcwd;
-    rd->fwgetcwd = &protect_wgetcwd;
-    rd->fgetdcwd = &protect_getdcwd;
-    rd->fwgetdcwd = &protect_wgetdcwd;
-    rd->ffullpath = &protect_fullpath;
-    rd->fwfullpath = &protect_wfullpath;
-    rd->ftempnam = &protect_tempnam;
-    rd->fwtempnam = &protect_wtempnam;
+    ld->fmalloc = &protect_malloc;
+    ld->fcalloc = &protect_calloc;
+    ld->ffree = &protect_free;
+    ld->frealloc = &protect_realloc;
+    ld->fstrdup = &protect_strdup;
+    ld->fwcsdup = &protect_wcsdup;
+    ld->fop_new = &protect_malloc;
+    ld->fop_delete = &protect_free;
+    ld->fop_new_a = &protect_malloc;
+    ld->fop_delete_a = &protect_free;
+    ld->fgetcwd = &protect_getcwd;
+    ld->fwgetcwd = &protect_wgetcwd;
+    ld->fgetdcwd = &protect_getdcwd;
+    ld->fwgetdcwd = &protect_wgetdcwd;
+    ld->ffullpath = &protect_fullpath;
+    ld->fwfullpath = &protect_wfullpath;
+    ld->ftempnam = &protect_tempnam;
+    ld->fwtempnam = &protect_wtempnam;
   }
 
   if( rd->opt.handleException )
@@ -1762,8 +1832,11 @@ DLLEXPORT DWORD inj( remoteData *rd,void *app )
   replaceModFuncs();
 
   GetModuleFileName( NULL,rd->exePathA,MAX_PATH );
+  rd->master = ld->master;
 
-  SetEvent( rd->initFinished );
+  HANDLE initFinished = rd->initFinished;
+  SetEvent( initFinished );
+  CloseHandle( initFinished );
   while( 1 ) Sleep( INFINITE );
 
   return( 0 );

@@ -517,6 +517,8 @@ static CODE_SEG(".text$2") HANDLE inject(
 
   ReadProcessMemory( process,fullDataRemote+funcSize,data,
       sizeof(remoteData),NULL );
+  VirtualFreeEx( process,fullDataRemote,0,MEM_RELEASE );
+
   if( !data->master )
   {
     CloseHandle( readPipe );

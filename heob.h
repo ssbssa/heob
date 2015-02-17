@@ -157,61 +157,15 @@ typedef struct remoteData
   func_FreeLibrary *fFreeLibrary;
   func_GetProcAddress *fGetProcAddress;
   func_SetUnhandledExceptionFilter *fSetUnhandledExceptionFilter;
-
-  func_malloc *fmalloc;
-  func_calloc *fcalloc;
-  func_free *ffree;
-  func_realloc *frealloc;
-  func_strdup *fstrdup;
-  func_wcsdup *fwcsdup;
   func_ExitProcess *fExitProcess;
-  func_malloc *fop_new;
-  func_free *fop_delete;
-  func_malloc *fop_new_a;
-  func_free *fop_delete_a;
-  func_getcwd *fgetcwd;
-  func_wgetcwd *fwgetcwd;
-  func_getdcwd *fgetdcwd;
-  func_wgetdcwd *fwgetdcwd;
-  func_fullpath *ffullpath;
-  func_wfullpath *fwfullpath;
-  func_tempnam *ftempnam;
-  func_wtempnam *fwtempnam;
-
-  func_free *ofree;
-  func_getcwd *ogetcwd;
-  func_wgetcwd *owgetcwd;
-  func_getdcwd *ogetdcwd;
-  func_wgetdcwd *owgetdcwd;
-  func_fullpath *ofullpath;
-  func_wfullpath *owfullpath;
-  func_tempnam *otempnam;
-  func_wtempnam *owtempnam;
 
   HANDLE master;
   HANDLE initFinished;
-
-  splitAllocation *splits;
-  int ptrShift;
-  allocType newArrAllocMethod;
-
-  freed *freed_a;
-  int freed_q;
-  int freed_s;
-
-  HMODULE *mod_a;
-  int mod_q;
-  int mod_s;
-  int mod_d;
 
   union {
     wchar_t exePath[MAX_PATH];
     char exePathA[MAX_PATH];
   };
-
-  CRITICAL_SECTION cs;
-  HANDLE heap;
-  DWORD pageSize;
 
   options opt;
 }
