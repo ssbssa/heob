@@ -58,6 +58,7 @@ typedef struct localData
   func_wtempnam *owtempnam;
 
   HANDLE master;
+  HMODULE kernel32;
 
   splitAllocation *splits;
   int ptrShift;
@@ -1205,6 +1206,8 @@ static void addModule( HMODULE mod )
 {
   GET_REMOTEDATA( rd );
 
+  if( mod==rd->kernel32 ) return;
+
   int m;
   for( m=0; m<rd->mod_q && rd->mod_a[m]!=mod; m++ );
   if( m<rd->mod_q ) return;
@@ -1758,6 +1761,7 @@ DLLEXPORT DWORD inj( remoteData *rd,void *app )
   ld->fGetProcAddress = rd->fGetProcAddress;
   ld->fExitProcess = rd->fExitProcess;
   ld->master = rd->master;
+  ld->kernel32 = rd->kernel32;
 
   InitializeCriticalSection( &ld->cs );
   ld->heap = heap;
