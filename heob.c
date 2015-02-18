@@ -747,6 +747,22 @@ static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbghelp *dh )
 }
 
 // }}}
+// read all requested data from pipe {{{
+
+static int readFile( HANDLE file,void *destV,int count )
+{
+  char *dest = destV;
+  while( count>0 )
+  {
+    DWORD didread;
+    if( !ReadFile(file,dest,count,&didread,NULL) ) return( 0 );
+    dest += didread;
+    count -= didread;
+  }
+  return( 1 );
+}
+
+// }}}
 // main {{{
 
 #ifdef _WIN64
@@ -1027,13 +1043,12 @@ void mainCRTStartup( void )
 
     ResumeThread( pi.hThread );
 
-    DWORD didread;
     int type;
     modInfo *mi_a = NULL;
     int mi_q = 0;
     allocation *alloc_a = NULL;
     int alloc_q = -2;
-    while( ReadFile(readPipe,&type,sizeof(int),&didread,NULL) )
+    while( readFile(readPipe,&type,sizeof(int)) )
     {
       switch( type )
       {
@@ -1042,7 +1057,7 @@ void mainCRTStartup( void )
           {
             char buf[1024];
             char *bufpos = buf;
-            while( ReadFile(readPipe,bufpos,1,&didread,NULL) )
+            while( readFile(readPipe,bufpos,1) )
             {
               if( bufpos[0]!='\n' )
               {
@@ -1059,12 +1074,12 @@ void mainCRTStartup( void )
 #endif
 
         case WRITE_LEAKS:
-          if( !ReadFile(readPipe,&exitCode,sizeof(UINT),&didread,NULL) )
+          if( !readFile(readPipe,&exitCode,sizeof(UINT)) )
           {
             alloc_q = -2;
             break;
           }
-          if( !ReadFile(readPipe,&alloc_q,sizeof(int),&didread,NULL) )
+          if( !readFile(readPipe,&alloc_q,sizeof(int)) )
           {
             alloc_q = -2;
             break;
@@ -1072,8 +1087,7 @@ void mainCRTStartup( void )
           if( !alloc_q ) break;
           if( alloc_a ) HeapFree( heap,0,alloc_a );
           alloc_a = HeapAlloc( heap,0,alloc_q*sizeof(allocation) );
-          if( !ReadFile(readPipe,alloc_a,alloc_q*sizeof(allocation),
-                &didread,NULL) )
+          if( !readFile(readPipe,alloc_a,alloc_q*sizeof(allocation)) )
           {
             alloc_q = -2;
             break;
@@ -1081,12 +1095,12 @@ void mainCRTStartup( void )
           break;
 
         case WRITE_MODS:
-          if( !ReadFile(readPipe,&mi_q,sizeof(int),&didread,NULL) )
+          if( !readFile(readPipe,&mi_q,sizeof(int)) )
             mi_q = 0;
           if( !mi_q ) break;
           if( mi_a ) HeapFree( heap,0,mi_a );
           mi_a = HeapAlloc( heap,0,mi_q*sizeof(modInfo) );
-          if( !ReadFile(readPipe,mi_a,mi_q*sizeof(modInfo),&didread,NULL) )
+          if( !readFile(readPipe,mi_a,mi_q*sizeof(modInfo)) )
           {
             mi_q = 0;
             break;
@@ -1096,7 +1110,7 @@ void mainCRTStartup( void )
         case WRITE_EXCEPTION:
           {
             exceptionInfo ei;
-            if( !ReadFile(readPipe,&ei,sizeof(exceptionInfo),&didread,NULL) )
+            if( !readFile(readPipe,&ei,sizeof(exceptionInfo)) )
               break;
 
             const char *desc = NULL;
@@ -1167,7 +1181,7 @@ void mainCRTStartup( void )
         case WRITE_ALLOC_FAIL:
           {
             allocation a;
-            if( !ReadFile(readPipe,&a,sizeof(allocation),&didread,NULL) )
+            if( !readFile(readPipe,&a,sizeof(allocation)) )
               break;
 
             printf( "%c\nallocation failed of %u bytes\n",
@@ -1180,7 +1194,7 @@ void mainCRTStartup( void )
         case WRITE_FREE_FAIL:
           {
             allocation a;
-            if( !ReadFile(readPipe,&a,sizeof(allocation),&didread,NULL) )
+            if( !readFile(readPipe,&a,sizeof(allocation)) )
               break;
 
             printf( "%c\ndeallocation of invalid pointer %p\n",
@@ -1193,7 +1207,7 @@ void mainCRTStartup( void )
         case WRITE_DOUBLE_FREE:
           {
             allocation aa[3];
-            if( !ReadFile(readPipe,aa,3*sizeof(allocation),&didread,NULL) )
+            if( !readFile(readPipe,aa,3*sizeof(allocation)) )
               break;
 
             printf( "%c\ndouble free of %p (size %u)\n",
@@ -1212,7 +1226,7 @@ void mainCRTStartup( void )
         case WRITE_SLACK:
           {
             allocation aa[2];
-            if( !ReadFile(readPipe,aa,2*sizeof(allocation),&didread,NULL) )
+            if( !readFile(readPipe,aa,2*sizeof(allocation)) )
               break;
 
             printf( "%c\nwrite access violation at %p\n",
@@ -1236,7 +1250,7 @@ void mainCRTStartup( void )
         case WRITE_WRONG_DEALLOC:
           {
             allocation aa[2];
-            if( !ReadFile(readPipe,aa,2*sizeof(allocation),&didread,NULL) )
+            if( !readFile(readPipe,aa,2*sizeof(allocation)) )
               break;
 
             printf( "%c\nmismatching allocation/release method"
