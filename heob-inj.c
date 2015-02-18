@@ -1245,11 +1245,14 @@ static HMODULE replaceFuncs( HMODULE app,
   if( IMAGE_NT_SIGNATURE!=inh->Signature )
     return( NULL );
 
+  PIMAGE_DATA_DIRECTORY idd =
+    &inh->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+  if( !idd->Size ) return( NULL );
+
   GET_REMOTEDATA( rd );
 
   PIMAGE_IMPORT_DESCRIPTOR iid =
-    (PIMAGE_IMPORT_DESCRIPTOR)REL_PTR( idh,inh->OptionalHeader.
-        DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress );
+    (PIMAGE_IMPORT_DESCRIPTOR)REL_PTR( idh,idd->VirtualAddress );
 
   PSTR repModName = NULL;
   HMODULE repModule = NULL;
@@ -1260,9 +1263,10 @@ static HMODULE replaceFuncs( HMODULE app,
       break;
 
     PSTR curModName = (PSTR)REL_PTR( idh,iid[i].Name );
-    if( IsBadReadPtr(curModName,1) || !curModName[0] ) continue;
+    if( !curModName[0] ) continue;
     HMODULE curModule = GetModuleHandle( curModName );
     if( !curModule ) continue;
+
     if( rd->opt.dlls )
       addModule( curModule );
     if( called && lstrcmpi(curModName,called) )
