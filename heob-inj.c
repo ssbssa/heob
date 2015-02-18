@@ -73,6 +73,11 @@ typedef struct localData
   int mod_s;
   int mod_d;
 
+  HMODULE *freed_mod_a;
+  int freed_mod_q;
+  int freed_mod_s;
+  int inExit;
+
   CRITICAL_SECTION cs;
   HANDLE heap;
   DWORD pageSize;
@@ -124,12 +129,14 @@ static void exitWait( UINT c )
 // }}}
 // send module information {{{
 
-static void writeMods( allocation *alloc_a,int alloc_q )
+static void writeModsFind( allocation *alloc_a,int alloc_q,
+    modInfo **p_mi_a,int *p_mi_q )
 {
   GET_REMOTEDATA( rd );
 
-  int mi_q = 0;
-  modInfo *mi_a = NULL;
+  int mi_q = *p_mi_q;
+  modInfo *mi_a = *p_mi_a;
+
   int i,j,k;
   for( i=0; i<alloc_q; i++ )
   {
@@ -180,15 +187,33 @@ static void writeMods( allocation *alloc_a,int alloc_q )
         mi_q--;
     }
   }
+
+  *p_mi_q = mi_q;
+  *p_mi_a = mi_a;
+}
+
+static void writeModsSend( modInfo *mi_a,int mi_q )
+{
+  GET_REMOTEDATA( rd );
+
   int type = WRITE_MODS;
   DWORD written;
   WriteFile( rd->master,&type,sizeof(int),&written,NULL );
   WriteFile( rd->master,&mi_q,sizeof(int),&written,NULL );
   if( mi_q )
-  {
     WriteFile( rd->master,mi_a,mi_q*sizeof(modInfo),&written,NULL );
+}
+
+static void writeMods( allocation *alloc_a,int alloc_q )
+{
+  GET_REMOTEDATA( rd );
+
+  int mi_q = 0;
+  modInfo *mi_a = NULL;
+  writeModsFind( alloc_a,alloc_q,&mi_a,&mi_q );
+  writeModsSend( mi_a,mi_q );
+  if( mi_a )
     HeapFree( rd->heap,0,mi_a );
-  }
 }
 
 // }}}
@@ -285,7 +310,7 @@ static NOINLINE void trackAllocs(
         WriteFile( rd->master,&type,sizeof(int),&written,NULL );
         WriteFile( rd->master,aa,3*sizeof(allocation),&written,NULL );
       }
-      else
+      else if( !rd->inExit )
       {
         allocation a;
         a.ptr = free_ptr;
@@ -740,41 +765,64 @@ static VOID WINAPI new_ExitProcess( UINT c )
 
   int i;
   int alloc_q = 0;
+  int mi_q = 0;
+  modInfo *mi_a = NULL;
   for( i=0; i<=SPLIT_MASK; i++ )
-    alloc_q += rd->splits[i].alloc_q;
-  allocation *alloc_a = NULL;
-  if( alloc_q )
   {
-    alloc_a = HeapAlloc( rd->heap,0,alloc_q*sizeof(allocation) );
-    if( !alloc_a )
-    {
-      type = WRITE_MAIN_ALLOC_FAIL;
-      WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-      exitWait( 1 );
-    }
-    alloc_q = 0;
-    for( i=0; i<=SPLIT_MASK; i++ )
-    {
-      splitAllocation *sa = rd->splits + i;
-      if( !sa->alloc_q ) continue;
-      RtlMoveMemory( alloc_a+alloc_q,sa->alloc_a,
-          sa->alloc_q*sizeof(allocation) );
-      alloc_q += sa->alloc_q;
-    }
-
-    writeMods( alloc_a,alloc_q );
+    splitAllocation *sa = rd->splits + i;
+    writeModsFind( sa->alloc_a,sa->alloc_q,&mi_a,&mi_q );
+    alloc_q += sa->alloc_q;
   }
 
+  if( rd->freed_mod_q )
+  {
+    rd->inExit = 1;
+    LeaveCriticalSection( &rd->cs );
+
+    for( i=0; i<rd->freed_mod_q; i++ )
+      rd->fFreeLibrary( rd->freed_mod_a[i] );
+
+    EnterCriticalSection( &rd->cs );
+  }
+
+  writeModsSend( mi_a,mi_q );
+  if( mi_a )
+    HeapFree( rd->heap,0,mi_a );
+
+  // make sure exit trace is still the last {{{
+  if( rd->freed_mod_q && rd->opt.exitTrace )
+  {
+    splitAllocation *sa = rd->splits + SPLIT_MASK;
+    alloc_q = sa->alloc_q;
+    allocation *alloc_a = sa->alloc_a;
+    if( alloc_q>1 && alloc_a[alloc_q-1].at!=AT_EXIT )
+    {
+      for( i=alloc_q-2; i>=0; i-- )
+      {
+        if( alloc_a[i].at!=AT_EXIT ) continue;
+
+        allocation exitTrace = alloc_a[i];
+        alloc_a[i] = alloc_a[alloc_q-1];
+        alloc_a[alloc_q-1] = exitTrace;
+        break;
+      }
+    }
+  }
+  // }}}
+
+  alloc_q = 0;
+  for( i=0; i<=SPLIT_MASK; i++ )
+    alloc_q += rd->splits[i].alloc_q;
   type = WRITE_LEAKS;
   WriteFile( rd->master,&type,sizeof(int),&written,NULL );
   WriteFile( rd->master,&c,sizeof(UINT),&written,NULL );
   WriteFile( rd->master,&alloc_q,sizeof(int),&written,NULL );
-  if( alloc_q )
+  for( i=0; i<=SPLIT_MASK; i++ )
   {
-    WriteFile( rd->master,alloc_a,alloc_q*sizeof(allocation),
+    splitAllocation *sa = rd->splits + i;
+    if( !sa->alloc_q ) continue;
+    WriteFile( rd->master,sa->alloc_a,sa->alloc_q*sizeof(allocation),
         &written,NULL );
-
-    HeapFree( rd->heap,0,alloc_a );
   }
 
   LeaveCriticalSection( &rd->cs );
@@ -830,7 +878,40 @@ static HMODULE WINAPI new_LoadLibraryW( LPCWSTR name )
 
 static BOOL WINAPI new_FreeLibrary( HMODULE mod )
 {
-  (void)mod;
+  GET_REMOTEDATA( rd );
+
+  if( rd->opt.dlls<=2 ) return( TRUE );
+
+  EnterCriticalSection( &rd->cs );
+
+  if( rd->inExit )
+  {
+    LeaveCriticalSection( &rd->cs );
+    return( TRUE );
+  }
+
+  if( rd->freed_mod_q>=rd->freed_mod_s )
+  {
+    rd->freed_mod_s += 64;
+    HMODULE *freed_mod_an;
+    if( !rd->freed_a )
+      freed_mod_an = HeapAlloc(
+          rd->heap,0,rd->freed_mod_s*sizeof(HMODULE) );
+    else
+      freed_mod_an = HeapReAlloc(
+          rd->heap,0,rd->freed_mod_a,rd->freed_mod_s*sizeof(HMODULE) );
+    if( !freed_mod_an )
+    {
+      DWORD written;
+      int type = WRITE_MAIN_ALLOC_FAIL;
+      WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+      exitWait( 1 );
+    }
+    rd->freed_mod_a = freed_mod_an;
+  }
+  rd->freed_mod_a[rd->freed_mod_q++] = mod;
+
+  LeaveCriticalSection( &rd->cs );
 
   return( TRUE );
 }
