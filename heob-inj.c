@@ -92,7 +92,7 @@ static localData *g_ld = NULL;
 // }}}
 // process exit {{{
 
-static void exitWait( UINT c )
+static void exitWait( UINT c,int terminate )
 {
   GET_REMOTEDATA( rd );
 
@@ -123,7 +123,10 @@ static void exitWait( UINT c )
     }
   }
 
-  rd->fExitProcess( c );
+  if( !terminate )
+    rd->fExitProcess( c );
+  else
+    TerminateProcess( GetCurrentProcess(),c );
 }
 
 // }}}
@@ -179,7 +182,7 @@ static void writeModsFind( allocation *alloc_a,int alloc_q,
         DWORD written;
         int type = WRITE_MAIN_ALLOC_FAIL;
         WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-        exitWait( 1 );
+        exitWait( 1,0 );
       }
       mi_a[mi_q-1].base = base;
       mi_a[mi_q-1].size = size;
@@ -252,7 +255,7 @@ static NOINLINE void trackAllocs(
             DWORD written;
             int type = WRITE_MAIN_ALLOC_FAIL;
             WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-            exitWait( 1 );
+            exitWait( 1,0 );
           }
           rd->freed_a = freed_an;
         }
@@ -359,7 +362,7 @@ static NOINLINE void trackAllocs(
         DWORD written;
         int type = WRITE_MAIN_ALLOC_FAIL;
         WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-        exitWait( 1 );
+        exitWait( 1,0 );
       }
       sa->alloc_a = alloc_an;
     }
@@ -827,7 +830,7 @@ static VOID WINAPI new_ExitProcess( UINT c )
 
   LeaveCriticalSection( &rd->cs );
 
-  exitWait( c );
+  exitWait( c,0 );
 }
 
 static HMODULE WINAPI new_LoadLibraryA( LPCSTR name )
@@ -905,7 +908,7 @@ static BOOL WINAPI new_FreeLibrary( HMODULE mod )
       DWORD written;
       int type = WRITE_MAIN_ALLOC_FAIL;
       WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-      exitWait( 1 );
+      exitWait( 1,0 );
     }
     rd->freed_mod_a = freed_mod_an;
   }
@@ -1308,7 +1311,7 @@ static void addModule( HMODULE mod )
       DWORD written;
       int type = WRITE_MAIN_ALLOC_FAIL;
       WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-      exitWait( 1 );
+      exitWait( 1,0 );
     }
     rd->mod_a = mod_an;
   }
@@ -1728,7 +1731,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   WriteFile( rd->master,&type,sizeof(int),&written,NULL );
   WriteFile( rd->master,&ei,sizeof(exceptionInfo),&written,NULL );
 
-  exitWait( 1 );
+  exitWait( 1,1 );
 
   return( EXCEPTION_EXECUTE_HANDLER );
 }
