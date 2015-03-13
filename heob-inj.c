@@ -1915,6 +1915,7 @@ DLLEXPORT DWORD inj( remoteData *rd,void *app )
     VirtualProtect( fp,sizeof(doNothing),PAGE_EXECUTE_READWRITE,&prot );
     RtlMoveMemory( fp,doNothing,sizeof(doNothing) );
     VirtualProtect( fp,sizeof(doNothing),prot,&prot );
+    rd->fFlushInstructionCache( rd->fGetCurrentProcess(),NULL,0 );
   }
 
   addModule( GetModuleHandle(NULL) );
