@@ -1,0 +1,5 @@
+allocer: main()
+
+unhandled exception code: 0xPTR (INVALID_FREE)
+  exception on:
+  invalid free of 0xPTR

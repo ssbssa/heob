@@ -1,0 +1,7 @@
+allocer: main()
+
+unhandled exception code: 0xPTR (DOUBLE_FREE)
+  exception on:
+  double free of 0xPTR (size 16)
+  allocated on:
+  freed on:

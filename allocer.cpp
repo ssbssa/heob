@@ -209,6 +209,11 @@ void choose( int arg )
         *(int*)ptr = 5;
       }
       break;
+
+    case 13:
+      // multiple free
+      free( mem );
+      break;
   }
 
   mem = (char*)realloc( mem,30 );

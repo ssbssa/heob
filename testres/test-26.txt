@@ -1,0 +1,5 @@
+allocer: main()
+
+unhandled exception code: 0xPTR (ALLOCATION_FAILED)
+  exception on:
+  allocation failed of NUM bytes
