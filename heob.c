@@ -163,11 +163,7 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
     tc->fWriteText( tc,format,ptr-format );
   va_end( vl );
 }
-#ifdef __MINGW32__
-#define printf(a...) mprintf(tc,a)
-#else
 #define printf(...) mprintf(tc,__VA_ARGS__)
-#endif
 
 static NOINLINE char *mstrchr( const char *s,char c )
 {
