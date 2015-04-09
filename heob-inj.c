@@ -81,6 +81,7 @@ typedef struct localData
   CRITICAL_SECTION cs;
   HANDLE heap;
   DWORD pageSize;
+  size_t pageAdd;
 
   options opt;
 }
@@ -967,7 +968,7 @@ static void *protect_alloc_m( size_t s )
   s += ( align - (s%align) )%align;
 
   DWORD pageSize = rd->pageSize;
-  size_t pages = s ? ( s-1 )/pageSize + 2 : 1;
+  size_t pages = ( s ? (s-1)/pageSize + 1 : 0 ) + rd->pageAdd;
 
   unsigned char *b = (unsigned char*)VirtualAlloc(
       NULL,pages*pageSize,MEM_RESERVE,PAGE_NOACCESS );
@@ -977,10 +978,10 @@ static void *protect_alloc_m( size_t s )
   size_t slackSize = ( pageSize - (s%pageSize) )%pageSize;
 
   if( rd->opt.protect>1 )
-    b += pageSize;
+    b += pageSize*rd->pageAdd;
 
-  if( pages>1 )
-    VirtualAlloc( b,(pages-1)*pageSize,MEM_COMMIT,PAGE_READWRITE );
+  if( pages>rd->pageAdd )
+    VirtualAlloc( b,(pages-rd->pageAdd)*pageSize,MEM_COMMIT,PAGE_READWRITE );
 
   if( slackSize && rd->opt.slackInit )
   {
@@ -1005,7 +1006,7 @@ static NOINLINE void protect_free_m( void *b )
   GET_REMOTEDATA( rd );
 
   DWORD pageSize = rd->pageSize;
-  size_t pages = s ? ( s-1 )/pageSize + 2 : 1;
+  size_t pages = ( s ? (s-1)/pageSize + 1 : 0 ) + rd->pageAdd;
 
   uintptr_t p = (uintptr_t)b;
   unsigned char *slackStart;
@@ -1020,7 +1021,7 @@ static NOINLINE void protect_free_m( void *b )
   {
     slackStart = ((unsigned char*)p) + s;
     slackSize = ( pageSize - (s%pageSize) )%pageSize;
-    p -= pageSize;
+    p -= pageSize*rd->pageAdd;
   }
 
   if( slackSize )
@@ -1551,11 +1552,11 @@ DLLEXPORT allocation *heob_find_allocation( char *addr )
       if( rd->opt.protect==1 )
       {
         noAccessStart = ptr + a->size;
-        noAccessEnd = noAccessStart + rd->pageSize;
+        noAccessEnd = noAccessStart + rd->pageSize*rd->pageAdd;
       }
       else
       {
-        noAccessStart = ptr - rd->pageSize;
+        noAccessStart = ptr - rd->pageSize*rd->pageAdd;
         noAccessEnd = ptr;
       }
 
@@ -1582,11 +1583,11 @@ DLLEXPORT freed *heob_find_freed( char *addr )
     if( rd->opt.protect==1 )
     {
       noAccessStart = ptr - ( ((uintptr_t)ptr)%rd->pageSize );
-      noAccessEnd = ptr + f->a.size + rd->pageSize;
+      noAccessEnd = ptr + f->a.size + rd->pageSize*rd->pageAdd;
     }
     else
     {
-      noAccessStart = ptr - rd->pageSize;
+      noAccessStart = ptr - rd->pageSize*rd->pageAdd;
       noAccessEnd = ptr + ( size?(size-1)/rd->pageSize+1:0 )*rd->pageSize;
     }
 
@@ -1888,6 +1889,7 @@ DLLEXPORT DWORD inj( remoteData *rd,void *app )
   SYSTEM_INFO si;
   GetSystemInfo( &si );
   ld->pageSize = si.dwPageSize;
+  ld->pageAdd = ( rd->opt.minProtectSize+(ld->pageSize-1) )/ld->pageSize;
 
   ld->splits = HeapAlloc( heap,HEAP_ZERO_MEMORY,
       (SPLIT_MASK+1)*sizeof(splitAllocation) );

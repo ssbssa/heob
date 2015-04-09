@@ -799,6 +799,7 @@ void mainCRTStartup( void )
     0,
     0,
     0,
+    1,
   };
   options opt = defopt;
   while( args )
@@ -872,6 +873,11 @@ void mainCRTStartup( void )
       case 'r':
         opt.raiseException = atoi( args+2 );
         break;
+
+      case 'M':
+        opt.minProtectSize = atoi( args+2 );
+        if( opt.minProtectSize<1 ) opt.minProtectSize = 1;
+        break;
     }
     while( args[0] && args[0]!=' ' ) args++;
   }
@@ -925,6 +931,9 @@ void mainCRTStartup( void )
     printf( "    %c-r%cX%c    raise exception [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,
         ATT_INFO,defopt.raiseException,ATT_NORMAL );
+    printf( "    %c-M%cX%c    minimum page protection size [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,
+        ATT_INFO,defopt.minProtectSize,ATT_NORMAL );
     printf( "\nheap-observer " HEOB_VER " (" BITS "bit)\n" );
     ExitProcess( -1 );
   }

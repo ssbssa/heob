@@ -148,6 +148,7 @@ typedef struct
   intptr_t exitTrace;
   intptr_t sourceCode;
   intptr_t raiseException;
+  intptr_t minProtectSize;
 }
 options;
 

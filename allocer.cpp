@@ -214,6 +214,15 @@ void choose( int arg )
       // multiple free
       free( mem );
       break;
+
+    case 14:
+      // different page protection size
+      struct BigStruct
+      {
+        char c[5000];
+      };
+      BigStruct *bs = (BigStruct*)malloc( sizeof(BigStruct) );
+      mem[1] = bs[1].c[4500];
   }
 
   mem = (char*)realloc( mem,30 );
