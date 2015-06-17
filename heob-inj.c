@@ -1898,11 +1898,11 @@ DLLEXPORT DWORD inj( remoteData *rd,void *app )
   if( rd->opt.protect )
   {
 #ifdef __MINGW32__
-    ld->ptrShift = __builtin_ffs( si.dwPageSize ) - 1;
+    ld->ptrShift = __builtin_ffs( si.dwPageSize ) - 1 + 4;
 #else
     long index;
     _BitScanForward( &index,si.dwPageSize );
-    ld->ptrShift = index;
+    ld->ptrShift = index + 4;
 #endif
     if( ld->ptrShift<4 ) ld->ptrShift = 4;
   }
