@@ -226,6 +226,22 @@ void choose( int arg )
         mem[1] = bs[1].c[4500];
       }
       break;
+
+    case 15:
+      // leak types
+      {
+        char *indirectly_reachable = (char*)malloc( 16 );
+        static char **reachable;
+        reachable = (char**)malloc( sizeof(char*) );
+        *reachable = indirectly_reachable;
+        mem[1] = reachable[0][0];
+
+        char *indirectly_lost = (char*)malloc( 32 );
+        char **lost = (char**)malloc( sizeof(char*) );
+        *lost = indirectly_lost;
+        mem[2] = lost[0][0];
+      }
+      break;
   }
 
   mem = (char*)realloc( mem,30 );

@@ -103,6 +103,15 @@ typedef enum
 }
 allocType;
 
+typedef enum
+{
+  LT_LOST,
+  LT_INDIRECTLY_LOST,
+  LT_REACHABLE,
+  LT_INDIRECTLY_REACHABLE,
+}
+leakType;
+
 typedef struct
 {
   union {
@@ -111,7 +120,8 @@ typedef struct
   };
   size_t size;
   void *frames[PTRS];
-  allocType at;
+  allocType at : 8;
+  leakType lt : 8;
 }
 allocation;
 

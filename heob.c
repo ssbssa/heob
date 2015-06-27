@@ -1329,6 +1329,7 @@ void mainCRTStartup( void )
     if( !alloc_q )
     {
       printf( "%c\nno leaks found\n",ATT_OK );
+
       if( exitTrace.at==AT_EXIT )
       {
         printf( "%cexit on:\n",ATT_SECTION );
@@ -1339,7 +1340,6 @@ void mainCRTStartup( void )
     }
     else if( alloc_q>0 )
     {
-      printf( "%c\nleaks:\n",ATT_SECTION );
       int i;
       size_t sumSize = 0;
       int combined_q = 0;
@@ -1357,6 +1357,7 @@ void mainCRTStartup( void )
         {
           if( !alloc_a[j].ptr ||
               a.size!=alloc_a[j].size ||
+              a.lt!=alloc_a[j].lt ||
               memcmp(a.frames,alloc_a[j].frames,PTRS*sizeof(void*)) )
             continue;
 
@@ -1368,8 +1369,15 @@ void mainCRTStartup( void )
 
         alloc_a[combined_q++] = a;
       }
-      if( opt.leakDetails )
+      if( opt.leakDetails<=1 )
+        printf( "%c\nleaks:\n",ATT_SECTION );
+      else
+        printf( "\n" );
+      int l;
+      for( l=0; opt.leakDetails && l<=LT_INDIRECTLY_REACHABLE; l++ )
       {
+        intptr_t ltCount = 0;
+        size_t ltSumSize = 0;
         for( i=0; i<combined_q; i++ )
         {
           int best = -1;
@@ -1379,7 +1387,7 @@ void mainCRTStartup( void )
           for( j=0; j<combined_q; j++ )
           {
             allocation b = alloc_a[j];
-            if( !b.count ) continue;
+            if( !b.count || b.lt!=l ) continue;
 
             int use = 0;
             if( best<0 )
@@ -1400,16 +1408,29 @@ void mainCRTStartup( void )
               a = b;
             }
           }
+          if( best<0 ) break;
 
           alloc_a[best].count = 0;
+
+          if( opt.leakDetails>1 && !i )
+            printf( "%cleaks (%s):\n",ATT_SECTION,
+                l==LT_LOST?"lost":l==LT_INDIRECTLY_LOST?"indirectly lost":
+                l==LT_REACHABLE?"reachable":"indirectly reachable" );
 
           printf( "%c  %u B * %d = %u B\n",
               ATT_WARN,a.size,(intptr_t)a.count,a.size*a.count );
 
+          ltCount += a.count;
+          ltSumSize += a.size*a.count;
+
           printStack( a.frames,mi_a,mi_q,&dh );
         }
+        if( opt.leakDetails>1 && ltCount )
+          printf( "%c  sum: %u B / %d\n",ATT_WARN,ltSumSize,ltCount );
       }
-      printf( "%c  sum: %u B / %d\n",ATT_WARN,sumSize,(intptr_t)alloc_q );
+      if( opt.leakDetails<=1 )
+        printf( "%c  sum: %u B / %d\n",ATT_WARN,sumSize,(intptr_t)alloc_q );
+
       if( exitTrace.at==AT_EXIT )
       {
         printf( "%cexit on:\n",ATT_SECTION );

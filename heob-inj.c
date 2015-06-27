@@ -20,6 +20,13 @@
 // }}}
 // local data {{{
 
+typedef struct
+{
+  const void **start;
+  const void **end;
+}
+modMemType;
+
 typedef struct localData
 {
   func_LoadLibraryA *fLoadLibraryA;
@@ -77,6 +84,10 @@ typedef struct localData
   int freed_mod_q;
   int freed_mod_s;
   int inExit;
+
+  modMemType *mod_mem_a;
+  int mod_mem_q;
+  int mod_mem_s;
 
   CRITICAL_SECTION cs;
   HANDLE heap;
@@ -283,6 +294,7 @@ static NOINLINE void trackAllocs(
         aa[1].ptr = free_ptr;
         aa[1].size = 0;
         aa[1].at = at;
+        aa[1].lt = LT_LOST;
 
         writeMods( aa,2 );
 
@@ -333,6 +345,7 @@ static NOINLINE void trackAllocs(
         a.ptr = free_ptr;
         a.size = 0;
         a.at = at;
+        a.lt = LT_LOST;
 
         void **frames = a.frames;
         int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
@@ -385,6 +398,7 @@ static NOINLINE void trackAllocs(
     a->ptr = alloc_ptr;
     a->size = alloc_size;
     a->at = at;
+    a->lt = LT_LOST;
 
     void **frames = a->frames;
     int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
@@ -405,6 +419,7 @@ static NOINLINE void trackAllocs(
     a.ptr = NULL;
     a.size = alloc_size;
     a.at = at;
+    a.lt = LT_LOST;
 
     void **frames = a.frames;
     int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
@@ -770,6 +785,87 @@ static wchar_t *new_wtempnam( wchar_t *dir,wchar_t *prefix )
   return( tn );
 }
 
+static void addModMem( PBYTE start,PBYTE end )
+{
+  uintptr_t startPtr = (uintptr_t)start;
+  if( startPtr%sizeof(uintptr_t) )
+    startPtr += sizeof(uintptr_t) - startPtr%sizeof(uintptr_t);
+  uintptr_t endPtr = (uintptr_t)end;
+  if( endPtr%sizeof(uintptr_t) )
+    endPtr -= endPtr%sizeof(uintptr_t);
+  if( endPtr<=startPtr ) return;
+
+  GET_REMOTEDATA( rd );
+
+  if( rd->mod_mem_q>=rd->mod_mem_s )
+  {
+    rd->mod_mem_s += 64;
+    modMemType *mod_mem_an;
+    if( !rd->mod_mem_a )
+      mod_mem_an = HeapAlloc(
+          rd->heap,0,rd->mod_mem_s*sizeof(modMemType) );
+    else
+      mod_mem_an = HeapReAlloc(
+          rd->heap,0,rd->mod_mem_a,rd->mod_mem_s*sizeof(modMemType) );
+    if( !mod_mem_an )
+    {
+      DWORD written;
+      int type = WRITE_MAIN_ALLOC_FAIL;
+      WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+      exitWait( 1,0 );
+    }
+    rd->mod_mem_a = mod_mem_an;
+  }
+
+  modMemType *mod_mem = &rd->mod_mem_a[rd->mod_mem_q++];
+  mod_mem->start = (const void**)startPtr;
+  mod_mem->end = (const void**)endPtr;
+}
+
+static void findLeakType( leakType lt )
+{
+  GET_REMOTEDATA( rd );
+
+  modMemType *mod_mem_a = rd->mod_mem_a;
+  int mod_mem_q = rd->mod_mem_q;
+  rd->mod_mem_a = NULL;
+  rd->mod_mem_q = rd->mod_mem_s = 0;
+  if( !mod_mem_a ) return;
+
+  int i,j,k;
+  for( i=0; i<=SPLIT_MASK; i++ )
+  {
+    splitAllocation *sa = rd->splits + i;
+    int alloc_q = sa->alloc_q;
+    allocation *alloc_a = sa->alloc_a;
+    for( j=0; j<alloc_q; j++ )
+    {
+      allocation *a = alloc_a + j;
+      if( a->lt!=LT_LOST ) continue;
+      void *ptr = a->ptr;
+      for( k=0; k<mod_mem_q; k++ )
+      {
+        modMemType *mod_mem = mod_mem_a + k;
+        const void **start = mod_mem->start;
+        const void **end = mod_mem->end;
+        for( ; start<end; start++ )
+        {
+          if( ptr!=*start ) continue;
+          a->lt = lt;
+          if( lt!=LT_INDIRECTLY_LOST )
+          {
+            PBYTE memStart = a->ptr;
+            addModMem( memStart,memStart+a->size );
+          }
+          break;
+        }
+        if( start<end ) break;
+      }
+    }
+  }
+  HeapFree( rd->heap,0,mod_mem_a );
+}
+
 static VOID WINAPI new_ExitProcess( UINT c )
 {
   GET_REMOTEDATA( rd );
@@ -785,18 +881,39 @@ static VOID WINAPI new_ExitProcess( UINT c )
 
   EnterCriticalSection( &rd->cs );
 
+  if( rd->opt.leakDetails>1 )
+  {
+    findLeakType( LT_REACHABLE );
+    while( rd->mod_mem_a )
+      findLeakType( LT_INDIRECTLY_REACHABLE );
+
+    int i,j;
+    for( i=0; i<=SPLIT_MASK; i++ )
+    {
+      splitAllocation *sa = rd->splits + i;
+      int alloc_q = sa->alloc_q;
+      allocation *alloc_a = sa->alloc_a;
+      for( j=0; j<alloc_q; j++ )
+      {
+        allocation *a = alloc_a + j;
+        if( a->lt!=LT_LOST ) continue;
+        PBYTE memStart = a->ptr;
+        addModMem( memStart,memStart+a->size );
+      }
+    }
+    findLeakType( LT_INDIRECTLY_LOST );
+  }
+
   if( rd->opt.exitTrace )
     trackAllocs( NULL,(void*)-1,0,AT_EXIT );
 
   int i;
-  int alloc_q = 0;
   int mi_q = 0;
   modInfo *mi_a = NULL;
   for( i=0; i<=SPLIT_MASK; i++ )
   {
     splitAllocation *sa = rd->splits + i;
     writeModsFind( sa->alloc_a,sa->alloc_q,&mi_a,&mi_q );
-    alloc_q += sa->alloc_q;
   }
 
   if( rd->freed_mod_q )
@@ -815,6 +932,7 @@ static VOID WINAPI new_ExitProcess( UINT c )
     HeapFree( rd->heap,0,mi_a );
 
   // make sure exit trace is still the last {{{
+  int alloc_q;
   if( rd->freed_mod_q && rd->opt.exitTrace )
   {
     splitAllocation *sa = rd->splits + SPLIT_MASK;
@@ -1522,6 +1640,30 @@ static void replaceModFuncs( void )
         rd->owfullpath = rd->fGetProcAddress( dll_msvcrt,fname_wfullpath );
         rd->otempnam = rd->fGetProcAddress( dll_msvcrt,fname_tempnam );
         rd->owtempnam = rd->fGetProcAddress( dll_msvcrt,fname_wtempnam );
+      }
+    }
+
+    if( rd->opt.leakDetails>1 && dll_msvcrt )
+    {
+      PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)mod;
+      PIMAGE_NT_HEADERS inh = (PIMAGE_NT_HEADERS)REL_PTR( idh,idh->e_lfanew );
+
+      PIMAGE_FILE_HEADER ifh = &inh->FileHeader;
+      PIMAGE_SECTION_HEADER ish = (PIMAGE_SECTION_HEADER)REL_PTR( inh,
+          sizeof(DWORD)+sizeof(IMAGE_FILE_HEADER)+ifh->SizeOfOptionalHeader );
+
+      int i;
+      for( i=0; i<ifh->NumberOfSections; i++ )
+      {
+        if( (ish[i].Characteristics&
+              (IMAGE_SCN_MEM_EXECUTE|IMAGE_SCN_MEM_READ|IMAGE_SCN_MEM_WRITE))!=
+            (IMAGE_SCN_MEM_READ|IMAGE_SCN_MEM_WRITE) )
+          continue;
+
+        PBYTE sectionStart = REL_PTR( idh,ish[i].VirtualAddress );
+        PBYTE sectionEnd = sectionStart + ish[i].Misc.VirtualSize;
+
+        addModMem( sectionStart,sectionEnd );
       }
     }
 
