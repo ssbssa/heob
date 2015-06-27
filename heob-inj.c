@@ -695,7 +695,8 @@ static char *new_fullpath( char *absPath,const char *relPath,
   char *fp = rd->ffullpath( absPath,relPath,maxLength );
   if( !fp || absPath ) return( fp );
 
-  trackAllocs( NULL,fp,MAX_PATH,AT_MALLOC );
+  size_t l = lstrlen( fp ) + 1;
+  trackAllocs( NULL,fp,l,AT_MALLOC );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_fullpath\n";
@@ -715,7 +716,8 @@ static wchar_t *new_wfullpath( wchar_t *absPath,const wchar_t *relPath,
   wchar_t *fp = rd->fwfullpath( absPath,relPath,maxLength );
   if( !fp || absPath ) return( fp );
 
-  trackAllocs( NULL,fp,MAX_PATH*2,AT_MALLOC );
+  size_t l = lstrlenW( fp ) + 1;
+  trackAllocs( NULL,fp,l*2,AT_MALLOC );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_wfullpath\n";
