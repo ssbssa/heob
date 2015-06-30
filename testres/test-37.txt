@@ -1,17 +1,13 @@
 allocer: main()
 
 leaks (lost):
-  64 B * 1 = 64 B
-  16 B * 1 = 16 B
   8 B * 1 = 8 B
-  sum: 88 B / 3
+  sum: 8 B / 1
 leaks (indirectly lost):
   32 B * 1 = 32 B
   sum: 32 B / 1
 leaks (reachable):
-  8 B * 1 = 8 B
-  sum: 8 B / 1
+  sum: 24 B / 2
 leaks (indirectly reachable):
-  16 B * 1 = 16 B
-  sum: 16 B / 1
+  sum: 80 B / 2
 exit code: 15 (0xPTR)

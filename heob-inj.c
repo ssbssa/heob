@@ -833,6 +833,7 @@ static void findLeakType( leakType lt )
   if( !mod_mem_a ) return;
 
   int i,j,k;
+  int compareExact = rd->opt.leakDetails<4;
   for( i=0; i<=SPLIT_MASK; i++ )
   {
     splitAllocation *sa = rd->splits + i;
@@ -842,7 +843,8 @@ static void findLeakType( leakType lt )
     {
       allocation *a = alloc_a + j;
       if( a->lt!=LT_LOST ) continue;
-      void *ptr = a->ptr;
+      uintptr_t ptr = (uintptr_t)a->ptr;
+      uintptr_t ptrEnd = ptr + a->size;
       for( k=0; k<mod_mem_q; k++ )
       {
         modMemType *mod_mem = mod_mem_a + k;
@@ -850,7 +852,15 @@ static void findLeakType( leakType lt )
         const void **end = mod_mem->end;
         for( ; start<end; start++ )
         {
-          if( ptr!=*start ) continue;
+          uintptr_t memPtr = (uintptr_t)*start;
+          if( compareExact )
+          {
+            if( memPtr!=ptr ) continue;
+          }
+          else
+          {
+            if( memPtr<ptr || memPtr>=ptrEnd ) continue;
+          }
           a->lt = lt;
           if( lt!=LT_INDIRECTLY_LOST )
           {

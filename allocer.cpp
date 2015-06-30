@@ -240,6 +240,13 @@ void choose( int arg )
         char **lost = (char**)malloc( sizeof(char*) );
         *lost = indirectly_lost;
         mem[2] = lost[0][0];
+
+        char *indirectly_kinda_reachable = (char*)malloc( 64 );
+        static char **kinda_reachable;
+        kinda_reachable = (char**)malloc( 16 );
+        *kinda_reachable = indirectly_kinda_reachable + 5;
+        mem[3] = kinda_reachable[0][0];
+        kinda_reachable++;
       }
       break;
   }
