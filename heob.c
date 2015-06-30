@@ -699,8 +699,41 @@ static void locFunc(
   }
 }
 
-static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbghelp *dh )
+static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbghelp *dh,
+    funcType ft )
 {
+  if( ft<FT_COUNT )
+  {
+    textColor *tc = dh->tc;
+    const char *funcnames[FT_COUNT] = {
+      "malloc",
+      "calloc",
+      "free",
+      "realloc",
+      "strdup",
+      "wcsdup",
+      "operator new",
+      "operator delete",
+      "operator new[]",
+      "operator delete[]",
+      "getcwd",
+      "wgetcwd",
+      "getdcwd",
+      "wgetdcwd",
+      "fullpath",
+      "wfullpath",
+      "tempnam",
+      "wtempnam",
+    };
+#ifndef _WIN64
+#define PTR_SPACES "        "
+#else
+#define PTR_SPACES "                "
+#endif
+    printf( "%c        " PTR_SPACES "   [%c%s%c]\n",
+        ATT_NORMAL,ATT_INFO,funcnames[ft],ATT_NORMAL );
+  }
+
   uint64_t frames[PTRS];
   int j;
   for( j=0; j<PTRS; j++ )
@@ -1161,7 +1194,7 @@ void mainCRTStartup( void )
                 ATT_WARN,ei.er.ExceptionCode,desc );
 
             printf( "%c  exception on:\n",ATT_SECTION );
-            printStack( ei.aa[0].frames,mi_a,mi_q,&dh );
+            printStack( ei.aa[0].frames,mi_a,mi_q,&dh,FT_COUNT );
 
             if( ei.er.ExceptionCode==EXCEPTION_ACCESS_VIOLATION &&
                 ei.er.NumberParameters==2 )
@@ -1180,12 +1213,12 @@ void mainCRTStartup( void )
                     ATT_INFO,ei.aq>2?"freed block":"protected area of",
                     ptr,size,addr>ptr?"+":"",addr-ptr );
                 printf( "%c  allocated on:\n",ATT_SECTION );
-                printStack( ei.aa[1].frames,mi_a,mi_q,&dh );
+                printStack( ei.aa[1].frames,mi_a,mi_q,&dh,ei.aa[1].ft );
 
                 if( ei.aq>2 )
                 {
                   printf( "%c  freed on:\n",ATT_SECTION );
-                  printStack( ei.aa[2].frames,mi_a,mi_q,&dh );
+                  printStack( ei.aa[2].frames,mi_a,mi_q,&dh,ei.aa[2].ft );
                 }
               }
             }
@@ -1203,9 +1236,9 @@ void mainCRTStartup( void )
               printf( "%c  double free of %p (size %u)\n",
                   ATT_INFO,ptr,size );
               printf( "%c  allocated on:\n",ATT_SECTION );
-              printStack( ei.aa[1].frames,mi_a,mi_q,&dh );
+              printStack( ei.aa[1].frames,mi_a,mi_q,&dh,ei.aa[1].ft );
               printf( "%c  freed on:\n",ATT_SECTION );
-              printStack( ei.aa[2].frames,mi_a,mi_q,&dh );
+              printStack( ei.aa[2].frames,mi_a,mi_q,&dh,ei.aa[2].ft );
             }
             else if( ei.er.ExceptionCode==EXCEPTION_ALLOCATION_FAILED &&
                 ei.er.NumberParameters==1 )
@@ -1227,7 +1260,7 @@ void mainCRTStartup( void )
             printf( "%c\nallocation failed of %u bytes\n",
                 ATT_WARN,a.size );
             printf( "%c  called on:\n",ATT_SECTION );
-            printStack( a.frames,mi_a,mi_q,&dh );
+            printStack( a.frames,mi_a,mi_q,&dh,a.ft );
           }
           break;
 
@@ -1240,7 +1273,7 @@ void mainCRTStartup( void )
             printf( "%c\ndeallocation of invalid pointer %p\n",
                 ATT_WARN,a.ptr );
             printf( "%c  called on:\n",ATT_SECTION );
-            printStack( a.frames,mi_a,mi_q,&dh );
+            printStack( a.frames,mi_a,mi_q,&dh,a.ft );
           }
           break;
 
@@ -1253,13 +1286,13 @@ void mainCRTStartup( void )
             printf( "%c\ndouble free of %p (size %u)\n",
                 ATT_WARN,aa[1].ptr,aa[1].size );
             printf( "%c  called on:\n",ATT_SECTION );
-            printStack( aa[0].frames,mi_a,mi_q,&dh );
+            printStack( aa[0].frames,mi_a,mi_q,&dh,aa[0].ft );
 
             printf( "%c  allocated on:\n",ATT_SECTION );
-            printStack( aa[1].frames,mi_a,mi_q,&dh );
+            printStack( aa[1].frames,mi_a,mi_q,&dh,aa[1].ft );
 
             printf( "%c  freed on:\n",ATT_SECTION );
-            printStack( aa[2].frames,mi_a,mi_q,&dh );
+            printStack( aa[2].frames,mi_a,mi_q,&dh,aa[2].ft );
           }
           break;
 
@@ -1275,9 +1308,9 @@ void mainCRTStartup( void )
                 ATT_INFO,aa[0].ptr,aa[0].size,
                 aa[1].ptr>aa[0].ptr?"+":"",(char*)aa[1].ptr-(char*)aa[0].ptr );
             printf( "%c  allocated on:\n",ATT_SECTION );
-            printStack( aa[0].frames,mi_a,mi_q,&dh );
+            printStack( aa[0].frames,mi_a,mi_q,&dh,aa[0].ft );
             printf( "%c  freed on:\n",ATT_SECTION );
-            printStack( aa[1].frames,mi_a,mi_q,&dh );
+            printStack( aa[1].frames,mi_a,mi_q,&dh,aa[1].ft );
           }
           break;
 
@@ -1295,24 +1328,10 @@ void mainCRTStartup( void )
 
             printf( "%c\nmismatching allocation/release method"
                 " of %p (size %u)\n",ATT_WARN,aa[0].ptr,aa[0].size );
-            const char *allocMethods[] = {
-              "malloc",
-              "new",
-              "new[]",
-            };
-            printf( "%c  allocated with '%s'\n",
-                ATT_INFO,allocMethods[aa[0].at] );
-            const char *deallocMethods[] = {
-              "free",
-              "delete",
-              "delete[]",
-            };
-            printf( "%c  freed with '%s'\n",
-                ATT_INFO,deallocMethods[aa[1].at] );
             printf( "%c  allocated on:\n",ATT_SECTION );
-            printStack( aa[0].frames,mi_a,mi_q,&dh );
+            printStack( aa[0].frames,mi_a,mi_q,&dh,aa[0].ft );
             printf( "%c  freed on:\n",ATT_SECTION );
-            printStack( aa[1].frames,mi_a,mi_q,&dh );
+            printStack( aa[1].frames,mi_a,mi_q,&dh,aa[1].ft );
           }
           break;
       }
@@ -1333,7 +1352,7 @@ void mainCRTStartup( void )
       if( exitTrace.at==AT_EXIT )
       {
         printf( "%cexit on:\n",ATT_SECTION );
-        printStack( exitTrace.frames,mi_a,mi_q,&dh );
+        printStack( exitTrace.frames,mi_a,mi_q,&dh,FT_COUNT );
       }
       printf( "%cexit code: %u (%x)\n",
           ATT_SECTION,(uintptr_t)exitCode,exitCode );
@@ -1358,6 +1377,7 @@ void mainCRTStartup( void )
           if( !alloc_a[j].ptr ||
               a.size!=alloc_a[j].size ||
               a.lt!=alloc_a[j].lt ||
+              a.ft!=alloc_a[j].ft ||
               memcmp(a.frames,alloc_a[j].frames,PTRS*sizeof(void*)) )
             continue;
 
@@ -1398,11 +1418,16 @@ void mainCRTStartup( void )
               use = 1;
             else if( b.size==a.size )
             {
-              int cmp = memcmp( a.frames,b.frames,PTRS*sizeof(void*) );
-              if( cmp<0 )
+              if( b.ft<a.ft )
                 use = 1;
-              else if( cmp==0 && b.count>a.count )
-                use = 1;
+              else if( b.ft==a.ft )
+              {
+                int cmp = memcmp( a.frames,b.frames,PTRS*sizeof(void*) );
+                if( cmp<0 )
+                  use = 1;
+                else if( cmp==0 && b.count>a.count )
+                  use = 1;
+              }
             }
             if( use )
             {
@@ -1427,7 +1452,7 @@ void mainCRTStartup( void )
             printf( "%c  %u B * %d = %u B\n",
                 ATT_WARN,a.size,(intptr_t)a.count,a.size*a.count );
 
-            printStack( a.frames,mi_a,mi_q,&dh );
+            printStack( a.frames,mi_a,mi_q,&dh,a.ft );
           }
         }
         if( opt.leakDetails>1 && ltCount )
@@ -1439,7 +1464,7 @@ void mainCRTStartup( void )
       if( exitTrace.at==AT_EXIT )
       {
         printf( "%cexit on:\n",ATT_SECTION );
-        printStack( exitTrace.frames,mi_a,mi_q,&dh );
+        printStack( exitTrace.frames,mi_a,mi_q,&dh,FT_COUNT );
       }
       printf( "%cexit code: %u (%x)\n",
           ATT_SECTION,(uintptr_t)exitCode,exitCode );

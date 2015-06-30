@@ -2,6 +2,7 @@ allocer: main()
 
 allocation failed of NUM bytes
   called on:
+    [malloc]
 
 unhandled exception code: 0xPTR (ACCESS_VIOLATION)
   exception on:

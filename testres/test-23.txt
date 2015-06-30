@@ -2,14 +2,19 @@ allocer: main()
 
 deallocation of invalid pointer 0xPTR
   called on:
+    [free]
 
 double free of 0xPTR (size 16)
   called on:
+    [realloc]
   allocated on:
+    [malloc]
   freed on:
+    [free]
 
 allocation failed of NUM bytes
   called on:
+    [realloc]
 
 no leaks found
 exit code: 7 (0xPTR)

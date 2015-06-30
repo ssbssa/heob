@@ -113,6 +113,30 @@ typedef enum
 }
 leakType;
 
+typedef enum
+{
+  FT_MALLOC,
+  FT_CALLOC,
+  FT_FREE,
+  FT_REALLOC,
+  FT_STRDUP,
+  FT_WCSDUP,
+  FT_OP_NEW,
+  FT_OP_DELETE,
+  FT_OP_NEW_A,
+  FT_OP_DELETE_A,
+  FT_GETCWD,
+  FT_WGETCWD,
+  FT_GETDCWD,
+  FT_WGETDCWD,
+  FT_FULLPATH,
+  FT_WFULLPATH,
+  FT_TEMPNAM,
+  FT_WTEMPNAM,
+  FT_COUNT,
+}
+funcType;
+
 typedef struct
 {
   union {
@@ -123,6 +147,8 @@ typedef struct
   void *frames[PTRS];
   allocType at : 8;
   leakType lt : 8;
+  funcType ft : 8;
+  funcType ftFreed : 8;
 }
 allocation;
 

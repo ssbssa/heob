@@ -236,7 +236,7 @@ static void writeMods( allocation *alloc_a,int alloc_q )
 // low-level function for memory allocation tracking {{{
 
 static NOINLINE void trackAllocs(
-    void *free_ptr,void *alloc_ptr,size_t alloc_size,allocType at )
+    void *free_ptr,void *alloc_ptr,size_t alloc_size,allocType at,funcType ft )
 {
   GET_REMOTEDATA( rd );
 
@@ -276,6 +276,7 @@ static NOINLINE void trackAllocs(
         freed *f = rd->freed_a + rd->freed_q;
         rd->freed_q++;
         RtlMoveMemory( &f->a,&sa->alloc_a[i],sizeof(allocation) );
+        f->a.ftFreed = ft;
 
         void **frames = f->frames;
         int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
@@ -295,6 +296,7 @@ static NOINLINE void trackAllocs(
         aa[1].size = 0;
         aa[1].at = at;
         aa[1].lt = LT_LOST;
+        aa[1].ft = ft;
 
         writeMods( aa,2 );
 
@@ -321,10 +323,12 @@ static NOINLINE void trackAllocs(
         allocation aa[3];
         RtlMoveMemory( &aa[1],&rd->freed_a[i].a,sizeof(allocation) );
         RtlMoveMemory( aa[2].frames,rd->freed_a[i].frames,PTRS*sizeof(void*) );
+        aa[2].ft = aa[1].ftFreed;
         void **frames = aa[0].frames;
         int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
         if( ptrs<PTRS )
           RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
+        aa[0].ft = ft;
 
         writeMods( aa,3 );
 
@@ -346,6 +350,7 @@ static NOINLINE void trackAllocs(
         a.size = 0;
         a.at = at;
         a.lt = LT_LOST;
+        a.ft = ft;
 
         void **frames = a.frames;
         int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
@@ -399,6 +404,7 @@ static NOINLINE void trackAllocs(
     a->size = alloc_size;
     a->at = at;
     a->lt = LT_LOST;
+    a->ft = ft;
 
     void **frames = a->frames;
     int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
@@ -420,6 +426,7 @@ static NOINLINE void trackAllocs(
     a.size = alloc_size;
     a.at = at;
     a.lt = LT_LOST;
+    a.ft = ft;
 
     void **frames = a.frames;
     int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
@@ -450,7 +457,7 @@ static void *new_malloc( size_t s )
   GET_REMOTEDATA( rd );
   void *b = rd->fmalloc( s );
 
-  trackAllocs( NULL,b,s,AT_MALLOC );
+  trackAllocs( NULL,b,s,AT_MALLOC,FT_MALLOC );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_malloc\n";
@@ -468,7 +475,7 @@ static void *new_calloc( size_t n,size_t s )
   GET_REMOTEDATA( rd );
   void *b = rd->fcalloc( n,s );
 
-  trackAllocs( NULL,b,n*s,AT_MALLOC );
+  trackAllocs( NULL,b,n*s,AT_MALLOC,FT_CALLOC );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_calloc\n";
@@ -486,7 +493,7 @@ static void new_free( void *b )
   GET_REMOTEDATA( rd );
   rd->ffree( b );
 
-  trackAllocs( b,NULL,-1,AT_MALLOC );
+  trackAllocs( b,NULL,-1,AT_MALLOC,FT_FREE );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_free\n";
@@ -502,7 +509,7 @@ static void *new_realloc( void *b,size_t s )
   GET_REMOTEDATA( rd );
   void *nb = rd->frealloc( b,s );
 
-  trackAllocs( b,nb,s,AT_MALLOC );
+  trackAllocs( b,nb,s,AT_MALLOC,FT_REALLOC );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_realloc\n";
@@ -520,7 +527,7 @@ static char *new_strdup( const char *s )
   GET_REMOTEDATA( rd );
   char *b = rd->fstrdup( s );
 
-  trackAllocs( NULL,b,lstrlen(s)+1,AT_MALLOC );
+  trackAllocs( NULL,b,lstrlen(s)+1,AT_MALLOC,FT_STRDUP );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_strdup\n";
@@ -538,7 +545,7 @@ static wchar_t *new_wcsdup( const wchar_t *s )
   GET_REMOTEDATA( rd );
   wchar_t *b = rd->fwcsdup( s );
 
-  trackAllocs( NULL,b,(lstrlenW(s)+1)*2,AT_MALLOC );
+  trackAllocs( NULL,b,(lstrlenW(s)+1)*2,AT_MALLOC,FT_WCSDUP );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_wcsdup\n";
@@ -556,7 +563,7 @@ static void *new_op_new( size_t s )
   GET_REMOTEDATA( rd );
   void *b = rd->fop_new( s );
 
-  trackAllocs( NULL,b,s,AT_NEW );
+  trackAllocs( NULL,b,s,AT_NEW,FT_OP_NEW );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_op_new\n";
@@ -574,7 +581,7 @@ static void new_op_delete( void *b )
   GET_REMOTEDATA( rd );
   rd->fop_delete( b );
 
-  trackAllocs( b,NULL,-1,AT_NEW );
+  trackAllocs( b,NULL,-1,AT_NEW,FT_OP_DELETE );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_op_delete\n";
@@ -590,7 +597,7 @@ static void *new_op_new_a( size_t s )
   GET_REMOTEDATA( rd );
   void *b = rd->fop_new_a( s );
 
-  trackAllocs( NULL,b,s,rd->newArrAllocMethod );
+  trackAllocs( NULL,b,s,rd->newArrAllocMethod,FT_OP_NEW_A );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_op_new_a\n";
@@ -608,7 +615,7 @@ static void new_op_delete_a( void *b )
   GET_REMOTEDATA( rd );
   rd->fop_delete_a( b );
 
-  trackAllocs( b,NULL,-1,rd->newArrAllocMethod );
+  trackAllocs( b,NULL,-1,rd->newArrAllocMethod,FT_OP_DELETE_A );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_op_delete_a\n";
@@ -627,7 +634,7 @@ static char *new_getcwd( char *buffer,int maxlen )
 
   size_t l = lstrlen( cwd ) + 1;
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
-  trackAllocs( NULL,cwd,l,AT_MALLOC );
+  trackAllocs( NULL,cwd,l,AT_MALLOC,FT_GETCWD );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_getcwd\n";
@@ -648,7 +655,7 @@ static wchar_t *new_wgetcwd( wchar_t *buffer,int maxlen )
 
   size_t l = lstrlenW( cwd ) + 1;
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
-  trackAllocs( NULL,cwd,l*2,AT_MALLOC );
+  trackAllocs( NULL,cwd,l*2,AT_MALLOC,FT_WGETCWD );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_wgetcwd\n";
@@ -669,7 +676,7 @@ static char *new_getdcwd( int drive,char *buffer,int maxlen )
 
   size_t l = lstrlen( cwd ) + 1;
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
-  trackAllocs( NULL,cwd,l,AT_MALLOC );
+  trackAllocs( NULL,cwd,l,AT_MALLOC,FT_GETDCWD );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_getdcwd\n";
@@ -690,7 +697,7 @@ static wchar_t *new_wgetdcwd( int drive,wchar_t *buffer,int maxlen )
 
   size_t l = lstrlenW( cwd ) + 1;
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
-  trackAllocs( NULL,cwd,l*2,AT_MALLOC );
+  trackAllocs( NULL,cwd,l*2,AT_MALLOC,FT_WGETDCWD );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_wgetdcwd\n";
@@ -711,7 +718,7 @@ static char *new_fullpath( char *absPath,const char *relPath,
   if( !fp || absPath ) return( fp );
 
   size_t l = lstrlen( fp ) + 1;
-  trackAllocs( NULL,fp,l,AT_MALLOC );
+  trackAllocs( NULL,fp,l,AT_MALLOC,FT_FULLPATH );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_fullpath\n";
@@ -732,7 +739,7 @@ static wchar_t *new_wfullpath( wchar_t *absPath,const wchar_t *relPath,
   if( !fp || absPath ) return( fp );
 
   size_t l = lstrlenW( fp ) + 1;
-  trackAllocs( NULL,fp,l*2,AT_MALLOC );
+  trackAllocs( NULL,fp,l*2,AT_MALLOC,FT_WFULLPATH );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_wfullpath\n";
@@ -752,7 +759,7 @@ static char *new_tempnam( char *dir,char *prefix )
   if( !tn ) return( tn );
 
   size_t l = lstrlen( tn ) + 1;
-  trackAllocs( NULL,tn,l,AT_MALLOC );
+  trackAllocs( NULL,tn,l,AT_MALLOC,FT_TEMPNAM );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_tempnam\n";
@@ -772,7 +779,7 @@ static wchar_t *new_wtempnam( wchar_t *dir,wchar_t *prefix )
   if( !tn ) return( tn );
 
   size_t l = lstrlenW( tn ) + 1;
-  trackAllocs( NULL,tn,l*2,AT_MALLOC );
+  trackAllocs( NULL,tn,l*2,AT_MALLOC,FT_WTEMPNAM );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_wtempnam\n";
@@ -915,7 +922,7 @@ static VOID WINAPI new_ExitProcess( UINT c )
   }
 
   if( rd->opt.exitTrace )
-    trackAllocs( NULL,(void*)-1,0,AT_EXIT );
+    trackAllocs( NULL,(void*)-1,0,AT_EXIT,FT_COUNT );
 
   int i;
   int mi_q = 0;
@@ -1126,7 +1133,7 @@ static void *protect_alloc_m( size_t s )
   return( b );
 }
 
-static NOINLINE void protect_free_m( void *b )
+static NOINLINE void protect_free_m( void *b,funcType ft )
 {
   if( !b ) return;
 
@@ -1176,6 +1183,7 @@ static NOINLINE void protect_free_m( void *b )
         if( ptrs<PTRS )
           RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
         aa[1].ptr = slackStart + i;
+        aa[1].ft = ft;
 
         writeMods( aa,2 );
 
@@ -1220,7 +1228,7 @@ static void *protect_calloc( size_t n,size_t s )
 
 static void protect_free( void *b )
 {
-  protect_free_m( b );
+  protect_free_m( b,FT_FREE );
 }
 
 static void *protect_realloc( void *b,size_t s )
@@ -1229,7 +1237,7 @@ static void *protect_realloc( void *b,size_t s )
 
   if( !s )
   {
-    protect_free_m( b );
+    protect_free_m( b,FT_REALLOC );
     return( protect_alloc_m(s) );
   }
 
@@ -1249,7 +1257,7 @@ static void *protect_realloc( void *b,size_t s )
   if( s>os && rd->opt.init )
     RtlFillMemory( ((char*)nb)+os,s-os,(UCHAR)rd->opt.init );
 
-  protect_free_m( b );
+  protect_free_m( b,FT_REALLOC );
 
   return( nb );
 }
@@ -1803,6 +1811,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
       {
         RtlMoveMemory( &ei.aa[1],&f->a,sizeof(allocation) );
         RtlMoveMemory( &ei.aa[2].frames,&f->frames,PTRS*sizeof(void*) );
+        ei.aa[2].ft = f->a.ftFreed;
         ei.aq += 2;
       }
     }
@@ -1816,6 +1825,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
     {
       RtlMoveMemory( &ei.aa[1],&f->a,sizeof(allocation) );
       RtlMoveMemory( &ei.aa[2].frames,&f->frames,PTRS*sizeof(void*) );
+      ei.aa[2].ft = f->a.ftFreed;
       ei.aq += 2;
     }
   }

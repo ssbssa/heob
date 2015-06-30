@@ -1,16 +1,16 @@
 allocer: main()
 
 mismatching allocation/release method of 0xPTR (size 16)
-  allocated with 'malloc'
-  freed with 'delete'
   allocated on:
+    [malloc]
   freed on:
+    [operator delete]
 
 mismatching allocation/release method of 0xPTR (size 100)
-  allocated with 'new'
-  freed with 'free'
   allocated on:
+    [operator new[]]
   freed on:
+    [realloc]
 
 no leaks found
 exit code: 8 (0xPTR)

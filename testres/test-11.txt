@@ -6,4 +6,6 @@ unhandled exception code: 0xPTR (ACCESS_VIOLATION)
   read access violation at 0xPTR
   freed block 0xPTR (size 16, offset +1)
   allocated on:
+    [malloc]
   freed on:
+    [free]

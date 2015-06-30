@@ -2,5 +2,6 @@ allocer: main()
 
 leaks:
   12 B * 1 = 12 B
+    [malloc]
   sum: 12 B / 1
 exit code: 10 (0xPTR)

@@ -2,9 +2,11 @@ allocer: main()
 
 deallocation of invalid pointer 0xPTR
   called on:
+    [realloc]
 
 allocation failed of NUM bytes
   called on:
+    [realloc]
 
 no leaks found
 exit code: 13 (0xPTR)

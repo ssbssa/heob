@@ -2,20 +2,36 @@ allocer: main()
 
 leaks:
   64 B * 4 = 256 B
+    [strdup]
   60 B * 4 = 240 B
+    [strdup]
   56 B * 4 = 224 B
+    [strdup]
   52 B * 4 = 208 B
+    [strdup]
   48 B * 4 = 192 B
+    [strdup]
   44 B * 4 = 176 B
+    [strdup]
   40 B * 4 = 160 B
+    [strdup]
   36 B * 4 = 144 B
+    [strdup]
   32 B * 4 = 128 B
+    [strdup]
   28 B * 4 = 112 B
+    [strdup]
   24 B * 4 = 96 B
+    [strdup]
   20 B * 4 = 80 B
+    [strdup]
   16 B * 4 = 64 B
+    [strdup]
   12 B * 4 = 48 B
+    [strdup]
   8 B * 4 = 32 B
+    [strdup]
   4 B * 4 = 16 B
+    [strdup]
   sum: 2176 B / 64
 exit code: 4 (0xPTR)

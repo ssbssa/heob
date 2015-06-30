@@ -5,3 +5,4 @@ unhandled exception code: 0xPTR (ACCESS_VIOLATION)
   read access violation at 0xPTR
   protected area of 0xPTR (size 16, offset -10)
   allocated on:
+    [malloc]
