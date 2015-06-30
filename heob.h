@@ -109,6 +109,7 @@ typedef enum
   LT_INDIRECTLY_LOST,
   LT_REACHABLE,
   LT_INDIRECTLY_REACHABLE,
+  LT_COUNT,
 }
 leakType;
 

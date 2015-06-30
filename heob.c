@@ -1374,7 +1374,9 @@ void mainCRTStartup( void )
       else
         printf( "\n" );
       int l;
-      for( l=0; opt.leakDetails && l<=LT_INDIRECTLY_REACHABLE; l++ )
+      int lMax = opt.leakDetails ? LT_COUNT : 0;
+      int lDetails = opt.leakDetails&1 ? LT_COUNT : LT_REACHABLE;
+      for( l=0; l<lMax; l++ )
       {
         intptr_t ltCount = 0;
         size_t ltSumSize = 0;
@@ -1417,13 +1419,16 @@ void mainCRTStartup( void )
                 l==LT_LOST?"lost":l==LT_INDIRECTLY_LOST?"indirectly lost":
                 l==LT_REACHABLE?"reachable":"indirectly reachable" );
 
-          printf( "%c  %u B * %d = %u B\n",
-              ATT_WARN,a.size,(intptr_t)a.count,a.size*a.count );
-
           ltCount += a.count;
           ltSumSize += a.size*a.count;
 
-          printStack( a.frames,mi_a,mi_q,&dh );
+          if( l<lDetails )
+          {
+            printf( "%c  %u B * %d = %u B\n",
+                ATT_WARN,a.size,(intptr_t)a.count,a.size*a.count );
+
+            printStack( a.frames,mi_a,mi_q,&dh );
+          }
         }
         if( opt.leakDetails>1 && ltCount )
           printf( "%c  sum: %u B / %d\n",ATT_WARN,ltSumSize,ltCount );
