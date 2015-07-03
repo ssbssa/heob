@@ -841,6 +841,7 @@ static void findLeakType( leakType lt )
 
   int i,j,k;
   int compareExact = rd->opt.leakDetails<4;
+  int ltUse = lt==LT_INDIRECTLY_LOST ? LT_JOINTLY_LOST : LT_LOST;
   for( i=0; i<=SPLIT_MASK; i++ )
   {
     splitAllocation *sa = rd->splits + i;
@@ -849,7 +850,7 @@ static void findLeakType( leakType lt )
     for( j=0; j<alloc_q; j++ )
     {
       allocation *a = alloc_a + j;
-      if( a->lt!=LT_LOST ) continue;
+      if( a->lt!=ltUse ) continue;
       uintptr_t ptr = (uintptr_t)a->ptr;
       uintptr_t ptrEnd = ptr + a->size;
       for( k=0; k<mod_mem_q; k++ )
@@ -869,7 +870,7 @@ static void findLeakType( leakType lt )
             if( memPtr<ptr || memPtr>=ptrEnd ) continue;
           }
           a->lt = lt;
-          if( lt!=LT_INDIRECTLY_LOST )
+          if( lt!=LT_JOINTLY_LOST )
           {
             PBYTE memStart = a->ptr;
             addModMem( memStart,memStart+a->size );
@@ -904,21 +905,27 @@ static VOID WINAPI new_ExitProcess( UINT c )
     while( rd->mod_mem_a )
       findLeakType( LT_INDIRECTLY_REACHABLE );
 
-    int i,j;
-    for( i=0; i<=SPLIT_MASK; i++ )
+    int k;
+    for( k=0; k<2; k++ )
     {
-      splitAllocation *sa = rd->splits + i;
-      int alloc_q = sa->alloc_q;
-      allocation *alloc_a = sa->alloc_a;
-      for( j=0; j<alloc_q; j++ )
+      int i,j;
+      for( i=0; i<=SPLIT_MASK; i++ )
       {
-        allocation *a = alloc_a + j;
-        if( a->lt!=LT_LOST ) continue;
-        PBYTE memStart = a->ptr;
-        addModMem( memStart,memStart+a->size );
+        splitAllocation *sa = rd->splits + i;
+        int alloc_q = sa->alloc_q;
+        allocation *alloc_a = sa->alloc_a;
+        for( j=0; j<alloc_q; j++ )
+        {
+          allocation *a = alloc_a + j;
+          if( a->lt!=LT_LOST ) continue;
+          PBYTE memStart = a->ptr;
+          addModMem( memStart,memStart+a->size );
+        }
       }
+      int lt = k ? LT_INDIRECTLY_LOST : LT_JOINTLY_LOST;
+      while( rd->mod_mem_a )
+        findLeakType( lt );
     }
-    findLeakType( LT_INDIRECTLY_LOST );
   }
 
   if( rd->opt.exitTrace )

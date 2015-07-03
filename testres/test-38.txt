@@ -4,10 +4,20 @@ leaks (lost):
   8 B * 1 = 8 B
     [malloc]
   sum: 8 B / 1
+leaks (jointly lost):
+  48 B * 1 = 48 B
+    [malloc]
+  48 B * 1 = 48 B
+    [malloc]
+  48 B * 1 = 48 B
+    [malloc]
+  sum: 144 B / 3
 leaks (indirectly lost):
   32 B * 1 = 32 B
     [malloc]
-  sum: 32 B / 1
+  32 B * 1 = 32 B
+    [malloc]
+  sum: 64 B / 2
 leaks (reachable):
   16 B * 1 = 16 B
     [malloc]

@@ -1441,7 +1441,8 @@ void mainCRTStartup( void )
 
           if( opt.leakDetails>1 && !i )
             printf( "%cleaks (%s):\n",ATT_SECTION,
-                l==LT_LOST?"lost":l==LT_INDIRECTLY_LOST?"indirectly lost":
+                l==LT_LOST?"lost":l==LT_JOINTLY_LOST?"jointly lost":
+                l==LT_INDIRECTLY_LOST?"indirectly lost":
                 l==LT_REACHABLE?"reachable":"indirectly reachable" );
 
           ltCount += a.count;
