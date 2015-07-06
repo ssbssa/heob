@@ -556,6 +556,12 @@ typedef struct dbghelp
 }
 dbghelp;
 
+#ifndef _WIN64
+#define PTR_SPACES "        "
+#else
+#define PTR_SPACES "                "
+#endif
+
 static void locFunc(
     uint64_t addr,const char *filename,int lineno,const char *funcname,
     dbghelp *dh )
@@ -629,8 +635,11 @@ static void locFunc(
       break;
 
     default:
-      printf( "%c      %p   %c%s%c:%d",
-          ATT_NORMAL,(uintptr_t)addr,
+      if( addr )
+        printf( "%c      %p",ATT_NORMAL,(uintptr_t)addr );
+      else
+        printf( "        " PTR_SPACES );
+      printf( "   %c%s%c:%d",
           ATT_OK,filename,ATT_NORMAL,(intptr_t)lineno );
       if( funcname )
         printf( " [%c%s%c]",ATT_INFO,funcname,ATT_NORMAL );
@@ -725,11 +734,6 @@ static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbghelp *dh,
       "tempnam",
       "wtempnam",
     };
-#ifndef _WIN64
-#define PTR_SPACES "        "
-#else
-#define PTR_SPACES "                "
-#endif
     printf( "%c        " PTR_SPACES "   [%c%s%c]\n",
         ATT_NORMAL,ATT_INFO,funcnames[ft],ATT_NORMAL );
   }
