@@ -1,6 +1,8 @@
 allocer: main()
 
 leaks:
+  80 B * 1 = 80 B
+    [malloc]
   64 B * 1 = 64 B
     [malloc]
   48 B * 1 = 48 B
@@ -21,5 +23,5 @@ leaks:
     [malloc]
   8 B * 1 = 8 B
     [malloc]
-  sum: 320 B / 10
+  sum: 400 B / 11
 exit code: 15 (0xPTR)

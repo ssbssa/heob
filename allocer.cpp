@@ -257,6 +257,10 @@ void choose( int arg )
         *jointly_lost2 = (char*)jointly_lost1;
         jointly_lost1[1] = jointly_kinda_lost + 10;
         mem[4] = jointly_lost1[0][0];
+
+        char **self_reference = (char**)malloc( 80 );
+        *self_reference = (char*)self_reference + 5;
+        mem[5] = **self_reference;
       }
       break;
   }

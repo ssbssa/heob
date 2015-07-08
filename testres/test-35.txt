@@ -1,6 +1,8 @@
 allocer: main()
 
 leaks (lost):
+  80 B * 1 = 80 B
+    [malloc]
   64 B * 1 = 64 B
     [malloc]
   48 B * 1 = 48 B
@@ -9,7 +11,7 @@ leaks (lost):
     [malloc]
   8 B * 1 = 8 B
     [malloc]
-  sum: 136 B / 4
+  sum: 216 B / 5
 leaks (jointly lost):
   48 B * 1 = 48 B
     [malloc]

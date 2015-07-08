@@ -857,6 +857,7 @@ static void findLeakType( leakType lt )
       {
         modMemType *mod_mem = mod_mem_a + k;
         const void **start = mod_mem->start;
+        if( (uintptr_t)start==ptr ) continue;
         const void **end = mod_mem->end;
         for( ; start<end; start++ )
         {
