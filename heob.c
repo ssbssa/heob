@@ -544,6 +544,10 @@ typedef struct dbghelp
 #ifndef NO_DBGHELP
   func_SymGetLineFromAddr64 *fSymGetLineFromAddr64;
   func_SymFromAddr *fSymFromAddr;
+  func_SymAddrIncludeInlineTrace *fSymAddrIncludeInlineTrace;
+  func_SymQueryInlineTrace *fSymQueryInlineTrace;
+  func_SymGetLineFromInlineContext *fSymGetLineFromInlineContext;
+  func_SymFromInlineContext *fSymFromInlineContext;
   IMAGEHLP_LINE64 *il;
   SYMBOL_INFO *si;
 #endif
@@ -568,9 +572,44 @@ static void locFunc(
 {
   textColor *tc = dh->tc;
 
+  uint64_t printAddr = addr;
 #ifndef NO_DBGHELP
   if( lineno==DWST_NO_DBG_SYM && dh->fSymGetLineFromAddr64 )
   {
+    int inlineTrace;
+    if( dh->fSymAddrIncludeInlineTrace &&
+        (inlineTrace=dh->fSymAddrIncludeInlineTrace(dh->process,addr)) )
+    {
+      DWORD context,frameIndex;
+      if( dh->fSymQueryInlineTrace(dh->process,addr,0,addr,addr,
+            &context,&frameIndex) )
+      {
+        int i;
+        DWORD dis;
+        DWORD64 dis64;
+        IMAGEHLP_LINE64 *il = dh->il;
+        SYMBOL_INFO *si = dh->si;
+        for( i=0; i<inlineTrace; i++ )
+        {
+          RtlZeroMemory( il,sizeof(IMAGEHLP_LINE64) );
+          il->SizeOfStruct = sizeof(IMAGEHLP_LINE64);
+          if( dh->fSymGetLineFromInlineContext(
+                dh->process,addr,context,0,&dis,il) )
+          {
+            si->SizeOfStruct = sizeof(SYMBOL_INFO);
+            si->MaxNameLen = MAX_SYM_NAME;
+            if( dh->fSymFromInlineContext(dh->process,addr,context,&dis64,si) )
+            {
+              si->Name[MAX_SYM_NAME] = 0;
+              locFunc( printAddr,il->FileName,il->LineNumber,si->Name,dh );
+              printAddr = 0;
+            }
+          }
+          context++;
+        }
+      }
+    }
+
     IMAGEHLP_LINE64 *il = dh->il;
     RtlZeroMemory( il,sizeof(IMAGEHLP_LINE64) );
     il->SizeOfStruct = sizeof(IMAGEHLP_LINE64);
@@ -635,8 +674,8 @@ static void locFunc(
       break;
 
     default:
-      if( addr )
-        printf( "%c      %p",ATT_NORMAL,(uintptr_t)addr );
+      if( printAddr )
+        printf( "%c      %p",ATT_NORMAL,(uintptr_t)printAddr );
       else
         printf( "        " PTR_SPACES );
       printf( "   %c%s%c:%d",
@@ -1022,6 +1061,10 @@ void mainCRTStartup( void )
       NULL,
       NULL,
       NULL,
+      NULL,
+      NULL,
+      NULL,
+      NULL,
 #endif
 #ifndef NO_DWARFSTACK
       NULL,
@@ -1044,6 +1087,21 @@ void mainCRTStartup( void )
             symMod,"SymGetLineFromAddr64" );
       dh.fSymFromAddr =
         (func_SymFromAddr*)GetProcAddress( symMod,"SymFromAddr" );
+      dh.fSymAddrIncludeInlineTrace =
+        (func_SymAddrIncludeInlineTrace*)GetProcAddress(
+            symMod,"SymAddrIncludeInlineTrace" );
+      dh.fSymQueryInlineTrace =
+        (func_SymQueryInlineTrace*)GetProcAddress(
+            symMod,"SymQueryInlineTrace" );
+      dh.fSymGetLineFromInlineContext =
+        (func_SymGetLineFromInlineContext*)GetProcAddress( symMod,
+            "SymGetLineFromInlineContext" );
+      dh.fSymFromInlineContext =
+        (func_SymFromInlineContext*)GetProcAddress(
+            symMod,"SymFromInlineContext" );
+      if( !dh.fSymQueryInlineTrace || !dh.fSymGetLineFromInlineContext ||
+          !dh.fSymFromInlineContext )
+        dh.fSymAddrIncludeInlineTrace = NULL;
       dh.il = HeapAlloc( heap,0,sizeof(IMAGEHLP_LINE64) );
       dh.si = HeapAlloc( heap,0,sizeof(SYMBOL_INFO)+MAX_SYM_NAME );
     }
