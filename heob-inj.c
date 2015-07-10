@@ -1486,7 +1486,7 @@ static void addModule( HMODULE mod )
 }
 
 static HMODULE replaceFuncs( HMODULE app,
-    const char *called,replaceData *rep,unsigned int count )
+    replaceData *rep,unsigned int count )
 {
   if( !app ) return( NULL );
 
@@ -1504,7 +1504,6 @@ static HMODULE replaceFuncs( HMODULE app,
   PIMAGE_IMPORT_DESCRIPTOR iid =
     (PIMAGE_IMPORT_DESCRIPTOR)REL_PTR( idh,idd->VirtualAddress );
 
-  PSTR repModName = NULL;
   HMODULE repModule = NULL;
   UINT i;
   for( i=0; iid[i].Characteristics; i++ )
@@ -1519,19 +1518,12 @@ static HMODULE replaceFuncs( HMODULE app,
 
     if( rd->opt.dlls )
       addModule( curModule );
-    if( called && lstrcmpi(curModName,called) )
-      continue;
 
     PIMAGE_THUNK_DATA thunk =
       (PIMAGE_THUNK_DATA)REL_PTR( idh,iid[i].FirstThunk );
     PIMAGE_THUNK_DATA originalThunk =
       (PIMAGE_THUNK_DATA)REL_PTR( idh,iid[i].OriginalFirstThunk );
 
-    if( !repModName && called )
-    {
-      repModName = curModName;
-      repModule = curModule;
-    }
     for( ; originalThunk->u1.Function; originalThunk++,thunk++ )
     {
       if( originalThunk->u1.Ordinal&IMAGE_ORDINAL_FLAG )
@@ -1552,7 +1544,6 @@ static HMODULE replaceFuncs( HMODULE app,
       }
       if( !origFunc ) continue;
 
-      repModName = curModName;
       repModule = curModule;
 
       DWORD prot;
@@ -1568,8 +1559,6 @@ static HMODULE replaceFuncs( HMODULE app,
             prot,&prot) )
         break;
     }
-
-    if( !called && repModName ) called = repModName;
   }
 
   return( repModule );
@@ -1640,12 +1629,23 @@ static void replaceModFuncs( void )
     { fname_FreeLibrary    ,&rd->fFreeLibrary    ,&new_FreeLibrary     },
   };
 
+  HMODULE dll_ucrtbase = GetModuleHandle( "ucrtbase.dll" );
+  if( dll_ucrtbase && !rd->opt.protect )
+  {
+    unsigned int i;
+    for( i=0; i<sizeof(rep)/sizeof(replaceData); i++ )
+    {
+      *(void**)rep[i].origFunc =
+        rd->fGetProcAddress( dll_ucrtbase,rep[i].funcName );
+    }
+  }
+
   for( ; rd->mod_d<rd->mod_q; rd->mod_d++ )
   {
     HMODULE mod = rd->mod_a[rd->mod_d];
 
     HMODULE dll_msvcrt =
-      replaceFuncs( mod,NULL,rep,sizeof(rep)/sizeof(replaceData) );
+      replaceFuncs( mod,rep,sizeof(rep)/sizeof(replaceData) );
     if( !rd->mod_d )
     {
       if( !dll_msvcrt )
@@ -1653,6 +1653,7 @@ static void replaceModFuncs( void )
         rd->master = NULL;
         return;
       }
+      if( dll_ucrtbase ) dll_msvcrt = dll_ucrtbase;
       addModule( dll_msvcrt );
 
       if( rd->opt.protect )
@@ -1695,10 +1696,10 @@ static void replaceModFuncs( void )
 
     unsigned int i;
     for( i=0; i<rep2count; i++ )
-      replaceFuncs( mod,NULL,rep2+i,1 );
+      replaceFuncs( mod,rep2+i,1 );
 
     if( rd->opt.dlls>1 )
-      replaceFuncs( mod,NULL,repLL,sizeof(repLL)/sizeof(replaceData) );
+      replaceFuncs( mod,repLL,sizeof(repLL)/sizeof(replaceData) );
   }
 }
 
