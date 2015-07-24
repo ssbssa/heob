@@ -182,9 +182,29 @@ static NOINLINE char *mstrrchr( const char *s,char c )
 }
 #define strrchr mstrrchr
 
-static NOINLINE int matoi( const char *s )
+static NOINLINE intptr_t matoi( const char *s )
 {
-  int ret = 0;
+  intptr_t ret = 0;
+
+  if( s[0]=='0' && s[1]=='x' )
+  {
+    s += 2;
+    for( ; ; s++ )
+    {
+      char c = *s;
+      int add;
+      if( c>='0' && c<='9' )
+        add = c - '0';
+      else if( c>='a' && c<='f' )
+        add = c - 'a' + 10;
+      else if( c>='A' && c<='F' )
+        add = c - 'A' + 10;
+      else break;
+      ret = ( ret<<4 ) + add;
+    }
+    return( ret );
+  }
+
   for( ; *s>='0' && *s<='9'; s++ )
     ret = ret*10 + ( *s - '0' );
   return( ret );
