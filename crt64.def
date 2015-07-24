@@ -10,3 +10,7 @@ _ZdlPv == ??3@YAXPEAX@Z
 _Znay == ??_U@YAPEAX_K@Z
 ; delete[]
 _ZdaPv == ??_V@YAXPEAX@Z
+; new(std::nothrow)
+_ZnwyRKSt9nothrow_t == ??2@YAPEAX_K@Z
+; new[](std::nothrow);
+_ZnayRKSt9nothrow_t == ??_U@YAPEAX_K@Z
