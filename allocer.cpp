@@ -235,6 +235,7 @@ void choose( int arg )
         reachable = (char**)malloc( sizeof(char*) );
         *reachable = indirectly_reachable;
         mem[1] = reachable[0][0];
+        *(char****)indirectly_reachable = &reachable;
 
         char *indirectly_lost = (char*)malloc( 32 );
         char *indirectly_lost2 = (char*)malloc( 32 );
@@ -249,6 +250,7 @@ void choose( int arg )
         *kinda_reachable = indirectly_kinda_reachable + 5;
         mem[3] = kinda_reachable[0][0];
         kinda_reachable++;
+        *(char****)indirectly_kinda_reachable = &kinda_reachable;
 
         char **jointly_lost1 = (char**)malloc( 48 );
         char **jointly_lost2 = (char**)malloc( 48 );
