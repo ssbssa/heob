@@ -1073,6 +1073,8 @@ void mainCRTStartup( void )
     func_SymSetOptions *fSymSetOptions = NULL;
     func_SymInitialize *fSymInitialize = NULL;
     func_SymCleanup *fSymCleanup = NULL;
+    func_SymGetModuleInfo64 *fSymGetModuleInfo64 = NULL;
+    func_SymLoadModule64 *fSymLoadModule64 = NULL;
 #endif
     dbghelp dh = {
       pi.hProcess,
@@ -1102,6 +1104,11 @@ void mainCRTStartup( void )
         (func_SymInitialize*)GetProcAddress( symMod,"SymInitialize" );
       fSymCleanup =
         (func_SymCleanup*)GetProcAddress( symMod,"SymCleanup" );
+      fSymGetModuleInfo64 =
+        (func_SymGetModuleInfo64*)GetProcAddress(
+            symMod,"SymGetModuleInfo64" );
+      fSymLoadModule64 =
+        (func_SymLoadModule64*)GetProcAddress( symMod,"SymLoadModule64" );
       dh.fSymGetLineFromAddr64 =
         (func_SymGetLineFromAddr64*)GetProcAddress(
             symMod,"SymGetLineFromAddr64" );
@@ -1233,6 +1240,20 @@ void mainCRTStartup( void )
             mi_q = 0;
             break;
           }
+#ifndef NO_DBGHELP
+          if( fSymGetModuleInfo64 && fSymLoadModule64 )
+          {
+            int m;
+            IMAGEHLP_MODULE64 im;
+            im.SizeOfStruct = sizeof(IMAGEHLP_MODULE64);
+            for( m=0; m<mi_q; m++ )
+            {
+              if( !fSymGetModuleInfo64(dh.process,mi_a[m].base,&im) )
+                fSymLoadModule64( dh.process,NULL,mi_a[m].path,NULL,
+                    mi_a[m].base,0 );
+            }
+          }
+#endif
           break;
 
         case WRITE_EXCEPTION:
