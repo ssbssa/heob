@@ -2043,7 +2043,7 @@ DLLEXPORT DWORD inj( remoteData *rd,void *app )
 
   rd->fFlushInstructionCache( rd->fGetCurrentProcess(),NULL,0 );
 
-  HANDLE heap = GetProcessHeap();
+  HANDLE heap = HeapCreate( HEAP_NO_SERIALIZE,0,0 );
   localData *ld = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(localData) );;
   g_ld = ld;
 
