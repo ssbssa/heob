@@ -1062,7 +1062,7 @@ static BOOL WINAPI new_FreeLibrary( HMODULE mod )
   {
     rd->freed_mod_s += 64;
     HMODULE *freed_mod_an;
-    if( !rd->freed_a )
+    if( !rd->freed_mod_a )
       freed_mod_an = HeapAlloc(
           rd->heap,0,rd->freed_mod_s*sizeof(HMODULE) );
     else
