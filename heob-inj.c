@@ -371,7 +371,7 @@ static NOINLINE void trackAllocs(
 
   if( alloc_ptr )
   {
-    intptr_t align = rd->opt.align;
+    uintptr_t align = rd->opt.align;
     alloc_size += ( align - (alloc_size%align) )%align;
 
     int splitIdx = (((uintptr_t)alloc_ptr)>>rd->ptrShift)&SPLIT_MASK;
@@ -1109,7 +1109,7 @@ static void *protect_alloc_m( size_t s )
 {
   GET_REMOTEDATA( rd );
 
-  intptr_t align = rd->opt.align;
+  uintptr_t align = rd->opt.align;
   s += ( align - (s%align) )%align;
 
   DWORD pageSize = rd->pageSize;
