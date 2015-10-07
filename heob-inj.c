@@ -1952,7 +1952,7 @@ DLLEXPORT DWORD inj( remoteData *rd,void *app )
   // base relocation {{{
 #ifndef _WIN64
   {
-    PIMAGE_OPTIONAL_HEADER32 ioh = (PIMAGE_OPTIONAL_HEADER32)REL_PTR(
+    PIMAGE_OPTIONAL_HEADER ioh = (PIMAGE_OPTIONAL_HEADER)REL_PTR(
         inh,sizeof(DWORD)+sizeof(IMAGE_FILE_HEADER) );
     size_t imageBase = ioh->ImageBase;
     if( imageBase!=(size_t)app )
@@ -1978,7 +1978,11 @@ DLLEXPORT DWORD inj( remoteData *rd,void *app )
             int type = *relInfo >> 12;
             int offset = *relInfo & 0xfff;
 
+#ifndef _WIN64
             if( type!=IMAGE_REL_BASED_HIGHLOW ) continue;
+#else
+            if( type!=IMAGE_REL_BASED_DIR64 ) continue;
+#endif
 
             size_t *addr = (size_t*)( dest + offset );
 
