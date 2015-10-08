@@ -1,5 +1,8 @@
 allocer: main()
 
-unhandled exception code: 0xPTR (INVALID_FREE)
+deallocation of invalid pointer 0xPTR
+  called on:
+    [realloc]
+
+unhandled exception code: 0xPTR (BREAKPOINT)
   exception on:
-  invalid free of 0xPTR

@@ -1,12 +1,10 @@
 allocer: main()
 
-double free of 0xPTR (size 16)
-  called on:
-    [realloc]
+mismatching allocation/release method of 0xPTR (size 16)
   allocated on:
     [malloc]
   freed on:
-    [free]
+    [operator delete]
 
 unhandled exception code: 0xPTR (BREAKPOINT)
   exception on:

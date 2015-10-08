@@ -304,6 +304,9 @@ static NOINLINE void trackAllocs(
         DWORD written;
         WriteFile( rd->master,&type,sizeof(int),&written,NULL );
         WriteFile( rd->master,aa,2*sizeof(allocation),&written,NULL );
+
+        if( rd->opt.raiseException>1 )
+          DebugBreak();
       }
 
       sa->alloc_q--;
@@ -314,12 +317,6 @@ static NOINLINE void trackAllocs(
       for( i=rd->freed_q-1; i>=0 && rd->freed_a[i].a.ptr!=free_ptr; i-- );
       if( i>=0 )
       {
-        if( rd->opt.raiseException )
-        {
-          ULONG_PTR excArg = (ULONG_PTR)free_ptr;
-          RaiseException( EXCEPTION_DOUBLE_FREE,0,1,&excArg );
-        }
-
         allocation aa[3];
         RtlMoveMemory( &aa[1],&rd->freed_a[i].a,sizeof(allocation) );
         RtlMoveMemory( aa[2].frames,rd->freed_a[i].frames,PTRS*sizeof(void*) );
@@ -336,15 +333,12 @@ static NOINLINE void trackAllocs(
         DWORD written;
         WriteFile( rd->master,&type,sizeof(int),&written,NULL );
         WriteFile( rd->master,aa,3*sizeof(allocation),&written,NULL );
+
+        if( rd->opt.raiseException )
+          DebugBreak();
       }
       else if( !rd->inExit )
       {
-        if( rd->opt.raiseException )
-        {
-          ULONG_PTR excArg = (ULONG_PTR)free_ptr;
-          RaiseException( EXCEPTION_INVALID_FREE,0,1,&excArg );
-        }
-
         allocation a;
         a.ptr = free_ptr;
         a.size = 0;
@@ -363,6 +357,9 @@ static NOINLINE void trackAllocs(
         int type = WRITE_FREE_FAIL;
         WriteFile( rd->master,&type,sizeof(int),&written,NULL );
         WriteFile( rd->master,&a,sizeof(allocation),&written,NULL );
+
+        if( rd->opt.raiseException )
+          DebugBreak();
       }
     }
 
@@ -415,12 +412,6 @@ static NOINLINE void trackAllocs(
   }
   else if( alloc_size!=(size_t)-1 )
   {
-    if( rd->opt.raiseException )
-    {
-      ULONG_PTR excArg = (ULONG_PTR)alloc_size;
-      RaiseException( EXCEPTION_ALLOCATION_FAILED,0,1,&excArg );
-    }
-
     allocation a;
     a.ptr = NULL;
     a.size = alloc_size;
@@ -443,6 +434,9 @@ static NOINLINE void trackAllocs(
     WriteFile( rd->master,&a,sizeof(allocation),&written,NULL );
 
     LeaveCriticalSection( &rd->cs );
+
+    if( rd->opt.raiseException )
+      DebugBreak();
   }
 }
 
@@ -1823,19 +1817,6 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
         ei.aa[2].ft = f->a.ftFreed;
         ei.aq += 2;
       }
-    }
-  }
-  else if( ep->ExceptionRecord->ExceptionCode==EXCEPTION_DOUBLE_FREE &&
-      ep->ExceptionRecord->NumberParameters==1 )
-  {
-    char *addr = (char*)ep->ExceptionRecord->ExceptionInformation[0];
-    freed *f = heob_find_freed( addr );
-    if( f )
-    {
-      RtlMoveMemory( &ei.aa[1],&f->a,sizeof(allocation) );
-      RtlMoveMemory( &ei.aa[2].frames,&f->frames,PTRS*sizeof(void*) );
-      ei.aa[2].ft = f->a.ftFreed;
-      ei.aq += 2;
     }
   }
 

@@ -1024,7 +1024,7 @@ void mainCRTStartup( void )
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.exitTrace,ATT_NORMAL );
     printf( "    %c-C%cX%c    show source code [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.sourceCode,ATT_NORMAL );
-    printf( "    %c-r%cX%c    raise exception [%c%d%c]\n",
+    printf( "    %c-r%cX%c    raise breakpoint exception [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,
         ATT_INFO,defopt.raiseException,ATT_NORMAL );
     printf( "    %c-M%cX%c    minimum page protection size [%c%d%c]\n",
@@ -1289,9 +1289,6 @@ void mainCRTStartup( void )
               EX_DESC( PRIV_INSTRUCTION );
               EX_DESC( SINGLE_STEP );
               EX_DESC( STACK_OVERFLOW );
-              EX_DESC( INVALID_FREE );
-              EX_DESC( DOUBLE_FREE );
-              EX_DESC( ALLOCATION_FAILED );
             }
             printf( "%c\nunhandled exception code: %x%s\n",
                 ATT_WARN,ei.er.ExceptionCode,desc );
@@ -1324,30 +1321,6 @@ void mainCRTStartup( void )
                   printStack( ei.aa[2].frames,mi_a,mi_q,&dh,ei.aa[2].ft );
                 }
               }
-            }
-            else if( ei.er.ExceptionCode==EXCEPTION_INVALID_FREE &&
-                ei.er.NumberParameters==1 )
-            {
-              char *addr = (char*)ei.er.ExceptionInformation[0];
-              printf( "%c  invalid free of %p\n",ATT_INFO,addr );
-            }
-            else if( ei.er.ExceptionCode==EXCEPTION_DOUBLE_FREE &&
-                ei.er.NumberParameters==1 && ei.aq==3 )
-            {
-              char *ptr = (char*)ei.aa[1].ptr;
-              size_t size = ei.aa[1].size;
-              printf( "%c  double free of %p (size %u)\n",
-                  ATT_INFO,ptr,size );
-              printf( "%c  allocated on:\n",ATT_SECTION );
-              printStack( ei.aa[1].frames,mi_a,mi_q,&dh,ei.aa[1].ft );
-              printf( "%c  freed on:\n",ATT_SECTION );
-              printStack( ei.aa[2].frames,mi_a,mi_q,&dh,ei.aa[2].ft );
-            }
-            else if( ei.er.ExceptionCode==EXCEPTION_ALLOCATION_FAILED &&
-                ei.er.NumberParameters==1 )
-            {
-              size_t size = ei.er.ExceptionInformation[0];
-              printf( "%c  allocation failed of %u bytes\n",ATT_INFO,size );
             }
 
             alloc_q = -1;

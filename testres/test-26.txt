@@ -1,5 +1,8 @@
 allocer: main()
 
-unhandled exception code: 0xPTR (ALLOCATION_FAILED)
+allocation failed of NUM bytes
+  called on:
+    [malloc]
+
+unhandled exception code: 0xPTR (BREAKPOINT)
   exception on:
-  allocation failed of NUM bytes

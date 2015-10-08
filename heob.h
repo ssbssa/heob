@@ -32,10 +32,6 @@
 #define USE_STACKWALK 0
 #endif
 
-#define EXCEPTION_INVALID_FREE          0x80BADF2E
-#define EXCEPTION_DOUBLE_FREE           0x80D0BF2E
-#define EXCEPTION_ALLOCATION_FAILED     0x80A110CF
-
 // }}}
 // function definitions {{{
 
