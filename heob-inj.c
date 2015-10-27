@@ -236,7 +236,8 @@ static void writeMods( allocation *alloc_a,int alloc_q )
 // low-level function for memory allocation tracking {{{
 
 static NOINLINE void trackAllocs(
-    void *free_ptr,void *alloc_ptr,size_t alloc_size,allocType at,funcType ft )
+    void *free_ptr,void *alloc_ptr,size_t alloc_size,allocType at,funcType ft,
+    void *caller )
 {
   GET_REMOTEDATA( rd );
 
@@ -405,6 +406,7 @@ static NOINLINE void trackAllocs(
 
     void **frames = a->frames;
     int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
+    if( !ptrs ) frames[ptrs++] = caller;
     if( ptrs<PTRS )
       RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
 
@@ -439,6 +441,12 @@ static NOINLINE void trackAllocs(
       DebugBreak();
   }
 }
+#ifdef __MINGW32__
+#define RETURN_ADDRESS() __builtin_return_address(0)
+#else
+#define RETURN_ADDRESS() _ReturnAddress()
+#endif
+#define trackAllocs(f,a,s,at,ft) trackAllocs(f,a,s,at,ft,RETURN_ADDRESS())
 
 // }}}
 // replacements for memory allocation tracking {{{
