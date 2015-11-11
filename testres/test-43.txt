@@ -1,0 +1,10 @@
+allocer: main()
+
+unhandled exception code: 0xPTR (ACCESS_VIOLATION)
+  exception on:
+  read access violation at 0xPTR
+  near freed block 0xPTR (size 5000, offset +9500)
+  allocated on:
+    [malloc]
+  freed on:
+    [free]

@@ -1771,6 +1771,54 @@ DLLEXPORT freed *heob_find_freed( uintptr_t addr )
   return( NULL );
 }
 
+DLLEXPORT allocation *heob_find_nearest_allocation( uintptr_t addr )
+{
+  GET_REMOTEDATA( rd );
+
+  int i,j;
+  splitAllocation *sa;
+  uintptr_t nearestPtr = 0;
+  allocation *nearestA = NULL;
+  for( j=SPLIT_MASK,sa=rd->splits; j>=0; j--,sa++ )
+    for( i=sa->alloc_q-1; i>=0; i-- )
+    {
+      allocation *a = sa->alloc_a + i;
+
+      uintptr_t ptr = (uintptr_t)a->ptr;
+
+      if( addr>=ptr && (!nearestPtr || ptr>nearestPtr) )
+      {
+        nearestPtr = ptr;
+        nearestA = a;
+      }
+    }
+
+  return( nearestA );
+}
+
+DLLEXPORT freed *heob_find_nearest_freed( uintptr_t addr )
+{
+  GET_REMOTEDATA( rd );
+
+  int i;
+  uintptr_t nearestPtr = 0;
+  freed *nearestF = NULL;
+  for( i=rd->freed_q-1; i>=0; i-- )
+  {
+    freed *f = rd->freed_a + i;
+
+    uintptr_t ptr = (uintptr_t)f->a.ptr;
+
+    if( addr>=ptr && (!nearestPtr || ptr>nearestPtr) )
+    {
+      nearestPtr = ptr;
+      nearestF = f;
+    }
+  }
+
+  return( nearestF );
+}
+
 DLLEXPORT VOID heob_exit( UINT c )
 {
   new_ExitProcess( c );
@@ -1803,6 +1851,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 
   exceptionInfo ei;
   ei.aq = 1;
+  ei.nearest = 0;
 
   if( ep->ExceptionRecord->ExceptionCode==EXCEPTION_ACCESS_VIOLATION &&
       ep->ExceptionRecord->NumberParameters==2 )
@@ -1824,6 +1873,25 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
         RtlMoveMemory( &ei.aa[2].frames,&f->frames,PTRS*sizeof(void*) );
         ei.aa[2].ft = f->a.ftFreed;
         ei.aq += 2;
+      }
+      else if( rd->opt.findNearest )
+      {
+        a = heob_find_nearest_allocation( addr );
+        f = heob_find_nearest_freed( addr );
+        if( a && (!f || a->ptr>f->a.ptr) )
+        {
+          RtlMoveMemory( &ei.aa[1],a,sizeof(allocation) );
+          ei.aq++;
+          ei.nearest = 1;
+        }
+        else if( f )
+        {
+          RtlMoveMemory( &ei.aa[1],&f->a,sizeof(allocation) );
+          RtlMoveMemory( &ei.aa[2].frames,&f->frames,PTRS*sizeof(void*) );
+          ei.aa[2].ft = f->a.ftFreed;
+          ei.aq += 2;
+          ei.nearest = 2;
+        }
       }
     }
   }

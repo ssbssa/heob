@@ -194,6 +194,7 @@ typedef struct
   intptr_t sourceCode;
   intptr_t raiseException;
   intptr_t minProtectSize;
+  intptr_t findNearest;
 }
 options;
 
@@ -254,6 +255,7 @@ typedef struct
   EXCEPTION_RECORD er;
   allocation aa[3];
   int aq;
+  int nearest;
 }
 exceptionInfo;
 

@@ -265,6 +265,20 @@ void choose( int arg )
         mem[5] = **self_reference;
       }
       break;
+
+    case 16:
+      // access near freed block
+      {
+        struct BigStruct
+        {
+          char c[5000];
+        };
+        BigStruct *bs = (BigStruct*)malloc( sizeof(BigStruct) );
+        mem[1] = bs[0].c[0];
+        free( bs );
+        mem[1] = bs[1].c[4500];
+      }
+      break;
   }
 
   mem = (char*)realloc( mem,30 );

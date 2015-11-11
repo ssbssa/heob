@@ -896,6 +896,7 @@ void mainCRTStartup( void )
     0,
     0,
     1,
+    1,
   };
   options opt = defopt;
   while( args )
@@ -974,6 +975,10 @@ void mainCRTStartup( void )
         opt.minProtectSize = atoi( args+2 );
         if( opt.minProtectSize<1 ) opt.minProtectSize = 1;
         break;
+
+      case 'n':
+        opt.findNearest = atoi( args+2 );
+        break;
     }
     while( args[0] && args[0]!=' ' ) args++;
   }
@@ -1030,6 +1035,9 @@ void mainCRTStartup( void )
     printf( "    %c-M%cX%c    minimum page protection size [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,
         ATT_INFO,defopt.minProtectSize,ATT_NORMAL );
+    printf( "    %c-n%cX%c    find nearest allocation [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,
+        ATT_INFO,defopt.findNearest,ATT_NORMAL );
     printf( "\nheap-observer " HEOB_VER " (" BITS "bit)\n" );
     ExitProcess( -1 );
   }
@@ -1309,8 +1317,9 @@ void mainCRTStartup( void )
               {
                 char *ptr = (char*)ei.aa[1].ptr;
                 size_t size = ei.aa[1].size;
-                printf( "%c  %s %p (size %u, offset %s%d)\n",
-                    ATT_INFO,ei.aq>2?"freed block":"protected area of",
+                printf( "%c  %s%s %p (size %u, offset %s%d)\n",
+                    ATT_INFO,ei.nearest?"near ":"",
+                    ei.aq>2?"freed block":"protected area of",
                     ptr,size,addr>ptr?"+":"",addr-ptr );
                 printf( "%c  allocated on:\n",ATT_SECTION );
                 printStack( ei.aa[1].frames,mi_a,mi_q,&dh,ei.aa[1].ft );
