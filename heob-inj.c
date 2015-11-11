@@ -1708,7 +1708,7 @@ static void replaceModFuncs( void )
 // }}}
 // exported functions for debugger {{{
 
-DLLEXPORT allocation *heob_find_allocation( char *addr )
+DLLEXPORT allocation *heob_find_allocation( uintptr_t addr )
 {
   GET_REMOTEDATA( rd );
 
@@ -1719,9 +1719,9 @@ DLLEXPORT allocation *heob_find_allocation( char *addr )
     {
       allocation *a = sa->alloc_a + i;
 
-      char *ptr = a->ptr;
-      char *noAccessStart;
-      char *noAccessEnd;
+      uintptr_t ptr = (uintptr_t)a->ptr;
+      uintptr_t noAccessStart;
+      uintptr_t noAccessEnd;
       if( rd->opt.protect==1 )
       {
         noAccessStart = ptr + a->size;
@@ -1740,7 +1740,7 @@ DLLEXPORT allocation *heob_find_allocation( char *addr )
   return( NULL );
 }
 
-DLLEXPORT freed *heob_find_freed( char *addr )
+DLLEXPORT freed *heob_find_freed( uintptr_t addr )
 {
   GET_REMOTEDATA( rd );
 
@@ -1749,13 +1749,13 @@ DLLEXPORT freed *heob_find_freed( char *addr )
   {
     freed *f = rd->freed_a + i;
 
-    char *ptr = f->a.ptr;
+    uintptr_t ptr = (uintptr_t)f->a.ptr;
     size_t size = f->a.size;
-    char *noAccessStart;
-    char *noAccessEnd;
+    uintptr_t noAccessStart;
+    uintptr_t noAccessEnd;
     if( rd->opt.protect==1 )
     {
-      noAccessStart = ptr - ( ((uintptr_t)ptr)%rd->pageSize );
+      noAccessStart = ptr - ( ptr%rd->pageSize );
       noAccessEnd = ptr + f->a.size + rd->pageSize*rd->pageAdd;
     }
     else
@@ -1807,7 +1807,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   if( ep->ExceptionRecord->ExceptionCode==EXCEPTION_ACCESS_VIOLATION &&
       ep->ExceptionRecord->NumberParameters==2 )
   {
-    char *addr = (char*)ep->ExceptionRecord->ExceptionInformation[1];
+    uintptr_t addr = ep->ExceptionRecord->ExceptionInformation[1];
 
     allocation *a = heob_find_allocation( addr );
     if( a )
