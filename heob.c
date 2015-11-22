@@ -898,6 +898,7 @@ void mainCRTStartup( void )
     1,
     1,
     0,
+    1,
   };
   options opt = defopt;
   while( args )
@@ -984,6 +985,10 @@ void mainCRTStartup( void )
       case 'L':
         opt.leakContents = atoi( args+2 );
         break;
+
+      case 'I':
+        opt.mergeLeaks = atoi( args+2 );
+        break;
     }
     while( args[0] && args[0]!=' ' ) args++;
   }
@@ -1045,6 +1050,8 @@ void mainCRTStartup( void )
         ATT_INFO,defopt.findNearest,ATT_NORMAL );
     printf( "    %c-L%cX%c    show leak contents [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.leakContents,ATT_NORMAL );
+    printf( "    %c-I%cX%c    merge identical leaks [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.mergeLeaks,ATT_NORMAL );
     printf( "\nheap-observer " HEOB_VER " (" BITS "bit)\n" );
     ExitProcess( -1 );
   }
@@ -1488,19 +1495,22 @@ void mainCRTStartup( void )
 
         size_t size = a.size;
         a.count = 1;
-        int j;
-        for( j=i+1; j<alloc_q; j++ )
+        if( opt.mergeLeaks )
         {
-          if( !alloc_a[j].ptr ||
-              a.size!=alloc_a[j].size ||
-              a.lt!=alloc_a[j].lt ||
-              a.ft!=alloc_a[j].ft ||
-              memcmp(a.frames,alloc_a[j].frames,PTRS*sizeof(void*)) )
-            continue;
+          int j;
+          for( j=i+1; j<alloc_q; j++ )
+          {
+            if( !alloc_a[j].ptr ||
+                a.size!=alloc_a[j].size ||
+                a.lt!=alloc_a[j].lt ||
+                a.ft!=alloc_a[j].ft ||
+                memcmp(a.frames,alloc_a[j].frames,PTRS*sizeof(void*)) )
+              continue;
 
-          size += alloc_a[j].size;
-          alloc_a[j].ptr = NULL;
-          a.count++;
+            size += alloc_a[j].size;
+            alloc_a[j].ptr = NULL;
+            a.count++;
+          }
         }
         sumSize += size;
 

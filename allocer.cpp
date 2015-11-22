@@ -292,6 +292,17 @@ void choose( int arg )
         mem[3] = emptyness[0];
       }
       break;
+
+    case 18:
+      // merge identical memory leaks
+      {
+        for( int i=0; i<5; i++ )
+        {
+          char *copy = strdup( "memory leak" );
+          mem[i+1] = copy[0];
+        }
+      }
+      break;
   }
 
   mem = (char*)realloc( mem,30 );

@@ -196,6 +196,7 @@ typedef struct
   intptr_t minProtectSize;
   intptr_t findNearest;
   intptr_t leakContents;
+  intptr_t mergeLeaks;
 }
 options;
 

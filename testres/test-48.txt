@@ -1,0 +1,20 @@
+allocer: main()
+
+leaks:
+  12 B * 1 = 12 B
+    [strdup]
+        0000  6D 65 6D 6F 72 79 20 6C 65 61 6B 00              memory leak.
+  12 B * 1 = 12 B
+    [strdup]
+        0000  6D 65 6D 6F 72 79 20 6C 65 61 6B 00              memory leak.
+  12 B * 1 = 12 B
+    [strdup]
+        0000  6D 65 6D 6F 72 79 20 6C 65 61 6B 00              memory leak.
+  12 B * 1 = 12 B
+    [strdup]
+        0000  6D 65 6D 6F 72 79 20 6C 65 61 6B 00              memory leak.
+  12 B * 1 = 12 B
+    [strdup]
+        0000  6D 65 6D 6F 72 79 20 6C 65 61 6B 00              memory leak.
+  sum: 60 B / 5
+exit code: 18 (0xPTR)
