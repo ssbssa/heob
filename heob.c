@@ -1000,11 +1000,11 @@ void mainCRTStartup( void )
 
     printf( "Usage: %c%s %c[OPTION]... %cAPP [APP-OPTION]...%c\n",
         ATT_OK,delim,ATT_INFO,ATT_SECTION,ATT_NORMAL );
-    printf( "    %c-p%cX%c    page protection [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.protect,ATT_NORMAL );
-    printf( "             %c0%c = off\n",ATT_INFO,ATT_NORMAL );
-    printf( "             %c1%c = after\n",ATT_INFO,ATT_NORMAL );
-    printf( "             %c2%c = before\n",ATT_INFO,ATT_NORMAL );
+    printf( "    %c-p%cX%c    page protection"
+        " (%c0%c = off, %c1%c = after, %c2%c = before) [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,
+        ATT_INFO,ATT_NORMAL,ATT_INFO,ATT_NORMAL,ATT_INFO,ATT_NORMAL,
+        ATT_INFO,defopt.protect,ATT_NORMAL );
     printf( "    %c-a%cX%c    alignment [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.align,ATT_NORMAL );
     printf( "    %c-i%cX%c    initial value [%c%d%c]\n",
