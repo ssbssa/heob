@@ -55,7 +55,7 @@ void choose( int arg )
         // memory leaks
         char *copy = strdup( "abcd" );
         char *zeroes = (char*)calloc( 2,500 );
-        wchar_t *wcopy = (wchar_t*)wcsdup( L"efgh" );
+        wchar_t *wcopy = wcsdup( L"efgh" );
         mem[1] = copy[0];
         mem[2] = zeroes[0];
         mem[3] = wcopy[0];
@@ -277,6 +277,19 @@ void choose( int arg )
         mem[1] = bs[0].c[0];
         free( bs );
         mem[1] = bs[1].c[4500];
+      }
+      break;
+
+    case 17:
+      // memory leak contents
+      {
+        char *copy = strdup( "this is a memory leak" );
+        wchar_t *wcopy = wcsdup( L"this is a bigger memory leak" );
+        char *emptyness = (char*)malloc( 33 );
+        emptyness[3] = '.';
+        mem[1] = copy[0];
+        mem[2] = wcopy[0];
+        mem[3] = emptyness[0];
       }
       break;
   }

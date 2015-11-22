@@ -195,6 +195,7 @@ typedef struct
   intptr_t raiseException;
   intptr_t minProtectSize;
   intptr_t findNearest;
+  intptr_t leakContents;
 }
 options;
 
@@ -240,6 +241,7 @@ enum
   WRITE_SLACK,
   WRITE_MAIN_ALLOC_FAIL,
   WRITE_WRONG_DEALLOC,
+  WRITE_LEAK_CONTENTS,
 };
 
 typedef struct

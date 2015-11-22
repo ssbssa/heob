@@ -145,20 +145,26 @@ T_H42=-p1 -a4 -f1 -M5000 -n0
 T_A42=16
 T_H43=-p1 -a4 -f1 -M1 -n1
 T_A43=16
+T_H44=-p1 -a4 -f0 -L0
+T_A44=17
+T_H45=-p1 -a4 -f0 -L10
+T_A45=17
+T_H46=-p1 -a4 -f0 -L100
+T_A46=17
 TESTS=01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 \
-      25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43
+      25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46
 
 testres:
 	mkdir -p $@
 
 testc: heob$(BITS).exe allocer$(BITS).exe | testres
-	@$(foreach t,$(TESTS),echo heob$(BITS) $(T_H$(t)) allocer$(BITS) $(T_A$(t)) "->" test$(BITS)-$(t).txt; ./heob$(BITS).exe $(T_H$(t)) allocer$(BITS) $(T_A$(t)) |sed 's/0x[0-9A-Z]*/0xPTR/g;/^ *0xPTR/d;s/\<of [1-9][0-9]*/of NUM/g;s/^ *\[/    \[/;/^         *[^\[]/d' >testres/test-$(t).txt;)
+	@$(foreach t,$(TESTS),echo heob$(BITS) $(T_H$(t)) allocer$(BITS) $(T_A$(t)) "->" test$(BITS)-$(t).txt; ./heob$(BITS).exe $(T_H$(t)) allocer$(BITS) $(T_A$(t)) |sed 's/0x[0-9A-Z]*/0xPTR/g;/^ *0xPTR/d;s/\<of [1-9][0-9]*/of NUM/g;s/^ *\[/    \[/;/^           *[^\[]/d' >testres/test-$(t).txt;)
 
 TOK=[0;32mOK[0m
 TFAIL=[0;31mFAIL[0m
 
 test: heob$(BITS).exe allocer$(BITS).exe
-	@$(foreach t,$(TESTS),echo test$(BITS)-$(t): heob$(BITS) $(T_H$(t)) allocer$(BITS) $(T_A$(t)) "->" `./heob$(BITS).exe $(T_H$(t)) allocer$(BITS) $(T_A$(t)) |sed 's/0x[0-9A-Z]*/0xPTR/g;/^ *0xPTR/d;s/\<of [1-9][0-9]*/of NUM/g;s/^ *\[/    \[/;/^         *[^\[]/d' |diff - testres/test-$(t).txt >test$(BITS)-$(t).diff && echo "$(TOK)" && rm -f test$(BITS)-$(t).diff || echo "$(TFAIL)"`;)
+	@$(foreach t,$(TESTS),echo test$(BITS)-$(t): heob$(BITS) $(T_H$(t)) allocer$(BITS) $(T_A$(t)) "->" `./heob$(BITS).exe $(T_H$(t)) allocer$(BITS) $(T_A$(t)) |sed 's/0x[0-9A-Z]*/0xPTR/g;/^ *0xPTR/d;s/\<of [1-9][0-9]*/of NUM/g;s/^ *\[/    \[/;/^           *[^\[]/d' |diff - testres/test-$(t).txt >test$(BITS)-$(t).diff && echo "$(TOK)" && rm -f test$(BITS)-$(t).diff || echo "$(TFAIL)"`;)
 
 testsc:
 	$(MAKE) BITS=32 testc

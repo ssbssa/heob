@@ -987,12 +987,49 @@ static VOID WINAPI new_ExitProcess( UINT c )
   WriteFile( rd->master,&type,sizeof(int),&written,NULL );
   WriteFile( rd->master,&c,sizeof(UINT),&written,NULL );
   WriteFile( rd->master,&alloc_q,sizeof(int),&written,NULL );
+  int alloc_sum = 0;
   for( i=0; i<=SPLIT_MASK; i++ )
   {
     splitAllocation *sa = rd->splits + i;
     if( !sa->alloc_q ) continue;
     WriteFile( rd->master,sa->alloc_a,sa->alloc_q*sizeof(allocation),
         &written,NULL );
+
+    alloc_sum += sa->alloc_q;
+    if( sa->alloc_a[sa->alloc_q-1].at==AT_EXIT ) alloc_sum--;
+  }
+
+  if( rd->opt.leakContents && alloc_sum )
+  {
+    type = WRITE_LEAK_CONTENTS;
+    WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+    WriteFile( rd->master,&alloc_sum,sizeof(int),&written,NULL );
+    unsigned char *emptyness = HeapAlloc( rd->heap,0,rd->opt.leakContents );
+    RtlZeroMemory( emptyness,rd->opt.leakContents );
+    for( i=0; i<=SPLIT_MASK; i++ )
+    {
+      splitAllocation *sa = rd->splits + i;
+      int alloc_q = sa->alloc_q;
+      if( alloc_q>0 && sa->alloc_a[alloc_q-1].at==AT_EXIT ) alloc_q--;
+      int j;
+      for( j=0; j<alloc_q; j++ )
+      {
+        allocation *a = sa->alloc_a + j;
+        if( a->size<(size_t)rd->opt.leakContents )
+        {
+          if( a->size )
+            WriteFile( rd->master,a->ptr,(DWORD)a->size,&written,NULL );
+          WriteFile( rd->master,emptyness,
+              (DWORD)(rd->opt.leakContents-a->size),&written,NULL );
+        }
+        else
+        {
+          WriteFile( rd->master,a->ptr,(DWORD)rd->opt.leakContents,
+              &written,NULL );
+        }
+      }
+    }
+    HeapFree( rd->heap,0,emptyness );
   }
 
   LeaveCriticalSection( &rd->cs );

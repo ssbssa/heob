@@ -51,6 +51,12 @@ textColor;
 // }}}
 // CRT replacements {{{
 
+static inline char num2hex( unsigned int bits )
+{
+  bits &= 0xf;
+  return( bits>=10 ? bits - 10 + 'A' : bits + '0' );
+}
+
 static NOINLINE void mprintf( textColor *tc,const char *format,... )
 {
   va_list vl;
@@ -131,13 +137,7 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
             end++[0] = '0';
             end++[0] = 'x';
             for( b=bytes*2-1; b>=0; b-- )
-            {
-              unsigned int bits = ( arg>>(b*4) )&0xf;
-              if( bits>=10 )
-                end++[0] = bits - 10 + 'A';
-              else
-                end++[0] = bits + '0';
-            }
+              end++[0] = num2hex( (unsigned)(arg>>(b*4)) );
             tc->fWriteText( tc,str,end-str );
           }
           break;
@@ -897,6 +897,7 @@ void mainCRTStartup( void )
     0,
     1,
     1,
+    0,
   };
   options opt = defopt;
   while( args )
@@ -979,6 +980,10 @@ void mainCRTStartup( void )
       case 'n':
         opt.findNearest = atoi( args+2 );
         break;
+
+      case 'L':
+        opt.leakContents = atoi( args+2 );
+        break;
     }
     while( args[0] && args[0]!=' ' ) args++;
   }
@@ -1038,6 +1043,8 @@ void mainCRTStartup( void )
     printf( "    %c-n%cX%c    find nearest allocation [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,
         ATT_INFO,defopt.findNearest,ATT_NORMAL );
+    printf( "    %c-L%cX%c    show leak contents [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.leakContents,ATT_NORMAL );
     printf( "\nheap-observer " HEOB_VER " (" BITS "bit)\n" );
     ExitProcess( -1 );
   }
@@ -1191,6 +1198,9 @@ void mainCRTStartup( void )
     int mi_q = 0;
     allocation *alloc_a = NULL;
     int alloc_q = -2;
+    int content_q = 0;
+    unsigned char *contents = NULL;
+    unsigned char **content_ptrs = NULL;
     while( readFile(readPipe,&type,sizeof(int)) )
     {
       switch( type )
@@ -1419,6 +1429,21 @@ void mainCRTStartup( void )
             printStack( aa[1].frames,mi_a,mi_q,&dh,aa[1].ft );
           }
           break;
+
+        case WRITE_LEAK_CONTENTS:
+          {
+            if( !readFile(readPipe,&content_q,sizeof(int)) )
+              break;
+            contents = HeapAlloc( heap,0,content_q*opt.leakContents );
+            if( !readFile(readPipe,contents,content_q*(int)opt.leakContents) )
+              break;
+            content_ptrs =
+              HeapAlloc( heap,0,content_q*sizeof(unsigned char*) );
+            int lc;
+            for( lc=0; lc<content_q; lc++ )
+              content_ptrs[lc] = contents + lc*opt.leakContents;
+          }
+          break;
       }
     }
 
@@ -1428,6 +1453,13 @@ void mainCRTStartup( void )
     {
       alloc_q--;
       exitTrace = alloc_a[alloc_q];
+    }
+
+    if( content_ptrs && content_q!=alloc_q )
+    {
+      HeapFree( heap,0,content_ptrs );
+      content_q = 0;
+      content_ptrs = NULL;
     }
 
     if( !alloc_q )
@@ -1472,6 +1504,8 @@ void mainCRTStartup( void )
         }
         sumSize += size;
 
+        if( content_ptrs )
+          content_ptrs[combined_q] = contents + i*opt.leakContents;
         alloc_a[combined_q++] = a;
       }
       if( opt.leakDetails<=1 )
@@ -1539,6 +1573,46 @@ void mainCRTStartup( void )
                 ATT_WARN,a.size,(intptr_t)a.count,a.size*a.count );
 
             printStack( a.frames,mi_a,mi_q,&dh,a.ft );
+
+            if( content_ptrs && a.size )
+            {
+              int s = a.size<(size_t)opt.leakContents ?
+                (int)a.size : (int)opt.leakContents;
+              char text[5] = { 0,0,0,0,0 };
+              unsigned char *content = content_ptrs[best];
+              int lines = ( s+15 )/16;
+              int lc;
+              for( lc=0; lc<lines; lc++,s-=16 )
+              {
+                unsigned char *line = content + lc*16;
+                int line_size = s>16 ? 16 : s;
+                text[0] = num2hex( lc>>8 );
+                text[1] = num2hex( lc>>4 );
+                text[2] = num2hex( lc );
+                text[3] = '0';
+                printf( "        %c%s%c ",ATT_INFO,text,ATT_NORMAL );
+                int p;
+                text[2] = 0;
+                for( p=0; p<line_size; p++ )
+                {
+                  unsigned char c = line[p];
+                  text[0] = num2hex( c>>4 );
+                  text[1] = num2hex( c );
+                  printf( " %s",text );
+                }
+                for( ; p<16; p++ )
+                  printf( "   " );
+                printf( "  %c",ATT_SECTION );
+                text[1] = 0;
+                for( p=0; p<line_size; p++ )
+                {
+                  unsigned char c = line[p];
+                  text[0] = c>=0x20 && c<=0x7e ? c : '.';
+                  printf( "%s",text );
+                }
+                printf( "\n" );
+              }
+            }
           }
         }
         if( opt.leakDetails>1 && ltCount )
@@ -1572,6 +1646,8 @@ void mainCRTStartup( void )
     if( dh.absPath ) HeapFree( heap,0,dh.absPath );
     if( alloc_a ) HeapFree( heap,0,alloc_a );
     if( mi_a ) HeapFree( heap,0,mi_a );
+    if( contents ) HeapFree( heap,0,contents );
+    if( content_ptrs ) HeapFree( heap,0,content_ptrs );
     CloseHandle( readPipe );
   }
   CloseHandle( pi.hThread );
