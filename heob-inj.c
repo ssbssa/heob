@@ -1683,9 +1683,9 @@ static void replaceModFuncs( void )
   {
     HMODULE mod = rd->mod_a[rd->mod_d];
 
-    HMODULE dll_msvcrt =
+    HMODULE dll_msvcrt = rd->opt.handleException>=2 ? NULL :
       replaceFuncs( mod,rep,sizeof(rep)/sizeof(replaceData) );
-    if( !rd->mod_d )
+    if( !rd->mod_d && rd->opt.handleException<2 )
     {
       if( !dll_msvcrt )
       {

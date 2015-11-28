@@ -1471,7 +1471,10 @@ void mainCRTStartup( void )
 
     if( !alloc_q )
     {
-      printf( "%c\nno leaks found\n",ATT_OK );
+      printf( "%c\n",ATT_OK );
+
+      if( opt.handleException<2 )
+        printf( "no leaks found\n" );
 
       if( exitTrace.at==AT_EXIT )
       {
