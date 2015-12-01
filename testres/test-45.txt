@@ -1,13 +1,13 @@
 allocer: main()
 
 leaks:
-  60 B * 1 = 60 B
+  60 B * 1 = 60 B (#3)
     [wcsdup]
         0000  74 00 68 00 69 00 73 00 20 00                    t.h.i.s. .
-  36 B * 1 = 36 B
+  36 B * 1 = 36 B (#4)
     [malloc]
         0000  FF FF FF 2E FF FF FF FF FF FF                    ..........
-  24 B * 1 = 24 B
+  24 B * 1 = 24 B (#2)
     [strdup]
         0000  74 68 69 73 20 69 73 20 61 20                    this is a 
   sum: 120 B / 3

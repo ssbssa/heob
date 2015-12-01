@@ -458,10 +458,11 @@ static CODE_SEG(".text$1") DWORD WINAPI remoteCall( remoteData *rd )
 }
 
 static CODE_SEG(".text$2") HANDLE inject(
-    HANDLE process,options *opt,char *exePath,textColor *tc )
+    HANDLE process,options *opt,char *exePath,textColor *tc,
+    int raise_alloc_q,int *raise_alloc_a )
 {
   size_t funcSize = (size_t)&inject - (size_t)&remoteCall;
-  size_t fullSize = funcSize + sizeof(remoteData);
+  size_t fullSize = funcSize + sizeof(remoteData) + raise_alloc_q*sizeof(int);
 
   unsigned char *fullDataRemote =
     VirtualAllocEx( process,NULL,fullSize,MEM_COMMIT,PAGE_EXECUTE_READWRITE );
@@ -512,6 +513,11 @@ static CODE_SEG(".text$2") HANDLE inject(
       DUPLICATE_SAME_ACCESS );
 
   RtlMoveMemory( &data->opt,opt,sizeof(options) );
+
+  data->raise_alloc_q = raise_alloc_q;
+  if( raise_alloc_q )
+    RtlMoveMemory( data->raise_alloc_a,
+        raise_alloc_a,raise_alloc_q*sizeof(int) );
 
   WriteProcessMemory( process,fullDataRemote,fullData,fullSize,NULL );
 
@@ -577,6 +583,7 @@ typedef struct dbghelp
   char *absPath;
   textColor *tc;
   options *opt;
+  const char **funcnames;
 }
 dbghelp;
 
@@ -773,28 +780,8 @@ static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbghelp *dh,
   if( ft<FT_COUNT )
   {
     textColor *tc = dh->tc;
-    const char *funcnames[FT_COUNT] = {
-      "malloc",
-      "calloc",
-      "free",
-      "realloc",
-      "strdup",
-      "wcsdup",
-      "operator new",
-      "operator delete",
-      "operator new[]",
-      "operator delete[]",
-      "getcwd",
-      "wgetcwd",
-      "getdcwd",
-      "wgetdcwd",
-      "fullpath",
-      "wfullpath",
-      "tempnam",
-      "wtempnam",
-    };
     printf( "%c        " PTR_SPACES "   [%c%s%c]\n",
-        ATT_NORMAL,ATT_INFO,funcnames[ft],ATT_NORMAL );
+        ATT_NORMAL,ATT_INFO,dh->funcnames[ft],ATT_NORMAL );
   }
 
   uint64_t frames[PTRS];
@@ -901,6 +888,9 @@ void mainCRTStartup( void )
     1,
   };
   options opt = defopt;
+  HANDLE heap = GetProcessHeap();
+  int raise_alloc_q = 0;
+  int *raise_alloc_a = NULL;
   while( args )
   {
     while( args[0]==' ' ) args++;
@@ -989,6 +979,26 @@ void mainCRTStartup( void )
       case 'I':
         opt.mergeLeaks = atoi( args+2 );
         break;
+
+      case 'R':
+        {
+          int id = (int)atoi( args+2 );
+          if( !id ) break;
+          int i;
+          for( i=0; i<raise_alloc_q && raise_alloc_a[i]<id; i++ );
+          if( i<raise_alloc_q && raise_alloc_a[i]==id ) break;
+          raise_alloc_q++;
+          if( !raise_alloc_a )
+            raise_alloc_a = HeapAlloc( heap,0,raise_alloc_q*sizeof(int) );
+          else
+            raise_alloc_a = HeapReAlloc(
+                heap,0,raise_alloc_a,raise_alloc_q*sizeof(int) );
+          if( i<raise_alloc_q-1 )
+            RtlMoveMemory( raise_alloc_a+i+1,raise_alloc_a+i,
+                (raise_alloc_q-1-i)*sizeof(int) );
+          raise_alloc_a[i] = id;
+        }
+        break;
     }
     while( args[0] && args[0]!=' ' ) args++;
   }
@@ -1039,7 +1049,7 @@ void mainCRTStartup( void )
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.exitTrace,ATT_NORMAL );
     printf( "    %c-C%cX%c    show source code [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.sourceCode,ATT_NORMAL );
-    printf( "    %c-r%cX%c    raise breakpoint exception [%c%d%c]\n",
+    printf( "    %c-r%cX%c    raise breakpoint exception on error [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,
         ATT_INFO,defopt.raiseException,ATT_NORMAL );
     printf( "    %c-M%cX%c    minimum page protection size [%c%d%c]\n",
@@ -1052,7 +1062,11 @@ void mainCRTStartup( void )
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.leakContents,ATT_NORMAL );
     printf( "    %c-I%cX%c    merge identical leaks [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.mergeLeaks,ATT_NORMAL );
+    printf( "    %c-R%cX%c    "
+        "raise breakpoint exception on allocation # [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,(intptr_t)0,ATT_NORMAL );
     printf( "\nheap-observer " HEOB_VER " (" BITS "bit)\n" );
+    if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
     ExitProcess( -1 );
   }
 
@@ -1067,6 +1081,7 @@ void mainCRTStartup( void )
   if( !result )
   {
     printf( "%ccan't create process for '%s'\n%c",ATT_WARN,args,ATT_NORMAL );
+    if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
     ExitProcess( -1 );
   }
 
@@ -1075,14 +1090,14 @@ void mainCRTStartup( void )
   if( isWrongArch(pi.hProcess) )
     printf( "%conly " BITS "bit applications possible\n",ATT_WARN );
   else
-    readPipe = inject( pi.hProcess,&opt,exePath,tc );
+    readPipe = inject( pi.hProcess,&opt,exePath,tc,
+        raise_alloc_q,raise_alloc_a );
   if( !readPipe )
     TerminateProcess( pi.hProcess,1 );
 
   UINT exitCode = -1;
   if( readPipe )
   {
-    HANDLE heap = GetProcessHeap();
 #ifndef NO_DBGHELP
     HMODULE symMod = LoadLibrary( "dbghelp.dll" );
 #endif
@@ -1098,6 +1113,26 @@ void mainCRTStartup( void )
     func_SymGetModuleInfo64 *fSymGetModuleInfo64 = NULL;
     func_SymLoadModule64 *fSymLoadModule64 = NULL;
 #endif
+    const char *funcnames[FT_COUNT] = {
+      "malloc",
+      "calloc",
+      "free",
+      "realloc",
+      "strdup",
+      "wcsdup",
+      "operator new",
+      "operator delete",
+      "operator new[]",
+      "operator delete[]",
+      "getcwd",
+      "wgetcwd",
+      "getdcwd",
+      "wgetdcwd",
+      "fullpath",
+      "wfullpath",
+      "tempnam",
+      "wtempnam",
+    };
     dbghelp dh = {
       pi.hProcess,
 #ifndef NO_DBGHELP
@@ -1116,6 +1151,7 @@ void mainCRTStartup( void )
       NULL,
       tc,
       &opt,
+      funcnames,
     };
 #ifndef NO_DBGHELP
     if( symMod )
@@ -1338,7 +1374,8 @@ void mainCRTStartup( void )
                     ATT_INFO,ei.nearest?"near ":"",
                     ei.aq>2?"freed block":"protected area of",
                     ptr,size,addr>ptr?"+":"",addr-ptr );
-                printf( "%c  allocated on:\n",ATT_SECTION );
+                printf( "%c  allocated on: %c(#%d)\n",ATT_SECTION,
+                    ATT_NORMAL,(intptr_t)ei.aa[1].id );
                 printStack( ei.aa[1].frames,mi_a,mi_q,&dh,ei.aa[1].ft );
 
                 if( ei.aq>2 )
@@ -1361,7 +1398,8 @@ void mainCRTStartup( void )
 
             printf( "%c\nallocation failed of %u bytes\n",
                 ATT_WARN,a.size );
-            printf( "%c  called on:\n",ATT_SECTION );
+            printf( "%c  called on: %c(#%d)\n",ATT_SECTION,
+                ATT_NORMAL,(intptr_t)a.id );
             printStack( a.frames,mi_a,mi_q,&dh,a.ft );
           }
           break;
@@ -1390,7 +1428,8 @@ void mainCRTStartup( void )
             printf( "%c  called on:\n",ATT_SECTION );
             printStack( aa[0].frames,mi_a,mi_q,&dh,aa[0].ft );
 
-            printf( "%c  allocated on:\n",ATT_SECTION );
+            printf( "%c  allocated on: %c(#%d)\n",ATT_SECTION,
+                ATT_NORMAL,(intptr_t)aa[1].id );
             printStack( aa[1].frames,mi_a,mi_q,&dh,aa[1].ft );
 
             printf( "%c  freed on:\n",ATT_SECTION );
@@ -1409,7 +1448,8 @@ void mainCRTStartup( void )
             printf( "%c  slack area of %p (size %u, offset %s%d)\n",
                 ATT_INFO,aa[0].ptr,aa[0].size,
                 aa[1].ptr>aa[0].ptr?"+":"",(char*)aa[1].ptr-(char*)aa[0].ptr );
-            printf( "%c  allocated on:\n",ATT_SECTION );
+            printf( "%c  allocated on: %c(#%d)\n",ATT_SECTION,
+                ATT_NORMAL,(intptr_t)aa[0].id );
             printStack( aa[0].frames,mi_a,mi_q,&dh,aa[0].ft );
             printf( "%c  freed on:\n",ATT_SECTION );
             printStack( aa[1].frames,mi_a,mi_q,&dh,aa[1].ft );
@@ -1430,7 +1470,8 @@ void mainCRTStartup( void )
 
             printf( "%c\nmismatching allocation/release method"
                 " of %p (size %u)\n",ATT_WARN,aa[0].ptr,aa[0].size );
-            printf( "%c  allocated on:\n",ATT_SECTION );
+            printf( "%c  allocated on: %c(#%d)\n",ATT_SECTION,
+                ATT_NORMAL,(intptr_t)aa[0].id );
             printStack( aa[0].frames,mi_a,mi_q,&dh,aa[0].ft );
             printf( "%c  freed on:\n",ATT_SECTION );
             printStack( aa[1].frames,mi_a,mi_q,&dh,aa[1].ft );
@@ -1449,6 +1490,21 @@ void mainCRTStartup( void )
             int lc;
             for( lc=0; lc<content_q; lc++ )
               content_ptrs[lc] = contents + lc*opt.leakContents;
+          }
+          break;
+
+        case WRITE_RAISE_ALLOCATION:
+          {
+            int id;
+            if( !readFile(readPipe,&id,sizeof(int)) )
+              break;
+            funcType ft;
+            if( !readFile(readPipe,&ft,sizeof(funcType)) )
+              break;
+
+            printf( "%c\nreached allocation #%d %c[%c%s%c]\n",
+                ATT_SECTION,(intptr_t)id,ATT_NORMAL,
+                ATT_INFO,funcnames[ft],ATT_NORMAL );
           }
           break;
       }
@@ -1497,6 +1553,7 @@ void mainCRTStartup( void )
         if( !a.ptr ) continue;
 
         size_t size = a.size;
+        int content_idx = i;
         a.count = 1;
         if( opt.mergeLeaks )
         {
@@ -1513,12 +1570,17 @@ void mainCRTStartup( void )
             size += alloc_a[j].size;
             alloc_a[j].ptr = NULL;
             a.count++;
+            if( alloc_a[j].id<a.id )
+            {
+              a.id = alloc_a[j].id;
+              content_idx = j;
+            }
           }
         }
         sumSize += size;
 
         if( content_ptrs )
-          content_ptrs[combined_q] = contents + i*opt.leakContents;
+          content_ptrs[combined_q] = contents + content_idx*opt.leakContents;
         alloc_a[combined_q++] = a;
       }
       if( opt.leakDetails<=1 )
@@ -1554,10 +1616,7 @@ void mainCRTStartup( void )
                 use = 1;
               else if( b.ft==a.ft )
               {
-                int cmp = memcmp( a.frames,b.frames,PTRS*sizeof(void*) );
-                if( cmp<0 )
-                  use = 1;
-                else if( cmp==0 && b.count>a.count )
+                if( b.id<a.id )
                   use = 1;
               }
             }
@@ -1582,8 +1641,9 @@ void mainCRTStartup( void )
 
           if( l<lDetails )
           {
-            printf( "%c  %u B * %d = %u B\n",
-                ATT_WARN,a.size,(intptr_t)a.count,a.size*a.count );
+            printf( "%c  %u B * %d = %u B %c(#%d)\n",
+                ATT_WARN,a.size,(intptr_t)a.count,a.size*a.count,
+                ATT_NORMAL,(intptr_t)a.id );
 
             printStack( a.frames,mi_a,mi_q,&dh,a.ft );
 
@@ -1665,6 +1725,8 @@ void mainCRTStartup( void )
   }
   CloseHandle( pi.hThread );
   CloseHandle( pi.hProcess );
+
+  if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
 
   printf( "%c",ATT_NORMAL );
 

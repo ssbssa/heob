@@ -45,6 +45,9 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 
 void choose( int arg )
 {
+  printf( "allocer: main()\n" );
+  fflush( stdout );
+
   char *mem = (char*)malloc( 15 );
   mem[0] = 0;
 
@@ -296,10 +299,14 @@ void choose( int arg )
     case 18:
       // merge identical memory leaks
       {
-        for( int i=0; i<5; i++ )
+        char *free_me = NULL;
+        for( int i=0; i<6; i++ )
         {
-          char *copy = strdup( "memory leak" );
+          char *copy = strdup( "memory leak X" );
           mem[i+1] = copy[0];
+          copy[12] = '0' + i;
+          if( !i ) free_me = copy;
+          if( i==2 ) free( free_me );
         }
       }
       break;
@@ -311,14 +318,30 @@ void choose( int arg )
 }
 
 
+#ifndef __MINGW32__
 int main( int argc,char **argv )
 {
-  int arg;
-  printf( "allocer: main()\n" );
-  fflush( stdout );
-
-  arg = argc>1 ? atoi( argv[1] ) : 0;
+  int arg = argc>1 ? atoi( argv[1] ) : 0;
   choose( arg );
 
   return( arg );
 }
+#else
+extern "C" void mainCRTStartup( void )
+{
+  const char *cmdLine = GetCommandLineA();
+  if( cmdLine[0]=='"' )
+  {
+    cmdLine = strchr( cmdLine+1,'"' );
+    if( cmdLine ) cmdLine++;
+  }
+  else
+    cmdLine = strchr( cmdLine,' ' );
+  if( cmdLine ) while( *cmdLine==' ' ) cmdLine++;
+
+  int arg = cmdLine && *cmdLine ? atoi( cmdLine ) : 0;
+  choose( arg );
+
+  ExitProcess( arg );
+}
+#endif

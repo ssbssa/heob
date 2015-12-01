@@ -15,7 +15,7 @@ CXX=$(PREF)g++
 CPPFLAGS=-DNO_DWARFSTACK
 CFLAGS=-Wall -Wextra -fno-omit-frame-pointer -fno-optimize-sibling-calls
 CFLAGS_HEOB=$(CPPFLAGS) $(CFLAGS) -O3 -DHEOB_VER="\"$(HEOB_VERSION)\"" \
-	    -ffreestanding
+	    -ffreestanding -mno-stack-arg-probe
 LDFLAGS_HEOB=-s -nostdlib -lkernel32
 CFLAGS_TEST=$(CFLAGS) -O3 -g
 
@@ -26,7 +26,7 @@ heob$(BITS).exe: heob.c heob-inj.c heob.h
 	$(CC) $(CFLAGS_HEOB) -o$@ heob.c heob-inj.c $(LDFLAGS_HEOB) || { rm -f $@; exit 1; }
 
 allocer$(BITS).exe: allocer.cpp libcrt$(BITS).a dll-alloc$(BITS).dll dll-alloc-shared$(BITS).dll
-	$(CXX) $(CFLAGS_TEST) -o$@ $^
+	$(CXX) $(CFLAGS_TEST) -o$@ $^ -nostdlib -lmsvcrt -lkernel32
 
 dll-alloc$(BITS).dll: dll-alloc.c
 	$(CC) $(CFLAGS_TEST) -shared -o$@ $^
@@ -155,7 +155,9 @@ T_H47=-p1 -a4 -f0 -L100 -I1
 T_A47=18
 T_H48=-p1 -a4 -f0 -L100 -I0
 T_A48=18
-TESTS:=$(shell seq -w 01 48)
+T_H49=-p1 -a4 -f0 -R3
+T_A49=1
+TESTS:=$(shell seq -w 01 49)
 
 testres:
 	mkdir -p $@

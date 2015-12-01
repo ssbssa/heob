@@ -5,7 +5,7 @@ deallocation of invalid pointer 0xPTR
     [realloc]
 
 allocation failed of NUM bytes
-  called on:
+  called on: (#2)
     [realloc]
 
 no leaks found

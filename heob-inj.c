@@ -95,6 +95,11 @@ typedef struct localData
   size_t pageAdd;
 
   options opt;
+
+  int cur_id;
+  int raise_id;
+  int raise_alloc_q;
+  int *raise_alloc_a;
 }
 localData;
 
@@ -400,6 +405,7 @@ static NOINLINE void trackAllocs(
     sa->alloc_q++;
     a->ptr = alloc_ptr;
     a->size = alloc_size;
+    int id = a->id = ++rd->cur_id;
     a->at = at;
     a->lt = LT_LOST;
     a->ft = ft;
@@ -410,7 +416,24 @@ static NOINLINE void trackAllocs(
     if( ptrs<PTRS )
       RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
 
+    int raiseException = 0;
+    if( id==rd->raise_id && id )
+    {
+      DWORD written;
+      int type = WRITE_RAISE_ALLOCATION;
+      WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+      WriteFile( rd->master,&id,sizeof(int),&written,NULL );
+      WriteFile( rd->master,&ft,sizeof(funcType),&written,NULL );
+
+      rd->raise_id = rd->raise_alloc_q-- ? *(rd->raise_alloc_a++) : 0;
+
+      raiseException = 1;
+    }
+
     LeaveCriticalSection( &rd->cs );
+
+    if( raiseException )
+      DebugBreak();
   }
   else if( alloc_size!=(size_t)-1 )
   {
@@ -428,6 +451,8 @@ static NOINLINE void trackAllocs(
 
     EnterCriticalSection( &rd->cs );
 
+    int id = a.id = ++rd->cur_id;
+
     writeMods( &a,1 );
 
     DWORD written;
@@ -435,9 +460,22 @@ static NOINLINE void trackAllocs(
     WriteFile( rd->master,&type,sizeof(int),&written,NULL );
     WriteFile( rd->master,&a,sizeof(allocation),&written,NULL );
 
+    int raiseException = (int)rd->opt.raiseException;
+    if( id==rd->raise_id && id )
+    {
+      type = WRITE_RAISE_ALLOCATION;
+      WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+      WriteFile( rd->master,&id,sizeof(int),&written,NULL );
+      WriteFile( rd->master,&ft,sizeof(funcType),&written,NULL );
+
+      rd->raise_id = rd->raise_alloc_q-- ? *(rd->raise_alloc_a++) : 0;
+
+      raiseException = 1;
+    }
+
     LeaveCriticalSection( &rd->cs );
 
-    if( rd->opt.raiseException )
+    if( raiseException )
       DebugBreak();
   }
 }
@@ -2142,7 +2180,8 @@ DLLEXPORT DWORD inj( remoteData *rd,void *app )
   rd->fFlushInstructionCache( rd->fGetCurrentProcess(),NULL,0 );
 
   HANDLE heap = HeapCreate( HEAP_NO_SERIALIZE,0,0 );
-  localData *ld = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(localData) );;
+  localData *ld = HeapAlloc( heap,HEAP_ZERO_MEMORY,
+      sizeof(localData)+rd->raise_alloc_q*sizeof(int) );
   g_ld = ld;
 
   RtlMoveMemory( &ld->opt,&rd->opt,sizeof(options) );
@@ -2179,6 +2218,14 @@ DLLEXPORT DWORD inj( remoteData *rd,void *app )
   }
 
   ld->newArrAllocMethod = rd->opt.allocMethod>1 ? AT_NEW_ARR : AT_NEW;
+
+  ld->cur_id = 0;
+  ld->raise_alloc_q = rd->raise_alloc_q;
+  ld->raise_alloc_a = (int*)( ld + 1 );
+  if( rd->raise_alloc_q )
+    RtlMoveMemory( ld->raise_alloc_a,
+        rd->raise_alloc_a,rd->raise_alloc_q*sizeof(int) );
+  ld->raise_id = ld->raise_alloc_q-- ? *(ld->raise_alloc_a++) : 0;
 
   if( rd->opt.protect )
   {

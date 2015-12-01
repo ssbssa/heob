@@ -1,13 +1,13 @@
 allocer: main()
 
 mismatching allocation/release method of 0xPTR (size 16)
-  allocated on:
+  allocated on: (#1)
     [malloc]
   freed on:
     [operator delete]
 
 mismatching allocation/release method of 0xPTR (size 100)
-  allocated on:
+  allocated on: (#3)
     [operator new[]]
   freed on:
     [realloc]

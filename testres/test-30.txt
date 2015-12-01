@@ -3,7 +3,7 @@ allocer: main()
 double free of 0xPTR (size 16)
   called on:
     [realloc]
-  allocated on:
+  allocated on: (#1)
     [malloc]
   freed on:
     [free]

@@ -1,8 +1,6 @@
 allocer: main()
 
-allocation failed of NUM bytes
-  called on: (#2)
-    [malloc]
+reached allocation #3 [calloc]
 
 unhandled exception code: 0xPTR (BREAKPOINT)
   exception on:

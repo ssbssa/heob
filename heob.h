@@ -153,6 +153,7 @@ typedef struct
   };
   size_t size;
   void *frames[PTRS];
+  int id;
   allocType at : 8;
   leakType lt : 8;
   funcType ft : 8;
@@ -222,6 +223,9 @@ typedef struct remoteData
   };
 
   options opt;
+
+  int raise_alloc_q;
+  int raise_alloc_a[1];
 }
 remoteData;
 
@@ -243,6 +247,7 @@ enum
   WRITE_MAIN_ALLOC_FAIL,
   WRITE_WRONG_DEALLOC,
   WRITE_LEAK_CONTENTS,
+  WRITE_RAISE_ALLOCATION,
 };
 
 typedef struct
