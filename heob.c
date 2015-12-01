@@ -1015,56 +1015,56 @@ void mainCRTStartup( void )
 
     printf( "Usage: %c%s %c[OPTION]... %cAPP [APP-OPTION]...%c\n",
         ATT_OK,delim,ATT_INFO,ATT_SECTION,ATT_NORMAL );
+    printf( "    %c-P%cX%c    show process ID and wait [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.pid,ATT_NORMAL );
+    printf( "    %c-c%cX%c    create new console [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.newConsole,ATT_NORMAL );
     printf( "    %c-p%cX%c    page protection"
         " (%c0%c = off, %c1%c = after, %c2%c = before) [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,
         ATT_INFO,ATT_NORMAL,ATT_INFO,ATT_NORMAL,ATT_INFO,ATT_NORMAL,
         ATT_INFO,defopt.protect,ATT_NORMAL );
+    printf( "    %c-f%cX%c    freed memory protection [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.protectFree,ATT_NORMAL );
+    printf( "    %c-d%cX%c    monitor dlls [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.dlls,ATT_NORMAL );
     printf( "    %c-a%cX%c    alignment [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.align,ATT_NORMAL );
+    printf( "    %c-M%cX%c    minimum page protection size [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,
+        ATT_INFO,defopt.minProtectSize,ATT_NORMAL );
     printf( "    %c-i%cX%c    initial value [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.init,ATT_NORMAL );
     printf( "    %c-s%cX%c    initial value for slack [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.slackInit,ATT_NORMAL );
-    printf( "    %c-f%cX%c    freed memory protection [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.protectFree,ATT_NORMAL );
     printf( "    %c-h%cX%c    handle exceptions [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,
         ATT_INFO,defopt.handleException,ATT_NORMAL );
-    printf( "    %c-c%cX%c    create new console [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.newConsole,ATT_NORMAL );
-    printf( "    %c-F%cX%c    show full path [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.fullPath,ATT_NORMAL );
-    printf( "    %c-m%cX%c    compare allocation/release method [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.allocMethod,ATT_NORMAL );
-    printf( "    %c-l%cX%c    show leak details [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.leakDetails,ATT_NORMAL );
-    printf( "    %c-S%cX%c    use stack pointer in exception [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.useSp,ATT_NORMAL );
-    printf( "    %c-d%cX%c    monitor dlls [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.dlls,ATT_NORMAL );
-    printf( "    %c-P%cX%c    show process ID and wait [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.pid,ATT_NORMAL );
-    printf( "    %c-e%cX%c    show exit trace [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.exitTrace,ATT_NORMAL );
-    printf( "    %c-C%cX%c    show source code [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.sourceCode,ATT_NORMAL );
-    printf( "    %c-r%cX%c    raise breakpoint exception on error [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,
-        ATT_INFO,defopt.raiseException,ATT_NORMAL );
-    printf( "    %c-M%cX%c    minimum page protection size [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,
-        ATT_INFO,defopt.minProtectSize,ATT_NORMAL );
-    printf( "    %c-n%cX%c    find nearest allocation [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,
-        ATT_INFO,defopt.findNearest,ATT_NORMAL );
-    printf( "    %c-L%cX%c    show leak contents [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.leakContents,ATT_NORMAL );
-    printf( "    %c-I%cX%c    merge identical leaks [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.mergeLeaks,ATT_NORMAL );
     printf( "    %c-R%cX%c    "
         "raise breakpoint exception on allocation # [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,(intptr_t)0,ATT_NORMAL );
+    printf( "    %c-r%cX%c    raise breakpoint exception on error [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,
+        ATT_INFO,defopt.raiseException,ATT_NORMAL );
+    printf( "    %c-S%cX%c    use stack pointer in exception [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.useSp,ATT_NORMAL );
+    printf( "    %c-m%cX%c    compare allocation/release method [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.allocMethod,ATT_NORMAL );
+    printf( "    %c-n%cX%c    find nearest allocation [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,
+        ATT_INFO,defopt.findNearest,ATT_NORMAL );
+    printf( "    %c-I%cX%c    merge identical leaks [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.mergeLeaks,ATT_NORMAL );
+    printf( "    %c-F%cX%c    show full path [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.fullPath,ATT_NORMAL );
+    printf( "    %c-l%cX%c    show leak details [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.leakDetails,ATT_NORMAL );
+    printf( "    %c-L%cX%c    show leak contents [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.leakContents,ATT_NORMAL );
+    printf( "    %c-C%cX%c    show source code [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.sourceCode,ATT_NORMAL );
+    printf( "    %c-e%cX%c    show exit trace [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.exitTrace,ATT_NORMAL );
     printf( "\nheap-observer " HEOB_VER " (" BITS "bit)\n" );
     if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
     ExitProcess( -1 );
