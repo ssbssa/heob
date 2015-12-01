@@ -336,12 +336,12 @@ static void TextColorHtml( textColor *tc,textColorAtt color )
   }
 }
 
-static void checkOutputVariant( textColor *tc,const char *cmdLine )
+static void checkOutputVariant( textColor *tc,const char *cmdLine,HANDLE out )
 {
   // default
   tc->fWriteText = &WriteText;
   tc->fTextColor = NULL;
-  tc->out = GetStdHandle( STD_OUTPUT_HANDLE );
+  tc->out = out;
   tc->color = ATT_NORMAL;
 
   DWORD flags;
@@ -889,7 +889,6 @@ void mainCRTStartup( void )
   textColor *tc = &tc_o;
 
   char *cmdLine = GetCommandLineA();
-  checkOutputVariant( tc,cmdLine );
   char *args;
   if( cmdLine[0]=='"' && (args=strchr(cmdLine+1,'"')) )
     args++;
@@ -925,6 +924,7 @@ void mainCRTStartup( void )
   HANDLE heap = GetProcessHeap();
   int raise_alloc_q = 0;
   int *raise_alloc_a = NULL;
+  HANDLE out = NULL;
   while( args )
   {
     while( args[0]==' ' ) args++;
@@ -1033,10 +1033,36 @@ void mainCRTStartup( void )
           raise_alloc_a[i] = id;
         }
         break;
+
+      case 'o':
+        if( out ) break;
+        if( (args[2]=='0' || args[2]=='1') && (args[3]==' ' || !args[3]) )
+          out = GetStdHandle(
+              args[2]=='0' ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE );
+        else
+        {
+          char *start = args + 2;
+          char *end = start;
+          while( *end && *end!=' ' ) end++;
+          if( end>start )
+          {
+            size_t len = end - start;
+            char *name = HeapAlloc( heap,0,len+1 );
+            RtlMoveMemory( name,start,len );
+            name[len] = 0;
+            out = CreateFile( name,GENERIC_WRITE,FILE_SHARE_READ,
+                NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
+            HeapFree( heap,0,name );
+          }
+        }
+        break;
     }
     while( args[0] && args[0]!=' ' ) args++;
   }
+  if( !out || out==INVALID_HANDLE_VALUE )
+    out = GetStdHandle( STD_OUTPUT_HANDLE );
   if( opt.protect<1 ) opt.protectFree = 0;
+  checkOutputVariant( tc,cmdLine,out );
   if( !args || !args[0] )
   {
     char exePath[MAX_PATH];
@@ -1049,6 +1075,11 @@ void mainCRTStartup( void )
 
     printf( "Usage: %c%s %c[OPTION]... %cAPP [APP-OPTION]...%c\n",
         ATT_OK,delim,ATT_INFO,ATT_SECTION,ATT_NORMAL );
+    printf( "    %c-o%cX%c    heob output"
+        " (%c0%c = stdout, %c1%c = stderr, %c...%c = file) [%c%d%c]\n",
+        ATT_INFO,ATT_BASE,ATT_NORMAL,
+        ATT_INFO,ATT_NORMAL,ATT_INFO,ATT_NORMAL,ATT_INFO,ATT_NORMAL,
+        ATT_INFO,0,ATT_NORMAL );
     printf( "    %c-P%cX%c    show process ID and wait [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.pid,ATT_NORMAL );
     printf( "    %c-c%cX%c    create new console [%c%d%c]\n",
