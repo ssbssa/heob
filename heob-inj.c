@@ -460,7 +460,7 @@ static NOINLINE void trackAllocs(
     WriteFile( rd->master,&type,sizeof(int),&written,NULL );
     WriteFile( rd->master,&a,sizeof(allocation),&written,NULL );
 
-    int raiseException = (int)rd->opt.raiseException;
+    int raiseException = rd->opt.raiseException;
     if( id==rd->raise_id && id )
     {
       type = WRITE_RAISE_ALLOCATION;

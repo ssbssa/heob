@@ -70,7 +70,7 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
         tc->fWriteText( tc,format,ptr-format );
       switch( ptr[1] )
       {
-        case 's':
+        case 's': // const char*
           {
             const char *arg = va_arg( vl,const char* );
             if( arg && arg[0] )
@@ -82,24 +82,56 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
           }
           break;
 
-        case 'd':
-        case 'u':
+        case 'd': // int
+        case 'D': // intptr_t
+        case 'u': // unsigned int
+        case 'U': // uintptr_t
           {
             uintptr_t arg;
             int minus = 0;
-            if( ptr[1]=='d' )
+            switch( ptr[1] )
             {
-              intptr_t argi = va_arg( vl,intptr_t );
-              if( argi<0 )
-              {
-                arg = -argi;
-                minus = 1;
-              }
-              else
-                arg = argi;
+              case 'd':
+#ifndef _WIN64
+              case 'D':
+#endif
+                {
+                  int argi = va_arg( vl,int );
+                  if( argi<0 )
+                  {
+                    arg = -argi;
+                    minus = 1;
+                  }
+                  else
+                    arg = argi;
+                }
+                break;
+#ifdef _WIN64
+              case 'D':
+                {
+                  intptr_t argi = va_arg( vl,intptr_t );
+                  if( argi<0 )
+                  {
+                    arg = -argi;
+                    minus = 1;
+                  }
+                  else
+                    arg = argi;
+                }
+                break;
+#endif
+              case 'u':
+#ifndef _WIN64
+              case 'U':
+#endif
+                arg = va_arg( vl,unsigned int );
+                break;
+#ifdef _WIN64
+              case 'U':
+                arg = va_arg( vl,uintptr_t );
+                break;
+#endif
             }
-            else
-              arg = va_arg( vl,uintptr_t );
             char str[32];
             char *end = str + sizeof(str);
             char *start = end;
@@ -116,17 +148,19 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
           }
           break;
 
-        case 'p':
-        case 'x':
+        case 'x': // unsigned int
+        case 'p': // uintptr_t
           {
             uintptr_t arg;
             int bytes;
+#ifdef _WIN64
             if( ptr[1]=='p' )
             {
               arg = va_arg( vl,uintptr_t );
-              bytes = sizeof(void*);
+              bytes = sizeof(uintptr_t);
             }
             else
+#endif
             {
               arg = va_arg( vl,unsigned int );
               bytes = sizeof(unsigned int);
@@ -142,7 +176,7 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
           }
           break;
 
-        case 'c':
+        case 'c': // textColorAtt
           {
             textColorAtt arg = va_arg( vl,textColorAtt );
             if( tc->fTextColor && tc->color!=arg )
@@ -182,9 +216,9 @@ static NOINLINE char *mstrrchr( const char *s,char c )
 }
 #define strrchr mstrrchr
 
-static NOINLINE intptr_t matoi( const char *s )
+static NOINLINE int matoi( const char *s )
 {
-  intptr_t ret = 0;
+  int ret = 0;
 
   if( s[0]=='0' && s[1]=='x' )
   {
@@ -706,7 +740,7 @@ static void locFunc(
       else
         printf( "        " PTR_SPACES );
       printf( "   %c%s%c:%d",
-          ATT_OK,filename,ATT_NORMAL,(intptr_t)lineno );
+          ATT_OK,filename,ATT_NORMAL,lineno );
       if( funcname )
         printf( " [%c%s%c]",ATT_INFO,funcname,ATT_NORMAL );
       printf( "\n" );
@@ -730,9 +764,9 @@ static void locFunc(
               {
                 const char *bol = map;
                 const char *eof = map + fileInfo.nFileSizeLow;
-                int firstLine = lineno + 1 - (int)dh->opt->sourceCode;
+                int firstLine = lineno + 1 - dh->opt->sourceCode;
                 if( firstLine<1 ) firstLine = 1;
-                int lastLine = lineno - 1 + (int)dh->opt->sourceCode;
+                int lastLine = lineno - 1 + dh->opt->sourceCode;
                 if( firstLine>1 )
                   printf( "\t...\n" );
                 int i;
@@ -982,7 +1016,7 @@ void mainCRTStartup( void )
 
       case 'R':
         {
-          int id = (int)atoi( args+2 );
+          int id = atoi( args+2 );
           if( !id ) break;
           int i;
           for( i=0; i<raise_alloc_q && raise_alloc_a[i]<id; i++ );
@@ -1042,7 +1076,7 @@ void mainCRTStartup( void )
         ATT_INFO,defopt.handleException,ATT_NORMAL );
     printf( "    %c-R%cX%c    "
         "raise breakpoint exception on allocation # [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,(intptr_t)0,ATT_NORMAL );
+        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,0,ATT_NORMAL );
     printf( "    %c-r%cX%c    raise breakpoint exception on error [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,
         ATT_INFO,defopt.raiseException,ATT_NORMAL );
@@ -1218,7 +1252,7 @@ void mainCRTStartup( void )
         HANDLE out = tc->out;
         tc->out = GetStdHandle( STD_ERROR_HANDLE );
         printf( "-------------------- PID %u --------------------\n",
-            (uintptr_t)pi.dwProcessId );
+            pi.dwProcessId );
         tc->out = out;
 
         INPUT_RECORD ir;
@@ -1370,12 +1404,12 @@ void mainCRTStartup( void )
               {
                 char *ptr = (char*)ei.aa[1].ptr;
                 size_t size = ei.aa[1].size;
-                printf( "%c  %s%s %p (size %u, offset %s%d)\n",
+                printf( "%c  %s%s %p (size %U, offset %s%D)\n",
                     ATT_INFO,ei.nearest?"near ":"",
                     ei.aq>2?"freed block":"protected area of",
                     ptr,size,addr>ptr?"+":"",addr-ptr );
                 printf( "%c  allocated on: %c(#%d)\n",ATT_SECTION,
-                    ATT_NORMAL,(intptr_t)ei.aa[1].id );
+                    ATT_NORMAL,ei.aa[1].id );
                 printStack( ei.aa[1].frames,mi_a,mi_q,&dh,ei.aa[1].ft );
 
                 if( ei.aq>2 )
@@ -1396,10 +1430,10 @@ void mainCRTStartup( void )
             if( !readFile(readPipe,&a,sizeof(allocation)) )
               break;
 
-            printf( "%c\nallocation failed of %u bytes\n",
+            printf( "%c\nallocation failed of %U bytes\n",
                 ATT_WARN,a.size );
             printf( "%c  called on: %c(#%d)\n",ATT_SECTION,
-                ATT_NORMAL,(intptr_t)a.id );
+                ATT_NORMAL,a.id );
             printStack( a.frames,mi_a,mi_q,&dh,a.ft );
           }
           break;
@@ -1423,13 +1457,13 @@ void mainCRTStartup( void )
             if( !readFile(readPipe,aa,3*sizeof(allocation)) )
               break;
 
-            printf( "%c\ndouble free of %p (size %u)\n",
+            printf( "%c\ndouble free of %p (size %U)\n",
                 ATT_WARN,aa[1].ptr,aa[1].size );
             printf( "%c  called on:\n",ATT_SECTION );
             printStack( aa[0].frames,mi_a,mi_q,&dh,aa[0].ft );
 
             printf( "%c  allocated on: %c(#%d)\n",ATT_SECTION,
-                ATT_NORMAL,(intptr_t)aa[1].id );
+                ATT_NORMAL,aa[1].id );
             printStack( aa[1].frames,mi_a,mi_q,&dh,aa[1].ft );
 
             printf( "%c  freed on:\n",ATT_SECTION );
@@ -1445,11 +1479,11 @@ void mainCRTStartup( void )
 
             printf( "%c\nwrite access violation at %p\n",
                 ATT_WARN,aa[1].ptr );
-            printf( "%c  slack area of %p (size %u, offset %s%d)\n",
+            printf( "%c  slack area of %p (size %U, offset %s%D)\n",
                 ATT_INFO,aa[0].ptr,aa[0].size,
                 aa[1].ptr>aa[0].ptr?"+":"",(char*)aa[1].ptr-(char*)aa[0].ptr );
             printf( "%c  allocated on: %c(#%d)\n",ATT_SECTION,
-                ATT_NORMAL,(intptr_t)aa[0].id );
+                ATT_NORMAL,aa[0].id );
             printStack( aa[0].frames,mi_a,mi_q,&dh,aa[0].ft );
             printf( "%c  freed on:\n",ATT_SECTION );
             printStack( aa[1].frames,mi_a,mi_q,&dh,aa[1].ft );
@@ -1469,9 +1503,9 @@ void mainCRTStartup( void )
               break;
 
             printf( "%c\nmismatching allocation/release method"
-                " of %p (size %u)\n",ATT_WARN,aa[0].ptr,aa[0].size );
+                " of %p (size %U)\n",ATT_WARN,aa[0].ptr,aa[0].size );
             printf( "%c  allocated on: %c(#%d)\n",ATT_SECTION,
-                ATT_NORMAL,(intptr_t)aa[0].id );
+                ATT_NORMAL,aa[0].id );
             printStack( aa[0].frames,mi_a,mi_q,&dh,aa[0].ft );
             printf( "%c  freed on:\n",ATT_SECTION );
             printStack( aa[1].frames,mi_a,mi_q,&dh,aa[1].ft );
@@ -1483,7 +1517,7 @@ void mainCRTStartup( void )
             if( !readFile(readPipe,&content_q,sizeof(int)) )
               break;
             contents = HeapAlloc( heap,0,content_q*opt.leakContents );
-            if( !readFile(readPipe,contents,content_q*(int)opt.leakContents) )
+            if( !readFile(readPipe,contents,content_q*opt.leakContents) )
               break;
             content_ptrs =
               HeapAlloc( heap,0,content_q*sizeof(unsigned char*) );
@@ -1503,7 +1537,7 @@ void mainCRTStartup( void )
               break;
 
             printf( "%c\nreached allocation #%d %c[%c%s%c]\n",
-                ATT_SECTION,(intptr_t)id,ATT_NORMAL,
+                ATT_SECTION,id,ATT_NORMAL,
                 ATT_INFO,funcnames[ft],ATT_NORMAL );
           }
           break;
@@ -1538,7 +1572,7 @@ void mainCRTStartup( void )
         printStack( exitTrace.frames,mi_a,mi_q,&dh,FT_COUNT );
       }
       printf( "%cexit code: %u (%x)\n",
-          ATT_SECTION,(uintptr_t)exitCode,exitCode );
+          ATT_SECTION,exitCode,exitCode );
     }
     else if( alloc_q>0 )
     {
@@ -1592,7 +1626,7 @@ void mainCRTStartup( void )
       int lDetails = opt.leakDetails&1 ? LT_COUNT : LT_REACHABLE;
       for( l=0; l<lMax; l++ )
       {
-        intptr_t ltCount = 0;
+        int ltCount = 0;
         size_t ltSumSize = 0;
         for( i=0; i<combined_q; i++ )
         {
@@ -1641,16 +1675,16 @@ void mainCRTStartup( void )
 
           if( l<lDetails )
           {
-            printf( "%c  %u B * %d = %u B %c(#%d)\n",
-                ATT_WARN,a.size,(intptr_t)a.count,a.size*a.count,
-                ATT_NORMAL,(intptr_t)a.id );
+            printf( "%c  %U B * %d = %U B %c(#%d)\n",
+                ATT_WARN,a.size,a.count,a.size*a.count,
+                ATT_NORMAL,a.id );
 
             printStack( a.frames,mi_a,mi_q,&dh,a.ft );
 
             if( content_ptrs && a.size )
             {
               int s = a.size<(size_t)opt.leakContents ?
-                (int)a.size : (int)opt.leakContents;
+                (int)a.size : opt.leakContents;
               char text[5] = { 0,0,0,0,0 };
               unsigned char *content = content_ptrs[best];
               int lines = ( s+15 )/16;
@@ -1689,10 +1723,10 @@ void mainCRTStartup( void )
           }
         }
         if( opt.leakDetails>1 && ltCount )
-          printf( "%c  sum: %u B / %d\n",ATT_WARN,ltSumSize,ltCount );
+          printf( "%c  sum: %U B / %d\n",ATT_WARN,ltSumSize,ltCount );
       }
       if( opt.leakDetails<=1 )
-        printf( "%c  sum: %u B / %d\n",ATT_WARN,sumSize,(intptr_t)alloc_q );
+        printf( "%c  sum: %U B / %d\n",ATT_WARN,sumSize,alloc_q );
 
       if( exitTrace.at==AT_EXIT )
       {
@@ -1700,7 +1734,7 @@ void mainCRTStartup( void )
         printStack( exitTrace.frames,mi_a,mi_q,&dh,FT_COUNT );
       }
       printf( "%cexit code: %u (%x)\n",
-          ATT_SECTION,(uintptr_t)exitCode,exitCode );
+          ATT_SECTION,exitCode,exitCode );
     }
     else if( alloc_q<-1 )
     {

@@ -178,26 +178,26 @@ freed;
 
 typedef struct
 {
-  intptr_t protect;
-  intptr_t align;
-  intptr_t init;
-  intptr_t slackInit;
-  intptr_t protectFree;
-  intptr_t handleException;
-  intptr_t newConsole;
-  intptr_t fullPath;
-  intptr_t allocMethod;
-  intptr_t leakDetails;
-  intptr_t useSp;
-  intptr_t dlls;
-  intptr_t pid;
-  intptr_t exitTrace;
-  intptr_t sourceCode;
-  intptr_t raiseException;
-  intptr_t minProtectSize;
-  intptr_t findNearest;
-  intptr_t leakContents;
-  intptr_t mergeLeaks;
+  int protect;
+  int align;
+  int init;
+  int slackInit;
+  int protectFree;
+  int handleException;
+  int newConsole;
+  int fullPath;
+  int allocMethod;
+  int leakDetails;
+  int useSp;
+  int dlls;
+  int pid;
+  int exitTrace;
+  int sourceCode;
+  int raiseException;
+  int minProtectSize;
+  int findNearest;
+  int leakContents;
+  int mergeLeaks;
 }
 options;
 
