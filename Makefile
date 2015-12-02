@@ -155,7 +155,7 @@ T_H47=-p1 -a4 -f0 -L100 -I1
 T_A47=18
 T_H48=-p1 -a4 -f0 -L100 -I0
 T_A48=18
-T_H49=-p1 -a4 -f0 -R3
+T_H49=-p1 -a4 -f0 -R3 -R5
 T_A49=1
 TESTS:=$(shell seq -w 01 49)
 

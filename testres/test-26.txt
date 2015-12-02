@@ -6,3 +6,7 @@ allocation failed of NUM bytes
 
 unhandled exception code: 0xPTR (BREAKPOINT)
   exception on:
+
+unhandled exception code: 0xPTR (ACCESS_VIOLATION)
+  exception on:
+  read access violation at 0xPTR

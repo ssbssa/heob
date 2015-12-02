@@ -6,3 +6,20 @@ deallocation of invalid pointer 0xPTR
 
 unhandled exception code: 0xPTR (BREAKPOINT)
   exception on:
+
+deallocation of invalid pointer 0xPTR
+  called on:
+    [realloc]
+
+unhandled exception code: 0xPTR (BREAKPOINT)
+  exception on:
+
+allocation failed of NUM bytes
+  called on: (#2)
+    [realloc]
+
+unhandled exception code: 0xPTR (BREAKPOINT)
+  exception on:
+
+no leaks found
+exit code: 7 (0xPTR)

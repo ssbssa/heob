@@ -8,3 +8,15 @@ mismatching allocation/release method of 0xPTR (size 16)
 
 unhandled exception code: 0xPTR (BREAKPOINT)
   exception on:
+
+mismatching allocation/release method of 0xPTR (size 100)
+  allocated on: (#3)
+    [operator new[]]
+  freed on:
+    [realloc]
+
+unhandled exception code: 0xPTR (BREAKPOINT)
+  exception on:
+
+no leaks found
+exit code: 8 (0xPTR)

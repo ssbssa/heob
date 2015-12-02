@@ -2068,6 +2068,16 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   WriteFile( rd->master,&type,sizeof(int),&written,NULL );
   WriteFile( rd->master,&ei,sizeof(exceptionInfo),&written,NULL );
 
+  if( ep->ExceptionRecord->ExceptionCode==EXCEPTION_BREAKPOINT )
+  {
+#ifndef _WIN64
+    ep->ContextRecord->Eip++;
+#else
+    ep->ContextRecord->Rip++;
+#endif
+    return( EXCEPTION_CONTINUE_EXECUTION );
+  }
+
   exitWait( 1,1 );
 
   return( EXCEPTION_EXECUTE_HANDLER );
