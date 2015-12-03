@@ -22,6 +22,21 @@
 
 typedef struct
 {
+  allocation *alloc_a;
+  int alloc_q;
+  int alloc_s;
+}
+splitAllocation;
+
+typedef struct
+{
+  allocation a;
+  void *frames[PTRS];
+}
+freed;
+
+typedef struct
+{
   const void **start;
   const void **end;
 }
