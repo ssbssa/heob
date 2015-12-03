@@ -862,13 +862,14 @@ static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbghelp *dh,
 // }}}
 // read all requested data from pipe {{{
 
-static int readFile( HANDLE file,void *destV,int count )
+static int readFile( HANDLE file,void *destV,size_t count )
 {
   char *dest = destV;
   while( count>0 )
   {
     DWORD didread;
-    if( !ReadFile(file,dest,count,&didread,NULL) ) return( 0 );
+    DWORD readcount = count>0x10000000 ? 0x10000000 : (DWORD)count;
+    if( !ReadFile(file,dest,readcount,&didread,NULL) ) return( 0 );
     dest += didread;
     count -= didread;
   }
