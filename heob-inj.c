@@ -847,6 +847,9 @@ static wchar_t *new_wtempnam( wchar_t *dir,wchar_t *prefix )
   return( tn );
 }
 
+// }}}
+// low-level functions for leak type detection {{{
+
 static void addModMem( PBYTE start,PBYTE end )
 {
   uintptr_t startPtr = (uintptr_t)start;
@@ -939,6 +942,9 @@ static void findLeakType( leakType lt )
   }
   HeapFree( rd->heap,0,mod_mem_a );
 }
+
+// }}}
+// replacement for ExitProcess {{{
 
 static VOID WINAPI new_ExitProcess( UINT c )
 {
@@ -1089,6 +1095,9 @@ static VOID WINAPI new_ExitProcess( UINT c )
 
   exitWait( c,0 );
 }
+
+// }}}
+// replacements for LoadLibrary/FreeLibrary {{{
 
 static HMODULE WINAPI new_LoadLibraryA( LPCSTR name )
 {
