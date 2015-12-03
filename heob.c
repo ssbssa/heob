@@ -1546,16 +1546,26 @@ void mainCRTStartup( void )
 
         case WRITE_LEAK_CONTENTS:
           {
-            if( !readFile(readPipe,&content_q,sizeof(int)) )
+            if( !readFile(readPipe,&content_q,sizeof(int)) ||
+                content_q>alloc_q  )
               break;
-            contents = HeapAlloc( heap,0,content_q*opt.leakContents );
-            if( !readFile(readPipe,contents,content_q*opt.leakContents) )
+            size_t content_size;
+            if( !readFile(readPipe,&content_size,sizeof(size_t)) )
+              break;
+            contents = HeapAlloc( heap,0,content_size );
+            if( !readFile(readPipe,contents,content_size) )
               break;
             content_ptrs =
               HeapAlloc( heap,0,content_q*sizeof(unsigned char*) );
             int lc;
+            size_t leakContents = opt.leakContents;
+            size_t content_pos = 0;
             for( lc=0; lc<content_q; lc++ )
-              content_ptrs[lc] = contents + lc*opt.leakContents;
+            {
+              content_ptrs[lc] = contents + content_pos;
+              size_t s = alloc_a[lc].size;
+              content_pos += s<leakContents ? s : leakContents;
+            }
           }
           break;
 
@@ -1645,8 +1655,8 @@ void mainCRTStartup( void )
         }
         sumSize += size;
 
-        if( content_ptrs )
-          content_ptrs[combined_q] = contents + content_idx*opt.leakContents;
+        if( content_ptrs && content_idx!=combined_q )
+          content_ptrs[combined_q] = content_ptrs[content_idx];
         alloc_a[combined_q++] = a;
       }
       if( opt.leakDetails<=1 )

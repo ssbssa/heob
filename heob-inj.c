@@ -1047,6 +1047,8 @@ static VOID WINAPI new_ExitProcess( UINT c )
   WriteFile( rd->master,&c,sizeof(UINT),&written,NULL );
   WriteFile( rd->master,&alloc_q,sizeof(int),&written,NULL );
   int alloc_sum = 0;
+  size_t alloc_mem_sum = 0;
+  size_t leakContents = rd->opt.leakContents;
   for( i=0; i<=SPLIT_MASK; i++ )
   {
     splitAllocation *sa = rd->splits + i;
@@ -1054,41 +1056,41 @@ static VOID WINAPI new_ExitProcess( UINT c )
     WriteFile( rd->master,sa->alloc_a,sa->alloc_q*sizeof(allocation),
         &written,NULL );
 
-    alloc_sum += sa->alloc_q;
-    if( sa->alloc_a[sa->alloc_q-1].at==AT_EXIT ) alloc_sum--;
+    if( leakContents )
+    {
+      alloc_q = sa->alloc_q;
+      if( sa->alloc_a[alloc_q-1].at==AT_EXIT ) alloc_q--;
+      alloc_sum += alloc_q;
+      int j;
+      for( j=0; j<alloc_q; j++ )
+      {
+        size_t s = sa->alloc_a[j].size;
+        alloc_mem_sum += s<leakContents ? s : leakContents;
+      }
+    }
   }
 
-  if( rd->opt.leakContents && alloc_sum )
+  if( alloc_mem_sum )
   {
     type = WRITE_LEAK_CONTENTS;
     WriteFile( rd->master,&type,sizeof(int),&written,NULL );
     WriteFile( rd->master,&alloc_sum,sizeof(int),&written,NULL );
-    unsigned char *emptyness = HeapAlloc( rd->heap,0,rd->opt.leakContents );
-    RtlZeroMemory( emptyness,rd->opt.leakContents );
+    WriteFile( rd->master,&alloc_mem_sum,sizeof(size_t),&written,NULL );
     for( i=0; i<=SPLIT_MASK; i++ )
     {
       splitAllocation *sa = rd->splits + i;
-      int alloc_q = sa->alloc_q;
+      alloc_q = sa->alloc_q;
       if( alloc_q>0 && sa->alloc_a[alloc_q-1].at==AT_EXIT ) alloc_q--;
       int j;
       for( j=0; j<alloc_q; j++ )
       {
         allocation *a = sa->alloc_a + j;
-        if( a->size<(size_t)rd->opt.leakContents )
-        {
-          if( a->size )
-            WriteFile( rd->master,a->ptr,(DWORD)a->size,&written,NULL );
-          WriteFile( rd->master,emptyness,
-              (DWORD)(rd->opt.leakContents-a->size),&written,NULL );
-        }
-        else
-        {
-          WriteFile( rd->master,a->ptr,(DWORD)rd->opt.leakContents,
-              &written,NULL );
-        }
+        size_t s = a->size;
+        if( leakContents<s ) s = leakContents;
+        if( s )
+          WriteFile( rd->master,a->ptr,(DWORD)s,&written,NULL );
       }
     }
-    HeapFree( rd->heap,0,emptyness );
   }
 
   LeaveCriticalSection( &rd->cs );
