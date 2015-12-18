@@ -1560,10 +1560,14 @@ void mainCRTStartup( void )
             int lc;
             size_t leakContents = opt.leakContents;
             size_t content_pos = 0;
+            int lDetails = opt.leakDetails ?
+              ( opt.leakDetails&1 ? LT_COUNT : LT_REACHABLE ) : 0;
             for( lc=0; lc<content_q; lc++ )
             {
               content_ptrs[lc] = contents + content_pos;
-              size_t s = alloc_a[lc].size;
+              allocation *a = alloc_a + lc;
+              if( a->lt>=lDetails ) continue;
+              size_t s = a->size;
               content_pos += s<leakContents ? s : leakContents;
             }
           }

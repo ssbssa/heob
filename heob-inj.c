@@ -1049,6 +1049,8 @@ static VOID WINAPI new_ExitProcess( UINT c )
   int alloc_sum = 0;
   size_t alloc_mem_sum = 0;
   size_t leakContents = rd->opt.leakContents;
+  int lDetails = rd->opt.leakDetails ?
+    ( rd->opt.leakDetails&1 ? LT_COUNT : LT_REACHABLE ) : 0;
   for( i=0; i<=SPLIT_MASK; i++ )
   {
     splitAllocation *sa = rd->splits + i;
@@ -1064,7 +1066,9 @@ static VOID WINAPI new_ExitProcess( UINT c )
       int j;
       for( j=0; j<alloc_q; j++ )
       {
-        size_t s = sa->alloc_a[j].size;
+        allocation *a = sa->alloc_a + j;
+        if( a->lt>=lDetails ) continue;
+        size_t s = a->size;
         alloc_mem_sum += s<leakContents ? s : leakContents;
       }
     }
@@ -1085,6 +1089,7 @@ static VOID WINAPI new_ExitProcess( UINT c )
       for( j=0; j<alloc_q; j++ )
       {
         allocation *a = sa->alloc_a + j;
+        if( a->lt>=lDetails ) continue;
         size_t s = a->size;
         if( leakContents<s ) s = leakContents;
         if( s )
