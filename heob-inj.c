@@ -8,6 +8,8 @@
 
 #include "heob.h"
 
+#include <stdint.h>
+
 // }}}
 // defines {{{
 
@@ -1903,7 +1905,7 @@ DLLEXPORT allocation *heob_find_nearest_allocation( uintptr_t addr )
       uintptr_t ptr = (uintptr_t)a->ptr;
 
       if( addr>=ptr && (!nearestPtr || ptr>nearestPtr) &&
-          addr-ptr<0x40000000 )
+          addr-ptr<INTPTR_MAX )
       {
         nearestPtr = ptr;
         nearestA = a;
@@ -1927,7 +1929,7 @@ DLLEXPORT freed *heob_find_nearest_freed( uintptr_t addr )
     uintptr_t ptr = (uintptr_t)f->a.ptr;
 
     if( addr>=ptr && (!nearestPtr || ptr>nearestPtr) &&
-        addr-ptr<0x40000000 )
+        addr-ptr<INTPTR_MAX )
     {
       nearestPtr = ptr;
       nearestF = f;
