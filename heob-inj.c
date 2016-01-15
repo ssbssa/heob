@@ -217,10 +217,20 @@ static void writeModsFind( allocation *alloc_a,int alloc_q,
         WriteFile( rd->master,&type,sizeof(int),&written,NULL );
         exitWait( 1,0 );
       }
+      if( !GetModuleFileName((void*)base,mi_a[mi_q-1].path,MAX_PATH) )
+      {
+        mi_q--;
+        continue;
+      }
+
+      PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)base;
+      PIMAGE_NT_HEADERS inh = (PIMAGE_NT_HEADERS)REL_PTR( idh,idh->e_lfanew );
+      PIMAGE_OPTIONAL_HEADER ioh = (PIMAGE_OPTIONAL_HEADER)REL_PTR(
+          inh,sizeof(DWORD)+sizeof(IMAGE_FILE_HEADER) );
+      if( ioh->SizeOfImage>size ) size = ioh->SizeOfImage;
+
       mi_a[mi_q-1].base = base;
       mi_a[mi_q-1].size = size;
-      if( !GetModuleFileName((void*)base,mi_a[mi_q-1].path,MAX_PATH) )
-        mi_q--;
     }
   }
 
