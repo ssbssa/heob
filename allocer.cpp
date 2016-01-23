@@ -19,6 +19,7 @@ __declspec(dllimport) void *operator new[]( size_t );
 __declspec(dllimport) void operator delete[]( void* );
 
 extern "C" __declspec(dllimport) void *dll_alloc( size_t );
+extern "C" __declspec(dllimport) void *dll_memory( void );
 
 
 static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
@@ -304,6 +305,15 @@ void choose( int arg )
           if( !i ) free_me = copy;
           if( i==2 ) free( free_me );
         }
+      }
+      break;
+
+    case 19:
+      // realloc() of memory allocated in dll initialization
+      {
+        void *memory = dll_memory();
+        char *new_memory = (char*)realloc( memory,501 );
+        new_memory[0] = 'a';
       }
       break;
   }

@@ -110,6 +110,7 @@ typedef struct localData
   HANDLE heap;
   DWORD pageSize;
   size_t pageAdd;
+  HANDLE crtHeap;
 
   options opt;
 
@@ -1373,7 +1374,16 @@ static void *protect_realloc( void *b,size_t s )
     return( protect_alloc_m(s) );
 
   size_t os = alloc_size( b );
-  if( os==(size_t)-1 ) return( NULL );
+  int extern_alloc = os==(size_t)-1;
+  if( extern_alloc )
+  {
+    if( !rd->crtHeap || !HeapValidate(rd->crtHeap,0,b) )
+      return( NULL );
+
+    os = HeapSize( rd->crtHeap,0,b );
+    if( os==(size_t)-1 )
+      return( NULL );
+  }
 
   void *nb = protect_alloc_m( s );
   if( !nb ) return( NULL );
@@ -1385,7 +1395,10 @@ static void *protect_realloc( void *b,size_t s )
   if( s>os && rd->opt.init )
     RtlFillMemory( ((char*)nb)+os,s-os,(UCHAR)rd->opt.init );
 
-  protect_free_m( b,FT_REALLOC );
+  if( !extern_alloc )
+    protect_free_m( b,FT_REALLOC );
+  else
+    rd->ofree( b );
 
   return( nb );
 }
@@ -1787,6 +1800,11 @@ static void replaceModFuncs( void )
         rd->owfullpath = rd->fGetProcAddress( dll_msvcrt,fname_wfullpath );
         rd->otempnam = rd->fGetProcAddress( dll_msvcrt,fname_tempnam );
         rd->owtempnam = rd->fGetProcAddress( dll_msvcrt,fname_wtempnam );
+
+        HANDLE (*fget_heap_handle)( void ) =
+          rd->fGetProcAddress( dll_msvcrt,"_get_heap_handle" );
+        if( fget_heap_handle )
+          rd->crtHeap = fget_heap_handle();
       }
     }
 
