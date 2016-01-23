@@ -176,14 +176,10 @@ void choose( int arg )
         char *leak = (char*)dll_alloc( 10 );
         mem[1] = leak[0];
 
-#ifndef _MSC_VER
 #ifndef _WIN64
 #define BITS "32"
 #else
 #define BITS "64"
-#endif
-#else
-#define BITS
 #endif
         HMODULE mod = LoadLibrary( "dll-alloc-shared" BITS ".dll" );
         if( mod )
