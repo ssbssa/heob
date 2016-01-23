@@ -1352,7 +1352,31 @@ static void *protect_malloc( size_t s )
 
 static void *protect_calloc( size_t n,size_t s )
 {
-  return( protect_alloc_m(n*s) );
+#ifdef __MINGW32__
+#if defined(__GNUC__) && __GNUC__>=5
+  size_t res;
+  if( __builtin_mul_overflow(n,s,&res) )
+    return( NULL );
+#else
+  if( s && n>SIZE_MAX/s )
+    return( NULL );
+  size_t res = n*s;
+#endif
+#else
+#ifndef _WIN64
+  unsigned __int64 res64 = __emulu( n,s );
+  if( res64>SIZE_MAX )
+    return( NULL );
+  size_t res = (size_t)res64;
+#else
+  size_t res,resHigh;
+  res = _umul128( n,s,&resHigh );
+  if( resHigh )
+    return( NULL );
+#endif
+#endif
+
+  return( protect_alloc_m(res) );
 }
 
 static void protect_free( void *b )

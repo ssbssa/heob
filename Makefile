@@ -161,7 +161,9 @@ T_H50=-p0 -a4 -f0
 T_A50=19
 T_H51=-p1 -a4 -f0
 T_A51=19
-TESTS:=$(shell seq -w 01 51)
+T_H52=-p1 -a4 -f0
+T_A52=20
+TESTS:=$(shell seq -w 01 52)
 
 testres:
 	mkdir -p $@

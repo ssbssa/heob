@@ -316,6 +316,19 @@ void choose( int arg )
         new_memory[0] = 'a';
       }
       break;
+
+    case 20:
+      // calloc() multiplication overflow
+      {
+#ifndef _WIN64
+#define HALF_OVERFLOW 0x80000005
+#else
+#define HALF_OVERFLOW 0x8000000000000005
+#endif
+        char *m = (char*)calloc( HALF_OVERFLOW,2 );
+        if( m ) mem[1] = m[0];
+      }
+      break;
   }
 
   mem = (char*)realloc( mem,30 );
