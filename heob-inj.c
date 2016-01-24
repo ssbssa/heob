@@ -371,6 +371,11 @@ static NOINLINE void trackAllocs(
         if( rd->opt.raiseException )
           DebugBreak();
       }
+      else if( rd->crtHeap && HeapValidate(rd->crtHeap,0,free_ptr) )
+      {
+        if( at==AT_MALLOC )
+          rd->ofree( free_ptr );
+      }
       else if( !rd->inExit )
       {
         allocation a;
@@ -1421,8 +1426,6 @@ static void *protect_realloc( void *b,size_t s )
 
   if( !extern_alloc )
     protect_free_m( b,FT_REALLOC );
-  else
-    rd->ofree( b );
 
   return( nb );
 }

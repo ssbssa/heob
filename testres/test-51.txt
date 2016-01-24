@@ -1,9 +1,5 @@
 allocer: main()
 
-deallocation of invalid pointer 0xPTR
-  called on:
-    [realloc]
-
 leaks:
   504 B * 1 = 504 B (#2)
     [realloc]
