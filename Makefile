@@ -28,8 +28,8 @@ heob$(BITS).exe: heob.c heob-inj.c heob.h
 allocer$(BITS).exe: allocer.cpp libcrt$(BITS).a dll-alloc$(BITS).dll dll-alloc-shared$(BITS).dll
 	$(CXX) $(CFLAGS_TEST) -o$@ $^ -nostdlib -lmsvcrt -lkernel32
 
-dll-alloc$(BITS).dll: dll-alloc.c
-	$(CC) $(CFLAGS_TEST) -shared -o$@ $^
+dll-alloc$(BITS).dll: dll-alloc.cpp
+	$(CXX) $(CFLAGS_TEST) -shared -o$@ $^
 
 dll-alloc-shared$(BITS).dll: dll-alloc$(BITS).dll
 	cp -f $< $@

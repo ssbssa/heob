@@ -12,7 +12,7 @@ if errorlevel 1 (
   set bits=64
 )
 
-cl dll-alloc.c -Fodll-alloc%bits%.o -Fedll-alloc%bits%.dll /LD /MD /Zi
+cl dll-alloc.cpp -Fodll-alloc%bits%.o -Fedll-alloc%bits%.dll /LD /MD /Zi
 copy dll-alloc%bits%.dll dll-alloc-shared%bits%.dll
 
 if "%vc6lib%" == "crt32-vc6.lib" (
