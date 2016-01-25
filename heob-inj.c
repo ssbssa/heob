@@ -1,5 +1,5 @@
 
-//          Copyright Hannes Domani 2014 - 2015.
+//          Copyright Hannes Domani 2014 - 2016.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -72,6 +72,8 @@ typedef struct localData
   func_wtempnam *fwtempnam;
 
   func_free *ofree;
+  func_free *oop_delete;
+  func_free *oop_delete_a;
   func_getcwd *ogetcwd;
   func_wgetcwd *owgetcwd;
   func_getdcwd *ogetdcwd;
@@ -375,6 +377,10 @@ static NOINLINE void trackAllocs(
       {
         if( at==AT_MALLOC )
           rd->ofree( free_ptr );
+        else if( ft==FT_OP_DELETE )
+          rd->oop_delete( free_ptr );
+        else if( ft==FT_OP_DELETE_A )
+          rd->oop_delete_a( free_ptr );
       }
       else if( !rd->inExit )
       {
@@ -1819,6 +1825,8 @@ static void replaceModFuncs( void )
       if( rd->opt.protect )
       {
         rd->ofree = rd->fGetProcAddress( dll_msvcrt,fname_free );
+        rd->oop_delete = rd->fGetProcAddress( dll_msvcrt,fname_op_delete );
+        rd->oop_delete_a = rd->fGetProcAddress( dll_msvcrt,fname_op_delete_a );
         rd->ogetcwd = rd->fGetProcAddress( dll_msvcrt,fname_getcwd );
         rd->owgetcwd = rd->fGetProcAddress( dll_msvcrt,fname_wgetcwd );
         rd->ogetdcwd = rd->fGetProcAddress( dll_msvcrt,fname_getdcwd );
