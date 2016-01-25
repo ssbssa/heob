@@ -1,7 +1,13 @@
+@echo off
 
-echo %lib% |find /i "lib\amd64" >NUL
+echo "%lib%" |find /i "lib\amd64" >NUL
 if errorlevel 1 (
   set bits=32
+
+  echo "%include%" |find /i "include\shared" >NUL
+  if errorlevel 1 (
+    set vc6lib=crt32-vc6.lib
+  )
 ) else (
   set bits=64
 )
@@ -9,14 +15,10 @@ if errorlevel 1 (
 cl dll-alloc.c -Fodll-alloc%bits%.o -Fedll-alloc%bits%.dll /LD /MD /Zi
 copy dll-alloc%bits%.dll dll-alloc-shared%bits%.dll
 
-if "%1" == "vc6" goto vc6
+if "%vc6lib%" == "crt32-vc6.lib" (
+  lib /def:crt32-vc6.def /out:crt32-vc6.lib
+)
 
-cl allocer.cpp -Foallocer%bits%.o -Feallocer%bits%.exe /MD /Zi dll-alloc%bits%.lib
-mt.exe -manifest allocer.exe.manifest -outputresource:allocer%bits%.exe;1
-goto eof
-
-:vc6
-lib /def:crt32-vc6.def /out:crt32-vc6.lib
-cl allocer.cpp -Foallocer%bits%.o -Feallocer%bits%.exe /MD /Zi crt32-vc6.lib dll-alloc%bits%.lib
+cl allocer.cpp -Foallocer%bits%.o -Feallocer%bits%.exe /MD /Zi %vc6lib% dll-alloc%bits%.lib
 
 :eof
