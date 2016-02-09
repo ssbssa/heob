@@ -216,9 +216,9 @@ static NOINLINE char *mstrrchr( const char *s,char c )
 }
 #define strrchr mstrrchr
 
-static NOINLINE int matoi( const char *s )
+static NOINLINE uintptr_t atop( const char *s )
 {
-  int ret = 0;
+  uintptr_t ret = 0;
 
   if( s[0]=='0' && s[1]=='x' )
   {
@@ -242,6 +242,10 @@ static NOINLINE int matoi( const char *s )
   for( ; *s>='0' && *s<='9'; s++ )
     ret = ret*10 + ( *s - '0' );
   return( ret );
+}
+static NOINLINE int matoi( const char *s )
+{
+  return( (int)atop(s) );
 }
 #define atoi matoi
 
@@ -908,8 +912,8 @@ static void locFunc(
   }
 }
 
-static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbgsym *ds,
-    funcType ft )
+static void printStackCount( uint64_t *frames,int fc,
+    modInfo *mi_a,int mi_q,dbgsym *ds,funcType ft )
 {
   if( ft<FT_COUNT )
   {
@@ -918,14 +922,7 @@ static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbgsym *ds,
         ATT_NORMAL,ATT_INFO,ds->funcnames[ft],ATT_NORMAL );
   }
 
-  uint64_t frames[PTRS];
   int j;
-  for( j=0; j<PTRS; j++ )
-  {
-    if( !framesV[j] ) break;
-    frames[j] = ((uintptr_t)framesV[j]) - 1;
-  }
-  int fc = j;
   for( j=0; j<fc; j++ )
   {
     int k;
@@ -957,6 +954,19 @@ static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbgsym *ds,
 
     j = l - 1;
   }
+}
+
+static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbgsym *ds,
+    funcType ft )
+{
+  uint64_t frames[PTRS];
+  int j;
+  for( j=0; j<PTRS; j++ )
+  {
+    if( !framesV[j] ) break;
+    frames[j] = ((uintptr_t)framesV[j]) - 1;
+  }
+  printStackCount( frames,j,mi_a,mi_q,ds,ft );
 }
 
 // }}}
@@ -1021,6 +1031,8 @@ void mainCRTStartup( void )
   int raise_alloc_q = 0;
   int *raise_alloc_a = NULL;
   HANDLE out = NULL;
+  modInfo *a2l_mi_a = NULL;
+  int a2l_mi_q = 0;
   while( args )
   {
     while( args[0]==' ' ) args++;
@@ -1152,6 +1164,32 @@ void mainCRTStartup( void )
           }
         }
         break;
+
+      case '"':
+        {
+          char *start = args + 2;
+          char *end = start;
+          while( *end && *end!='"' ) end++;
+          if( !*end || end<=start ) break;
+          uintptr_t base = atop( end+1 );
+          if( !base ) break;
+          a2l_mi_q++;
+          if( !a2l_mi_a )
+            a2l_mi_a = HeapAlloc( heap,0,a2l_mi_q*sizeof(modInfo) );
+          else
+            a2l_mi_a = HeapReAlloc(
+                heap,0,a2l_mi_a,a2l_mi_q*sizeof(modInfo) );
+          modInfo *mi = a2l_mi_a + ( a2l_mi_q-1 );
+          mi->base = base;
+          mi->size = 0;
+          size_t len = end - start;
+          char localName[MAX_PATH];
+          RtlMoveMemory( localName,start,len );
+          localName[len] = 0;
+          if( !SearchPath(NULL,localName,NULL,MAX_PATH,mi->path,NULL) )
+            RtlMoveMemory( mi->path,localName,len+1 );
+        }
+        break;
     }
     while( args[0] && args[0]!=' ' ) args++;
   }
@@ -1180,6 +1218,69 @@ void mainCRTStartup( void )
     "tempnam",
     "wtempnam",
   };
+
+  if( a2l_mi_a )
+  {
+    uint64_t *ptr_a = NULL;
+    int ptr_q = 0;
+
+    while( args && args[0]>='0' && args[0]<='9' )
+    {
+      uintptr_t ptr = atop( args );
+      if( ptr )
+      {
+        ptr_q++;
+        if( !ptr_a )
+          ptr_a = HeapAlloc( heap,0,ptr_q*sizeof(uint64_t) );
+        else
+          ptr_a = HeapReAlloc(
+              heap,0,ptr_a,ptr_q*sizeof(uint64_t) );
+        ptr_a[ptr_q-1] = ptr;
+
+        int i;
+        int idx = -1;
+        for( i=0; i<a2l_mi_q; i++ )
+        {
+          if( ptr>=a2l_mi_a[i].base &&
+              (idx<0 || a2l_mi_a[idx].base<a2l_mi_a[i].base) )
+            idx = i;
+        }
+        if( idx>=0 && ptr>=a2l_mi_a[idx].base+a2l_mi_a[idx].size )
+          a2l_mi_a[idx].size = ptr - a2l_mi_a[idx].base + 1;
+      }
+      while( args[0] && args[0]!=' ' ) args++;
+      while( args[0]==' ' ) args++;
+    }
+
+    if( ptr_q )
+    {
+      dbgsym ds;
+      dbgsym_init( &ds,(HANDLE)0x1,tc,&opt,funcnames,heap,NULL,FALSE );
+
+#ifndef NO_DBGHELP
+      if( ds.fSymLoadModule64 )
+      {
+        int i;
+        for( i=0; i<a2l_mi_q; i++ )
+          ds.fSymLoadModule64( ds.process,NULL,a2l_mi_a[i].path,NULL,
+              a2l_mi_a[i].base,(DWORD)a2l_mi_a[i].size );
+      }
+#endif
+
+      printf( "%c\ntrace:\n",ATT_SECTION );
+      printStackCount( ptr_a,ptr_q,a2l_mi_a,a2l_mi_q,&ds,FT_COUNT );
+      printf( "%c",ATT_NORMAL );
+
+      dbgsym_close( &ds,heap );
+    }
+
+    if( ptr_a ) HeapFree( heap,0,ptr_a );
+    if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
+    HeapFree( heap,0,a2l_mi_a );
+
+    if( ptr_q ) ExitProcess( 0 );
+    args = NULL;
+  }
 
   if( !args || !args[0] )
   {
