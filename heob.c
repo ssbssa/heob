@@ -591,27 +591,37 @@ static CODE_SEG(".text$2") HANDLE inject(
 // }}}
 // stacktrace {{{
 
-struct dbghelp;
+struct dbgsym;
 #ifndef NO_DWARFSTACK
 typedef int func_dwstOfFile( const char*,uint64_t,uint64_t*,int,
-    void(*)(uint64_t,const char*,int,const char*,struct dbghelp*),
-    struct dbghelp* );
+    void(*)(uint64_t,const char*,int,const char*,struct dbgsym*),
+    struct dbgsym* );
 #endif
 
-typedef struct dbghelp
+#ifdef _WIN64
+#define BITS "64"
+#else
+#define BITS "32"
+#endif
+
+typedef struct dbgsym
 {
   HANDLE process;
 #ifndef NO_DBGHELP
+  HMODULE symMod;
   func_SymGetLineFromAddr64 *fSymGetLineFromAddr64;
   func_SymFromAddr *fSymFromAddr;
   func_SymAddrIncludeInlineTrace *fSymAddrIncludeInlineTrace;
   func_SymQueryInlineTrace *fSymQueryInlineTrace;
   func_SymGetLineFromInlineContext *fSymGetLineFromInlineContext;
   func_SymFromInlineContext *fSymFromInlineContext;
+  func_SymGetModuleInfo64 *fSymGetModuleInfo64;
+  func_SymLoadModule64 *fSymLoadModule64;
   IMAGEHLP_LINE64 *il;
   SYMBOL_INFO *si;
 #endif
 #ifndef NO_DWARFSTACK
+  HMODULE dwstMod;
   func_dwstOfFile *fdwstOfFile;
 #endif
   char *absPath;
@@ -619,7 +629,97 @@ typedef struct dbghelp
   options *opt;
   const char **funcnames;
 }
-dbghelp;
+dbgsym;
+
+void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
+    const char **funcnames,HANDLE heap,const char *dbgPath,BOOL invade )
+{
+  RtlZeroMemory( ds,sizeof(dbgsym) );
+  ds->process = process;
+  ds->tc = tc;
+  ds->opt = opt;
+  ds->funcnames = funcnames;
+
+#ifndef NO_DBGHELP
+  ds->symMod = LoadLibrary( "dbghelp.dll" );
+  if( ds->symMod )
+  {
+    func_SymSetOptions *fSymSetOptions =
+      (func_SymSetOptions*)GetProcAddress( ds->symMod,"SymSetOptions" );
+    func_SymInitialize *fSymInitialize =
+      (func_SymInitialize*)GetProcAddress( ds->symMod,"SymInitialize" );
+    ds->fSymGetLineFromAddr64 =
+      (func_SymGetLineFromAddr64*)GetProcAddress(
+          ds->symMod,"SymGetLineFromAddr64" );
+    ds->fSymFromAddr =
+      (func_SymFromAddr*)GetProcAddress( ds->symMod,"SymFromAddr" );
+    ds->fSymAddrIncludeInlineTrace =
+      (func_SymAddrIncludeInlineTrace*)GetProcAddress(
+          ds->symMod,"SymAddrIncludeInlineTrace" );
+    ds->fSymQueryInlineTrace =
+      (func_SymQueryInlineTrace*)GetProcAddress(
+          ds->symMod,"SymQueryInlineTrace" );
+    ds->fSymGetLineFromInlineContext =
+      (func_SymGetLineFromInlineContext*)GetProcAddress( ds->symMod,
+          "SymGetLineFromInlineContext" );
+    ds->fSymFromInlineContext =
+      (func_SymFromInlineContext*)GetProcAddress(
+          ds->symMod,"SymFromInlineContext" );
+    if( !ds->fSymQueryInlineTrace || !ds->fSymGetLineFromInlineContext ||
+        !ds->fSymFromInlineContext )
+      ds->fSymAddrIncludeInlineTrace = NULL;
+    ds->fSymGetModuleInfo64 =
+      (func_SymGetModuleInfo64*)GetProcAddress(
+          ds->symMod,"SymGetModuleInfo64" );
+    ds->fSymLoadModule64 =
+      (func_SymLoadModule64*)GetProcAddress( ds->symMod,"SymLoadModule64" );
+    ds->il = HeapAlloc( heap,0,sizeof(IMAGEHLP_LINE64) );
+    ds->si = HeapAlloc( heap,0,sizeof(SYMBOL_INFO)+MAX_SYM_NAME );
+
+    if( fSymSetOptions )
+      fSymSetOptions( SYMOPT_LOAD_LINES );
+    if( fSymInitialize )
+      fSymInitialize( ds->process,dbgPath,invade );
+  }
+#else
+  (void)dbgPath;
+  (void)invade;
+#endif
+
+#ifndef NO_DWARFSTACK
+  ds->dwstMod = LoadLibrary( "dwarfstack.dll" );
+  if( !ds->dwstMod )
+    ds->dwstMod = LoadLibrary( "dwarfstack" BITS ".dll" );
+  if( ds->dwstMod )
+  {
+    ds->fdwstOfFile =
+      (func_dwstOfFile*)GetProcAddress( ds->dwstMod,"dwstOfFile" );
+  }
+#endif
+
+  ds->absPath = HeapAlloc( heap,0,MAX_PATH );
+}
+
+void dbgsym_close( dbgsym *ds,HANDLE heap )
+{
+#ifndef NO_DBGHELP
+  if( ds->symMod )
+  {
+    func_SymCleanup *fSymCleanup =
+      (func_SymCleanup*)GetProcAddress( ds->symMod,"SymCleanup" );
+    if( fSymCleanup ) fSymCleanup( ds->process );
+    FreeLibrary( ds->symMod );
+  }
+  if( ds->il ) HeapFree( heap,0,ds->il );
+  if( ds->si ) HeapFree( heap,0,ds->si );
+#endif
+
+#ifndef NO_DWARFSTACK
+  if( ds->dwstMod ) FreeLibrary( ds->dwstMod );
+#endif
+
+  if( ds->absPath ) HeapFree( heap,0,ds->absPath );
+}
 
 #ifndef _WIN64
 #define PTR_SPACES "        "
@@ -629,40 +729,40 @@ dbghelp;
 
 static void locFunc(
     uint64_t addr,const char *filename,int lineno,const char *funcname,
-    dbghelp *dh )
+    dbgsym *ds )
 {
-  textColor *tc = dh->tc;
+  textColor *tc = ds->tc;
 
   uint64_t printAddr = addr;
 #ifndef NO_DBGHELP
-  if( lineno==DWST_NO_DBG_SYM && dh->fSymGetLineFromAddr64 )
+  if( lineno==DWST_NO_DBG_SYM && ds->fSymGetLineFromAddr64 )
   {
     int inlineTrace;
-    if( dh->fSymAddrIncludeInlineTrace &&
-        (inlineTrace=dh->fSymAddrIncludeInlineTrace(dh->process,addr)) )
+    if( ds->fSymAddrIncludeInlineTrace &&
+        (inlineTrace=ds->fSymAddrIncludeInlineTrace(ds->process,addr)) )
     {
       DWORD context,frameIndex;
-      if( dh->fSymQueryInlineTrace(dh->process,addr,0,addr,addr,
+      if( ds->fSymQueryInlineTrace(ds->process,addr,0,addr,addr,
             &context,&frameIndex) )
       {
         int i;
         DWORD dis;
         DWORD64 dis64;
-        IMAGEHLP_LINE64 *il = dh->il;
-        SYMBOL_INFO *si = dh->si;
+        IMAGEHLP_LINE64 *il = ds->il;
+        SYMBOL_INFO *si = ds->si;
         for( i=0; i<inlineTrace; i++ )
         {
           RtlZeroMemory( il,sizeof(IMAGEHLP_LINE64) );
           il->SizeOfStruct = sizeof(IMAGEHLP_LINE64);
-          if( dh->fSymGetLineFromInlineContext(
-                dh->process,addr,context,0,&dis,il) )
+          if( ds->fSymGetLineFromInlineContext(
+                ds->process,addr,context,0,&dis,il) )
           {
             si->SizeOfStruct = sizeof(SYMBOL_INFO);
             si->MaxNameLen = MAX_SYM_NAME;
-            if( dh->fSymFromInlineContext(dh->process,addr,context,&dis64,si) )
+            if( ds->fSymFromInlineContext(ds->process,addr,context,&dis64,si) )
             {
               si->Name[MAX_SYM_NAME] = 0;
-              locFunc( printAddr,il->FileName,il->LineNumber,si->Name,dh );
+              locFunc( printAddr,il->FileName,il->LineNumber,si->Name,ds );
               printAddr = 0;
             }
           }
@@ -671,23 +771,23 @@ static void locFunc(
       }
     }
 
-    IMAGEHLP_LINE64 *il = dh->il;
+    IMAGEHLP_LINE64 *il = ds->il;
     RtlZeroMemory( il,sizeof(IMAGEHLP_LINE64) );
     il->SizeOfStruct = sizeof(IMAGEHLP_LINE64);
     DWORD dis;
-    if( dh->fSymGetLineFromAddr64(dh->process,addr,&dis,il) )
+    if( ds->fSymGetLineFromAddr64(ds->process,addr,&dis,il) )
     {
       filename = il->FileName;
       lineno = il->LineNumber;
     }
 
-    if( dh->fSymFromAddr )
+    if( ds->fSymFromAddr )
     {
-      SYMBOL_INFO *si = dh->si;
+      SYMBOL_INFO *si = ds->si;
       DWORD64 dis64;
       si->SizeOfStruct = sizeof(SYMBOL_INFO);
       si->MaxNameLen = MAX_SYM_NAME;
-      if( dh->fSymFromAddr(dh->process,addr,&dis64,si) )
+      if( ds->fSymFromAddr(ds->process,addr,&dis64,si) )
       {
         si->Name[MAX_SYM_NAME] = 0;
         funcname = si->Name;
@@ -696,13 +796,13 @@ static void locFunc(
   }
 #endif
 
-  if( dh->opt->fullPath || dh->opt->sourceCode )
+  if( ds->opt->fullPath || ds->opt->sourceCode )
   {
-    if( !GetFullPathNameA(filename,MAX_PATH,dh->absPath,NULL) )
-      dh->absPath[0] = 0;
+    if( !GetFullPathNameA(filename,MAX_PATH,ds->absPath,NULL) )
+      ds->absPath[0] = 0;
   }
 
-  if( !dh->opt->fullPath )
+  if( !ds->opt->fullPath )
   {
     const char *sep1 = strrchr( filename,'/' );
     const char *sep2 = strrchr( filename,'\\' );
@@ -711,8 +811,8 @@ static void locFunc(
   }
   else
   {
-    if( dh->absPath[0] )
-      filename = dh->absPath;
+    if( ds->absPath[0] )
+      filename = ds->absPath;
   }
 
   switch( lineno )
@@ -745,9 +845,9 @@ static void locFunc(
         printf( " [%c%s%c]",ATT_INFO,funcname,ATT_NORMAL );
       printf( "\n" );
 
-      if( dh->opt->sourceCode && dh->absPath[0] )
+      if( ds->opt->sourceCode && ds->absPath[0] )
       {
-        HANDLE file = CreateFile( dh->absPath,GENERIC_READ,FILE_SHARE_READ,
+        HANDLE file = CreateFile( ds->absPath,GENERIC_READ,FILE_SHARE_READ,
             NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,0 );
         if( file!=INVALID_HANDLE_VALUE )
         {
@@ -764,9 +864,9 @@ static void locFunc(
               {
                 const char *bol = map;
                 const char *eof = map + fileInfo.nFileSizeLow;
-                int firstLine = lineno + 1 - dh->opt->sourceCode;
+                int firstLine = lineno + 1 - ds->opt->sourceCode;
                 if( firstLine<1 ) firstLine = 1;
-                int lastLine = lineno - 1 + dh->opt->sourceCode;
+                int lastLine = lineno - 1 + ds->opt->sourceCode;
                 if( firstLine>1 )
                   printf( "\t...\n" );
                 int i;
@@ -808,14 +908,14 @@ static void locFunc(
   }
 }
 
-static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbghelp *dh,
+static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbgsym *ds,
     funcType ft )
 {
   if( ft<FT_COUNT )
   {
-    textColor *tc = dh->tc;
+    textColor *tc = ds->tc;
     printf( "%c        " PTR_SPACES "   [%c%s%c]\n",
-        ATT_NORMAL,ATT_INFO,dh->funcnames[ft],ATT_NORMAL );
+        ATT_NORMAL,ATT_INFO,ds->funcnames[ft],ATT_NORMAL );
   }
 
   uint64_t frames[PTRS];
@@ -834,7 +934,7 @@ static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbghelp *dh,
           frame>=mi_a[k].base+mi_a[k].size); k++ );
     if( k>=mi_q )
     {
-      locFunc( frame,"?",DWST_BASE_ADDR,NULL,dh );
+      locFunc( frame,"?",DWST_BASE_ADDR,NULL,ds );
       continue;
     }
     modInfo *mi = mi_a + k;
@@ -844,15 +944,15 @@ static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbghelp *dh,
         frames[l]<mi->base+mi->size; l++ );
 
 #ifndef NO_DWARFSTACK
-    if( dh->fdwstOfFile )
-      dh->fdwstOfFile( mi->path,mi->base,frames+j,l-j,locFunc,dh );
+    if( ds->fdwstOfFile )
+      ds->fdwstOfFile( mi->path,mi->base,frames+j,l-j,locFunc,ds );
     else
 #endif
     {
-      locFunc( mi->base,mi->path,DWST_BASE_ADDR,NULL,dh );
+      locFunc( mi->base,mi->path,DWST_BASE_ADDR,NULL,ds );
       int i;
       for( i=j; i<l; i++ )
-        locFunc( frames[i],mi->path,DWST_NO_DBG_SYM,NULL,dh );
+        locFunc( frames[i],mi->path,DWST_NO_DBG_SYM,NULL,ds );
     }
 
     j = l - 1;
@@ -879,11 +979,6 @@ static int readFile( HANDLE file,void *destV,size_t count )
 // }}}
 // main {{{
 
-#ifdef _WIN64
-#define BITS "64"
-#else
-#define BITS "32"
-#endif
 void mainCRTStartup( void )
 {
   textColor tc_o;
@@ -1064,6 +1159,28 @@ void mainCRTStartup( void )
     out = GetStdHandle( STD_OUTPUT_HANDLE );
   if( opt.protect<1 ) opt.protectFree = 0;
   checkOutputVariant( tc,cmdLine,out );
+
+  const char *funcnames[FT_COUNT] = {
+    "malloc",
+    "calloc",
+    "free",
+    "realloc",
+    "strdup",
+    "wcsdup",
+    "operator new",
+    "operator delete",
+    "operator new[]",
+    "operator delete[]",
+    "getcwd",
+    "wgetcwd",
+    "getdcwd",
+    "wgetdcwd",
+    "fullpath",
+    "wfullpath",
+    "tempnam",
+    "wtempnam",
+  };
+
   if( !args || !args[0] )
   {
     char exePath[MAX_PATH];
@@ -1164,117 +1281,10 @@ void mainCRTStartup( void )
   UINT exitCode = -1;
   if( readPipe )
   {
-#ifndef NO_DBGHELP
-    HMODULE symMod = LoadLibrary( "dbghelp.dll" );
-#endif
-#ifndef NO_DWARFSTACK
-    HMODULE dwstMod = LoadLibrary( "dwarfstack.dll" );
-    if( !dwstMod )
-      dwstMod = LoadLibrary( "dwarfstack" BITS ".dll" );
-#endif
-#ifndef NO_DBGHELP
-    func_SymSetOptions *fSymSetOptions = NULL;
-    func_SymInitialize *fSymInitialize = NULL;
-    func_SymCleanup *fSymCleanup = NULL;
-    func_SymGetModuleInfo64 *fSymGetModuleInfo64 = NULL;
-    func_SymLoadModule64 *fSymLoadModule64 = NULL;
-#endif
-    const char *funcnames[FT_COUNT] = {
-      "malloc",
-      "calloc",
-      "free",
-      "realloc",
-      "strdup",
-      "wcsdup",
-      "operator new",
-      "operator delete",
-      "operator new[]",
-      "operator delete[]",
-      "getcwd",
-      "wgetcwd",
-      "getdcwd",
-      "wgetdcwd",
-      "fullpath",
-      "wfullpath",
-      "tempnam",
-      "wtempnam",
-    };
-    dbghelp dh = {
-      pi.hProcess,
-#ifndef NO_DBGHELP
-      NULL,
-      NULL,
-      NULL,
-      NULL,
-      NULL,
-      NULL,
-      NULL,
-      NULL,
-#endif
-#ifndef NO_DWARFSTACK
-      NULL,
-#endif
-      NULL,
-      tc,
-      &opt,
-      funcnames,
-    };
-#ifndef NO_DBGHELP
-    if( symMod )
-    {
-      fSymSetOptions =
-        (func_SymSetOptions*)GetProcAddress( symMod,"SymSetOptions" );
-      fSymInitialize =
-        (func_SymInitialize*)GetProcAddress( symMod,"SymInitialize" );
-      fSymCleanup =
-        (func_SymCleanup*)GetProcAddress( symMod,"SymCleanup" );
-      fSymGetModuleInfo64 =
-        (func_SymGetModuleInfo64*)GetProcAddress(
-            symMod,"SymGetModuleInfo64" );
-      fSymLoadModule64 =
-        (func_SymLoadModule64*)GetProcAddress( symMod,"SymLoadModule64" );
-      dh.fSymGetLineFromAddr64 =
-        (func_SymGetLineFromAddr64*)GetProcAddress(
-            symMod,"SymGetLineFromAddr64" );
-      dh.fSymFromAddr =
-        (func_SymFromAddr*)GetProcAddress( symMod,"SymFromAddr" );
-      dh.fSymAddrIncludeInlineTrace =
-        (func_SymAddrIncludeInlineTrace*)GetProcAddress(
-            symMod,"SymAddrIncludeInlineTrace" );
-      dh.fSymQueryInlineTrace =
-        (func_SymQueryInlineTrace*)GetProcAddress(
-            symMod,"SymQueryInlineTrace" );
-      dh.fSymGetLineFromInlineContext =
-        (func_SymGetLineFromInlineContext*)GetProcAddress( symMod,
-            "SymGetLineFromInlineContext" );
-      dh.fSymFromInlineContext =
-        (func_SymFromInlineContext*)GetProcAddress(
-            symMod,"SymFromInlineContext" );
-      if( !dh.fSymQueryInlineTrace || !dh.fSymGetLineFromInlineContext ||
-          !dh.fSymFromInlineContext )
-        dh.fSymAddrIncludeInlineTrace = NULL;
-      dh.il = HeapAlloc( heap,0,sizeof(IMAGEHLP_LINE64) );
-      dh.si = HeapAlloc( heap,0,sizeof(SYMBOL_INFO)+MAX_SYM_NAME );
-    }
-#endif
-#ifndef NO_DWARFSTACK
-    if( dwstMod )
-    {
-      dh.fdwstOfFile =
-        (func_dwstOfFile*)GetProcAddress( dwstMod,"dwstOfFile" );
-    }
-#endif
-#ifndef NO_DBGHELP
-    if( fSymSetOptions )
-      fSymSetOptions( SYMOPT_LOAD_LINES );
-    if( fSymInitialize )
-    {
-      char *delim = strrchr( exePath,'\\' );
-      if( delim ) delim[0] = 0;
-      fSymInitialize( pi.hProcess,exePath,TRUE );
-    }
-#endif
-    dh.absPath = HeapAlloc( heap,0,MAX_PATH );
+    char *delim = strrchr( exePath,'\\' );
+    if( delim ) delim[0] = 0;
+    dbgsym ds;
+    dbgsym_init( &ds,pi.hProcess,tc,&opt,funcnames,heap,exePath,TRUE );
 
     if( opt.pid )
     {
@@ -1368,15 +1378,15 @@ void mainCRTStartup( void )
             break;
           }
 #ifndef NO_DBGHELP
-          if( fSymGetModuleInfo64 && fSymLoadModule64 )
+          if( ds.fSymGetModuleInfo64 && ds.fSymLoadModule64 )
           {
             int m;
             IMAGEHLP_MODULE64 im;
             im.SizeOfStruct = sizeof(IMAGEHLP_MODULE64);
             for( m=0; m<mi_q; m++ )
             {
-              if( !fSymGetModuleInfo64(dh.process,mi_a[m].base,&im) )
-                fSymLoadModule64( dh.process,NULL,mi_a[m].path,NULL,
+              if( !ds.fSymGetModuleInfo64(ds.process,mi_a[m].base,&im) )
+                ds.fSymLoadModule64( ds.process,NULL,mi_a[m].path,NULL,
                     mi_a[m].base,0 );
             }
           }
@@ -1421,7 +1431,7 @@ void mainCRTStartup( void )
                 ATT_WARN,ei.er.ExceptionCode,desc );
 
             printf( "%c  exception on:\n",ATT_SECTION );
-            printStack( ei.aa[0].frames,mi_a,mi_q,&dh,FT_COUNT );
+            printStack( ei.aa[0].frames,mi_a,mi_q,&ds,FT_COUNT );
 
             if( ei.er.ExceptionCode==EXCEPTION_ACCESS_VIOLATION &&
                 ei.er.NumberParameters==2 )
@@ -1442,12 +1452,12 @@ void mainCRTStartup( void )
                     ptr,size,addr>ptr?"+":"",addr-ptr );
                 printf( "%c  allocated on: %c(#%d)\n",ATT_SECTION,
                     ATT_NORMAL,ei.aa[1].id );
-                printStack( ei.aa[1].frames,mi_a,mi_q,&dh,ei.aa[1].ft );
+                printStack( ei.aa[1].frames,mi_a,mi_q,&ds,ei.aa[1].ft );
 
                 if( ei.aq>2 )
                 {
                   printf( "%c  freed on:\n",ATT_SECTION );
-                  printStack( ei.aa[2].frames,mi_a,mi_q,&dh,ei.aa[2].ft );
+                  printStack( ei.aa[2].frames,mi_a,mi_q,&ds,ei.aa[2].ft );
                 }
               }
             }
@@ -1466,7 +1476,7 @@ void mainCRTStartup( void )
                 ATT_WARN,a.size );
             printf( "%c  called on: %c(#%d)\n",ATT_SECTION,
                 ATT_NORMAL,a.id );
-            printStack( a.frames,mi_a,mi_q,&dh,a.ft );
+            printStack( a.frames,mi_a,mi_q,&ds,a.ft );
           }
           break;
 
@@ -1479,7 +1489,7 @@ void mainCRTStartup( void )
             printf( "%c\ndeallocation of invalid pointer %p\n",
                 ATT_WARN,a.ptr );
             printf( "%c  called on:\n",ATT_SECTION );
-            printStack( a.frames,mi_a,mi_q,&dh,a.ft );
+            printStack( a.frames,mi_a,mi_q,&ds,a.ft );
           }
           break;
 
@@ -1492,14 +1502,14 @@ void mainCRTStartup( void )
             printf( "%c\ndouble free of %p (size %U)\n",
                 ATT_WARN,aa[1].ptr,aa[1].size );
             printf( "%c  called on:\n",ATT_SECTION );
-            printStack( aa[0].frames,mi_a,mi_q,&dh,aa[0].ft );
+            printStack( aa[0].frames,mi_a,mi_q,&ds,aa[0].ft );
 
             printf( "%c  allocated on: %c(#%d)\n",ATT_SECTION,
                 ATT_NORMAL,aa[1].id );
-            printStack( aa[1].frames,mi_a,mi_q,&dh,aa[1].ft );
+            printStack( aa[1].frames,mi_a,mi_q,&ds,aa[1].ft );
 
             printf( "%c  freed on:\n",ATT_SECTION );
-            printStack( aa[2].frames,mi_a,mi_q,&dh,aa[2].ft );
+            printStack( aa[2].frames,mi_a,mi_q,&ds,aa[2].ft );
           }
           break;
 
@@ -1516,9 +1526,9 @@ void mainCRTStartup( void )
                 aa[1].ptr>aa[0].ptr?"+":"",(char*)aa[1].ptr-(char*)aa[0].ptr );
             printf( "%c  allocated on: %c(#%d)\n",ATT_SECTION,
                 ATT_NORMAL,aa[0].id );
-            printStack( aa[0].frames,mi_a,mi_q,&dh,aa[0].ft );
+            printStack( aa[0].frames,mi_a,mi_q,&ds,aa[0].ft );
             printf( "%c  freed on:\n",ATT_SECTION );
-            printStack( aa[1].frames,mi_a,mi_q,&dh,aa[1].ft );
+            printStack( aa[1].frames,mi_a,mi_q,&ds,aa[1].ft );
           }
           break;
 
@@ -1538,9 +1548,9 @@ void mainCRTStartup( void )
                 " of %p (size %U)\n",ATT_WARN,aa[0].ptr,aa[0].size );
             printf( "%c  allocated on: %c(#%d)\n",ATT_SECTION,
                 ATT_NORMAL,aa[0].id );
-            printStack( aa[0].frames,mi_a,mi_q,&dh,aa[0].ft );
+            printStack( aa[0].frames,mi_a,mi_q,&ds,aa[0].ft );
             printf( "%c  freed on:\n",ATT_SECTION );
-            printStack( aa[1].frames,mi_a,mi_q,&dh,aa[1].ft );
+            printStack( aa[1].frames,mi_a,mi_q,&ds,aa[1].ft );
           }
           break;
 
@@ -1615,7 +1625,7 @@ void mainCRTStartup( void )
       if( exitTrace.at==AT_EXIT )
       {
         printf( "%cexit on:\n",ATT_SECTION );
-        printStack( exitTrace.frames,mi_a,mi_q,&dh,FT_COUNT );
+        printStack( exitTrace.frames,mi_a,mi_q,&ds,FT_COUNT );
       }
       printf( "%cexit code: %u (%x)\n",
           ATT_SECTION,exitCode,exitCode );
@@ -1725,7 +1735,7 @@ void mainCRTStartup( void )
                 ATT_WARN,a.size,a.count,a.size*a.count,
                 ATT_NORMAL,a.id );
 
-            printStack( a.frames,mi_a,mi_q,&dh,a.ft );
+            printStack( a.frames,mi_a,mi_q,&ds,a.ft );
 
             if( content_ptrs && a.size )
             {
@@ -1777,7 +1787,7 @@ void mainCRTStartup( void )
       if( exitTrace.at==AT_EXIT )
       {
         printf( "%cexit on:\n",ATT_SECTION );
-        printStack( exitTrace.frames,mi_a,mi_q,&dh,FT_COUNT );
+        printStack( exitTrace.frames,mi_a,mi_q,&ds,FT_COUNT );
       }
       printf( "%cexit code: %u (%x)\n",
           ATT_SECTION,exitCode,exitCode );
@@ -1787,16 +1797,7 @@ void mainCRTStartup( void )
       printf( "%c\nunexpected end of application\n",ATT_WARN );
     }
 
-#ifndef NO_DBGHELP
-    if( fSymCleanup ) fSymCleanup( pi.hProcess );
-    if( symMod ) FreeLibrary( symMod );
-    if( dh.il ) HeapFree( heap,0,dh.il );
-    if( dh.si ) HeapFree( heap,0,dh.si );
-#endif
-#ifndef NO_DWARFSTACK
-    if( dwstMod ) FreeLibrary( dwstMod );
-#endif
-    if( dh.absPath ) HeapFree( heap,0,dh.absPath );
+    dbgsym_close( &ds,heap );
     if( alloc_a ) HeapFree( heap,0,alloc_a );
     if( mi_a ) HeapFree( heap,0,mi_a );
     if( contents ) HeapFree( heap,0,contents );
