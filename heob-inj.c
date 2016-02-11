@@ -270,6 +270,26 @@ static void writeMods( allocation *alloc_a,int alloc_q )
 // }}}
 // low-level function for memory allocation tracking {{{
 
+static NOINLINE size_t heap_block_size( HANDLE heap,void *ptr )
+{
+  PROCESS_HEAP_ENTRY phe;
+  phe.lpData = NULL;
+  size_t s = -1;
+
+  HeapLock( heap );
+  while( HeapWalk(heap,&phe) )
+  {
+    if( !(phe.wFlags&PROCESS_HEAP_ENTRY_BUSY) || ptr!=phe.lpData )
+      continue;
+
+    s = phe.cbData;
+    break;
+  }
+  HeapUnlock( heap );
+
+  return( s );
+}
+
 static NOINLINE void trackAllocs(
     void *free_ptr,void *alloc_ptr,size_t alloc_size,allocType at,funcType ft,
     void *caller )
@@ -373,7 +393,8 @@ static NOINLINE void trackAllocs(
         if( rd->opt.raiseException )
           DebugBreak();
       }
-      else if( rd->crtHeap && HeapValidate(rd->crtHeap,0,free_ptr) )
+      else if( rd->crtHeap &&
+          heap_block_size(rd->crtHeap,free_ptr)!=(size_t)-1 )
       {
         if( at==AT_MALLOC )
           rd->ofree( free_ptr );
@@ -1412,10 +1433,10 @@ static void *protect_realloc( void *b,size_t s )
   int extern_alloc = os==(size_t)-1;
   if( extern_alloc )
   {
-    if( !rd->crtHeap || !HeapValidate(rd->crtHeap,0,b) )
+    if( !rd->crtHeap )
       return( NULL );
 
-    os = HeapSize( rd->crtHeap,0,b );
+    os = heap_block_size( rd->crtHeap,b );
     if( os==(size_t)-1 )
       return( NULL );
   }
