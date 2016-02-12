@@ -1392,7 +1392,6 @@ void mainCRTStartup( void )
       HANDLE in = GetStdHandle( STD_INPUT_HANDLE );
       if( FlushConsoleInputBuffer(in) )
       {
-        HANDLE out = tc->out;
         tc->out = GetStdHandle( STD_ERROR_HANDLE );
         printf( "-------------------- PID %u --------------------\n",
             pi.dwProcessId );

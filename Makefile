@@ -13,7 +13,7 @@ endif
 CC=$(PREF)gcc
 CXX=$(PREF)g++
 CPPFLAGS=-DNO_DWARFSTACK
-CFLAGS=-Wall -Wextra -fno-omit-frame-pointer -fno-optimize-sibling-calls
+CFLAGS=-Wall -Wextra -Wshadow -fno-omit-frame-pointer -fno-optimize-sibling-calls
 CFLAGS_HEOB=$(CPPFLAGS) $(CFLAGS) -O3 -DHEOB_VER="\"$(HEOB_VERSION)\"" \
 	    -ffreestanding -mno-stack-arg-probe
 LDFLAGS_HEOB=-s -nostdlib -lkernel32
