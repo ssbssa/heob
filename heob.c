@@ -598,8 +598,7 @@ static CODE_SEG(".text$2") HANDLE inject(
 struct dbgsym;
 #ifndef NO_DWARFSTACK
 typedef int func_dwstOfFile( const char*,uint64_t,uint64_t*,int,
-    void(*)(uint64_t,const char*,int,const char*,struct dbgsym*),
-    struct dbgsym* );
+    dwstCallback*,struct dbgsym* );
 #endif
 
 #ifdef _WIN64
@@ -733,8 +732,9 @@ void dbgsym_close( dbgsym *ds,HANDLE heap )
 
 static void locFunc(
     uint64_t addr,const char *filename,int lineno,const char *funcname,
-    dbgsym *ds )
+    void *context )
 {
+  dbgsym *ds = context;
   textColor *tc = ds->tc;
 
   uint64_t printAddr = addr;
@@ -745,9 +745,9 @@ static void locFunc(
     if( ds->fSymAddrIncludeInlineTrace &&
         (inlineTrace=ds->fSymAddrIncludeInlineTrace(ds->process,addr)) )
     {
-      DWORD context,frameIndex;
+      DWORD inlineContext,frameIndex;
       if( ds->fSymQueryInlineTrace(ds->process,addr,0,addr,addr,
-            &context,&frameIndex) )
+            &inlineContext,&frameIndex) )
       {
         int i;
         DWORD dis;
@@ -759,18 +759,19 @@ static void locFunc(
           RtlZeroMemory( il,sizeof(IMAGEHLP_LINE64) );
           il->SizeOfStruct = sizeof(IMAGEHLP_LINE64);
           if( ds->fSymGetLineFromInlineContext(
-                ds->process,addr,context,0,&dis,il) )
+                ds->process,addr,inlineContext,0,&dis,il) )
           {
             si->SizeOfStruct = sizeof(SYMBOL_INFO);
             si->MaxNameLen = MAX_SYM_NAME;
-            if( ds->fSymFromInlineContext(ds->process,addr,context,&dis64,si) )
+            if( ds->fSymFromInlineContext(
+                  ds->process,addr,inlineContext,&dis64,si) )
             {
               si->Name[MAX_SYM_NAME] = 0;
               locFunc( printAddr,il->FileName,il->LineNumber,si->Name,ds );
               printAddr = 0;
             }
           }
-          context++;
+          inlineContext++;
         }
       }
     }
