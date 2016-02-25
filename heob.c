@@ -1396,7 +1396,7 @@ void mainCRTStartup( void )
         tc->out = GetStdHandle( STD_ERROR_HANDLE );
         printf( "-------------------- PID %u --------------------\n",
             pi.dwProcessId );
-        tc->out = out;
+        printf( "press any key to continue..." );
 
         INPUT_RECORD ir;
         DWORD didread;
@@ -1408,6 +1408,9 @@ void mainCRTStartup( void )
              ir.Event.KeyEvent.wVirtualKeyCode==VK_MENU ||
              ir.Event.KeyEvent.wVirtualKeyCode==VK_LWIN ||
              ir.Event.KeyEvent.wVirtualKeyCode==VK_RWIN) );
+
+        printf( " done\n\n" );
+        tc->out = out;
       }
     }
 
