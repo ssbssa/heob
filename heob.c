@@ -1277,6 +1277,7 @@ void mainCRTStartup( void )
 
     if( ptr_a ) HeapFree( heap,0,ptr_a );
     if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
+    raise_alloc_a = NULL;
     HeapFree( heap,0,a2l_mi_a );
 
     if( ptr_q ) ExitProcess( 0 );
