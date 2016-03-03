@@ -1034,6 +1034,7 @@ void mainCRTStartup( void )
   HANDLE out = NULL;
   modInfo *a2l_mi_a = NULL;
   int a2l_mi_q = 0;
+  char badArg = 0;
   while( args )
   {
     while( args[0]==' ' ) args++;
@@ -1191,13 +1192,29 @@ void mainCRTStartup( void )
             RtlMoveMemory( mi->path,localName,len+1 );
         }
         break;
+
+      default:
+        badArg = args[1];
+        args = NULL;
+        break;
     }
-    while( args[0] && args[0]!=' ' ) args++;
+    while( args && args[0] && args[0]!=' ' ) args++;
   }
   if( !out || out==INVALID_HANDLE_VALUE )
     out = GetStdHandle( STD_OUTPUT_HANDLE );
   if( opt.protect<1 ) opt.protectFree = 0;
   checkOutputVariant( tc,cmdLine,out );
+
+  if( badArg )
+  {
+    char arg0[2] = { badArg,0 };
+    printf( "%cunknown argument: %c-%s\n%c",
+        ATT_WARN,ATT_INFO,arg0,ATT_NORMAL );
+
+    if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
+    if( a2l_mi_a ) HeapFree( heap,0,a2l_mi_a );
+    ExitProcess( -1 );
+  }
 
   const char *funcnames[FT_COUNT] = {
     "malloc",
