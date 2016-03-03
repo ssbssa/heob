@@ -1003,11 +1003,7 @@ void mainCRTStartup( void )
     args = strchr( cmdLine,' ' );
   options defopt = {
     1,
-#ifndef _WIN64
-    8,
-#else
-    16,
-#endif
+    MEMORY_ALLOCATION_ALIGNMENT,
     0xff,
     0xcc,
     0,
