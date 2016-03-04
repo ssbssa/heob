@@ -1379,6 +1379,10 @@ void mainCRTStartup( void )
           ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.sourceCode,ATT_NORMAL );
       printf( "    %c-e%cX%c    show exit trace [%c%d%c]\n",
           ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.exitTrace,ATT_NORMAL );
+      printf( "    %c-\"%cM%c\"%cB%c  trace mode:"
+          " load %cm%codule on %cb%case address\n",
+          ATT_INFO,ATT_BASE,ATT_INFO,ATT_BASE,ATT_NORMAL,
+          ATT_INFO,ATT_NORMAL,ATT_INFO,ATT_NORMAL );
     }
     printf( "    %c-H%c     show full help\n",
         ATT_INFO,ATT_NORMAL );
