@@ -149,18 +149,24 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
           break;
 
         case 'x': // unsigned int
-        case 'p': // uintptr_t
+        case 'X': // uintptr_t
+        case 'p': // void*
           {
             uintptr_t arg;
             int bytes;
-#ifdef _WIN64
             if( ptr[1]=='p' )
+            {
+              arg = (uintptr_t)va_arg( vl,void* );
+              bytes = sizeof(void*);
+            }
+#ifdef _WIN64
+            else if( ptr[1]=='X' )
             {
               arg = va_arg( vl,uintptr_t );
               bytes = sizeof(uintptr_t);
             }
-            else
 #endif
+            else
             {
               arg = va_arg( vl,unsigned int );
               bytes = sizeof(unsigned int);
@@ -823,7 +829,7 @@ static void locFunc(
   switch( lineno )
   {
     case DWST_BASE_ADDR:
-      printf( "    %c%p%c   %c%s%c\n",
+      printf( "    %c%X%c   %c%s%c\n",
           ATT_BASE,(uintptr_t)addr,ATT_NORMAL,
           ATT_BASE,filename,ATT_NORMAL );
       break;
@@ -833,7 +839,7 @@ static void locFunc(
     case DWST_NO_SRC_FILE:
     case DWST_NOT_FOUND:
 #endif
-      printf( "%c      %p",ATT_NORMAL,(uintptr_t)addr );
+      printf( "%c      %X",ATT_NORMAL,(uintptr_t)addr );
       if( funcname )
         printf( "   [%c%s%c]",ATT_INFO,funcname,ATT_NORMAL );
       printf( "\n" );
@@ -841,7 +847,7 @@ static void locFunc(
 
     default:
       if( printAddr )
-        printf( "%c      %p",ATT_NORMAL,(uintptr_t)printAddr );
+        printf( "%c      %X",ATT_NORMAL,(uintptr_t)printAddr );
       else
         printf( "        " PTR_SPACES );
       printf( "   %c%s%c:%d",
