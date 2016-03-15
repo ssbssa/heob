@@ -196,7 +196,8 @@ static void writeModsFind( allocation *alloc_a,int alloc_q,
 
       MEMORY_BASIC_INFORMATION mbi;
       if( !VirtualQuery((void*)ptr,&mbi,
-            sizeof(MEMORY_BASIC_INFORMATION)) )
+            sizeof(MEMORY_BASIC_INFORMATION)) ||
+          !(mbi.Protect&(PAGE_EXECUTE_READ|PAGE_EXECUTE_READWRITE)) )
         continue;
       size_t base = (size_t)mbi.AllocationBase;
       size_t size = mbi.RegionSize;
