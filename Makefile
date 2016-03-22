@@ -25,16 +25,16 @@ all: heob$(BITS).exe allocer$(BITS).exe
 heob$(BITS).exe: heob.c heob-inj.c heob.h
 	$(CC) $(CFLAGS_HEOB) -o$@ heob.c heob-inj.c $(LDFLAGS_HEOB) || { rm -f $@; exit 1; }
 
-allocer$(BITS).exe: allocer.cpp libcrt$(BITS).a dll-alloc$(BITS).dll dll-alloc-shared$(BITS).dll
+allocer$(BITS).exe: allocer.cpp libheobcpp$(BITS).a dll-alloc$(BITS).dll dll-alloc-shared$(BITS).dll
 	$(CXX) $(CFLAGS_TEST) -o$@ $^ -nostdlib -lmsvcrt -lkernel32
 
-dll-alloc$(BITS).dll: dll-alloc.cpp libcrt$(BITS).a
+dll-alloc$(BITS).dll: dll-alloc.cpp libheobcpp$(BITS).a
 	$(CXX) $(CFLAGS_TEST) -shared -o$@ $^ -static-libgcc
 
 dll-alloc-shared$(BITS).dll: dll-alloc$(BITS).dll
 	cp -f $< $@
 
-libcrt$(BITS).a: crt$(BITS).def
+libheobcpp$(BITS).a: crt$(BITS).def
 	$(PREF)dlltool -k -d $< -l $@
 
 
