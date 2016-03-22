@@ -1464,6 +1464,7 @@ void mainCRTStartup( void )
     allocation *alloc_a = NULL;
     int alloc_q = -2;
     int content_q = 0;
+    int terminated = 0;
     unsigned char *contents = NULL;
     unsigned char **content_ptrs = NULL;
     while( readFile(readPipe,&type,sizeof(int)) )
@@ -1493,6 +1494,11 @@ void mainCRTStartup( void )
 
         case WRITE_LEAKS:
           if( !readFile(readPipe,&exitCode,sizeof(UINT)) )
+          {
+            alloc_q = -2;
+            break;
+          }
+          if( !readFile(readPipe,&terminated,sizeof(int)) )
           {
             alloc_q = -2;
             break;
@@ -1765,16 +1771,20 @@ void mainCRTStartup( void )
     {
       printf( "%c\n",ATT_OK );
 
-      if( opt.handleException<2 )
-        printf( "no leaks found\n" );
-
-      if( exitTrace.at==AT_EXIT )
+      if( !terminated )
       {
-        printf( "%cexit on:\n",ATT_SECTION );
-        printStack( exitTrace.frames,mi_a,mi_q,&ds,FT_COUNT );
+        if( opt.handleException<2 )
+          printf( "no leaks found\n" );
+
+        if( exitTrace.at==AT_EXIT )
+        {
+          printf( "%cexit on:\n",ATT_SECTION );
+          printStack( exitTrace.frames,mi_a,mi_q,&ds,FT_COUNT );
+        }
       }
-      printf( "%cexit code: %u (%x)\n",
-          ATT_SECTION,exitCode,exitCode );
+
+      printf( "%c%s code: %u (%x)\n",
+          ATT_SECTION,terminated?"termination":"exit",exitCode,exitCode );
     }
     else if( alloc_q>0 )
     {
@@ -1935,8 +1945,8 @@ void mainCRTStartup( void )
         printf( "%cexit on:\n",ATT_SECTION );
         printStack( exitTrace.frames,mi_a,mi_q,&ds,FT_COUNT );
       }
-      printf( "%cexit code: %u (%x)\n",
-          ATT_SECTION,exitCode,exitCode );
+      printf( "%c%s code: %u (%x)\n",
+          ATT_SECTION,terminated?"termination":"exit",exitCode,exitCode );
     }
     else if( alloc_q<-1 )
     {

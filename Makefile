@@ -167,7 +167,9 @@ T_H53=-p0 -a4 -f0
 T_A53=21
 T_H54=-p1 -a4 -f0
 T_A54=21
-TESTS:=$(shell seq -w 01 54)
+T_H55=-p1 -a4 -f0
+T_A55=22
+TESTS:=$(shell seq -w 01 55)
 
 testres:
 	mkdir -p $@

@@ -344,6 +344,10 @@ void choose( int arg )
         delete[] arr_int;
       }
       break;
+
+    case 22:
+      TerminateProcess( GetCurrentProcess(),arg );
+      break;
   }
 
   mem = (char*)realloc( mem,30 );

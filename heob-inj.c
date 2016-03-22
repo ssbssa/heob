@@ -51,6 +51,7 @@ typedef struct localData
   func_FreeLibrary *fFreeLibrary;
   func_GetProcAddress *fGetProcAddress;
   func_ExitProcess *fExitProcess;
+  func_TerminateProcess *fTerminateProcess;
 
   func_malloc *fmalloc;
   func_calloc *fcalloc;
@@ -164,7 +165,7 @@ static void exitWait( UINT c,int terminate )
   if( !terminate )
     rd->fExitProcess( c );
   else
-    TerminateProcess( GetCurrentProcess(),c );
+    rd->fTerminateProcess( GetCurrentProcess(),c );
 }
 
 // }}}
@@ -990,7 +991,7 @@ static void findLeakType( leakType lt )
 }
 
 // }}}
-// replacement for ExitProcess {{{
+// replacements for ExitProcess/TerminateProcess {{{
 
 static VOID WINAPI new_ExitProcess( UINT c )
 {
@@ -1089,8 +1090,10 @@ static VOID WINAPI new_ExitProcess( UINT c )
   for( i=0; i<=SPLIT_MASK; i++ )
     alloc_q += rd->splits[i].alloc_q;
   type = WRITE_LEAKS;
+  int terminated = 0;
   WriteFile( rd->master,&type,sizeof(int),&written,NULL );
   WriteFile( rd->master,&c,sizeof(UINT),&written,NULL );
+  WriteFile( rd->master,&terminated,sizeof(int),&written,NULL );
   WriteFile( rd->master,&alloc_q,sizeof(int),&written,NULL );
   int alloc_sum = 0;
   size_t alloc_mem_sum = 0;
@@ -1147,6 +1150,27 @@ static VOID WINAPI new_ExitProcess( UINT c )
   LeaveCriticalSection( &rd->cs );
 
   exitWait( c,0 );
+}
+
+static BOOL WINAPI new_TerminateProcess( HANDLE p,UINT c )
+{
+  GET_REMOTEDATA( rd );
+
+  if( p==GetCurrentProcess() )
+  {
+    DWORD written;
+    int type = WRITE_LEAKS;
+    int terminated = 1;
+    int alloc_q = 0;
+    WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+    WriteFile( rd->master,&c,sizeof(UINT),&written,NULL );
+    WriteFile( rd->master,&terminated,sizeof(int),&written,NULL );
+    WriteFile( rd->master,&alloc_q,sizeof(int),&written,NULL );
+
+    exitWait( c,1 );
+  }
+
+  return( rd->fTerminateProcess(p,c) );
 }
 
 // }}}
@@ -1803,8 +1827,10 @@ static void replaceModFuncs( void )
   };
 
   const char *fname_ExitProcess = "ExitProcess";
+  const char *fname_TerminateProcess = "TerminateProcess";
   replaceData rep2[] = {
-    { fname_ExitProcess    ,&rd->fExitProcess    ,&new_ExitProcess     },
+    { fname_ExitProcess      ,&rd->fExitProcess      ,&new_ExitProcess      },
+    { fname_TerminateProcess ,&rd->fTerminateProcess ,&new_TerminateProcess },
   };
   unsigned int rep2count = sizeof(rep2)/sizeof(replaceData);
 

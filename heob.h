@@ -45,6 +45,7 @@ typedef LPVOID WINAPI func_GetProcAddress( HMODULE,LPCSTR );
 typedef LPTOP_LEVEL_EXCEPTION_FILTER WINAPI func_SetUnhandledExceptionFilter(
     LPTOP_LEVEL_EXCEPTION_FILTER );
 typedef VOID WINAPI func_ExitProcess( UINT );
+typedef BOOL WINAPI func_TerminateProcess( HANDLE,UINT );
 
 typedef void *func_malloc( size_t );
 typedef void *func_calloc( size_t,size_t );
