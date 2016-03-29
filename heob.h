@@ -21,7 +21,7 @@
 #define USE_STACKWALK       1
 #define WRITE_DEBUG_STRINGS 0
 
-#ifdef __MINGW32__
+#ifndef _MSC_VER
 #define NOINLINE __attribute__((noinline))
 #else
 #define NOINLINE __declspec(noinline)

@@ -484,7 +484,7 @@ static int isWrongArch( HANDLE process )
 // }}}
 // code injection {{{
 
-#ifdef __MINGW32__
+#ifndef _MSC_VER
 #define CODE_SEG(seg) __attribute__((section(seg)))
 #else
 #define CODE_SEG(seg) __declspec(code_seg(seg))

@@ -541,7 +541,7 @@ static NOINLINE void trackAllocs(
       DebugBreak();
   }
 }
-#ifdef __MINGW32__
+#ifndef _MSC_VER
 #define RETURN_ADDRESS() __builtin_return_address(0)
 #else
 #define RETURN_ADDRESS() _ReturnAddress()
@@ -1409,7 +1409,7 @@ static void *protect_malloc( size_t s )
 
 static void *protect_calloc( size_t n,size_t s )
 {
-#ifdef __MINGW32__
+#ifndef _MSC_VER
 #if defined(__GNUC__) && __GNUC__>=5
   size_t res;
   if( __builtin_mul_overflow(n,s,&res) )
@@ -2363,7 +2363,7 @@ DLLEXPORT DWORD inj( remoteData *rd,void *app )
   ld->ptrShift = 4;
   if( rd->opt.protect )
   {
-#ifdef __MINGW32__
+#ifndef _MSC_VER
     ld->ptrShift = __builtin_ffs( si.dwPageSize ) - 1 + 4;
 #else
     long index;
