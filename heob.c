@@ -1392,7 +1392,8 @@ void mainCRTStartup( void )
     }
     printf( "    %c-H%c     show full help\n",
         ATT_INFO,ATT_NORMAL );
-    printf( "\nheap-observer " HEOB_VER " (" BITS "bit)\n" );
+    printf( "\n%che%cap-%cob%cserver " HEOB_VER " (%c" BITS "%cbit)\n",
+        ATT_OK,ATT_NORMAL,ATT_OK,ATT_NORMAL,ATT_OK,ATT_NORMAL );
     if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
     ExitProcess( -1 );
   }
