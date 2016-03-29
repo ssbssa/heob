@@ -184,7 +184,7 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
 
         case 'c': // textColorAtt
           {
-            textColorAtt arg = va_arg( vl,textColorAtt );
+            textColorAtt arg = va_arg( vl,int );
             if( tc->fTextColor && tc->color!=arg )
             {
               tc->fTextColor( tc,arg );

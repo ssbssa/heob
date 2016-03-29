@@ -10,6 +10,10 @@
 
 #include <stdint.h>
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
+
 // }}}
 // defines {{{
 
@@ -224,7 +228,7 @@ static void writeModsFind( allocation *alloc_a,int alloc_q,
         WriteFile( rd->master,&type,sizeof(int),&written,NULL );
         exitWait( 1,0 );
       }
-      if( !GetModuleFileName((void*)base,mi_a[mi_q-1].path,MAX_PATH) )
+      if( !GetModuleFileName((HMODULE)base,mi_a[mi_q-1].path,MAX_PATH) )
       {
         mi_q--;
         continue;
@@ -1031,7 +1035,7 @@ static VOID WINAPI new_ExitProcess( UINT c )
           addModMem( memStart,memStart+a->size );
         }
       }
-      int lt = k ? LT_INDIRECTLY_LOST : LT_JOINTLY_LOST;
+      leakType lt = k ? LT_INDIRECTLY_LOST : LT_JOINTLY_LOST;
       while( rd->mod_mem_a )
         findLeakType( lt );
     }
@@ -2366,7 +2370,7 @@ DLLEXPORT DWORD inj( remoteData *rd,void *app )
 #ifndef _MSC_VER
     ld->ptrShift = __builtin_ffs( si.dwPageSize ) - 1 + 4;
 #else
-    long index;
+    DWORD index;
     _BitScanForward( &index,si.dwPageSize );
     ld->ptrShift = index + 4;
 #endif
