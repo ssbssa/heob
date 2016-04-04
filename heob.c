@@ -197,6 +197,14 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
       format = ptr;
       continue;
     }
+    else if( ptr[0]=='\n' && tc->fTextColor && tc->color!=ATT_NORMAL )
+    {
+      if( ptr>format )
+        tc->fWriteText( tc,format,ptr-format );
+      tc->fTextColor( tc,ATT_NORMAL );
+      tc->color = ATT_NORMAL;
+      format = ptr;
+    }
     ptr++;
   }
   if( ptr>format )
@@ -829,9 +837,9 @@ static void locFunc(
   switch( lineno )
   {
     case DWST_BASE_ADDR:
-      printf( "    %c%X%c   %c%s%c\n",
+      printf( "    %c%X%c   %c%s\n",
           ATT_BASE,(uintptr_t)addr,ATT_NORMAL,
-          ATT_BASE,filename,ATT_NORMAL );
+          ATT_BASE,filename );
       break;
 
     case DWST_NO_DBG_SYM:
@@ -839,7 +847,7 @@ static void locFunc(
     case DWST_NO_SRC_FILE:
     case DWST_NOT_FOUND:
 #endif
-      printf( "%c      %X",ATT_NORMAL,(uintptr_t)addr );
+      printf( "      %X",(uintptr_t)addr );
       if( funcname )
         printf( "   [%c%s%c]",ATT_INFO,funcname,ATT_NORMAL );
       printf( "\n" );
@@ -847,7 +855,7 @@ static void locFunc(
 
     default:
       if( printAddr )
-        printf( "%c      %X",ATT_NORMAL,(uintptr_t)printAddr );
+        printf( "      %X",(uintptr_t)printAddr );
       else
         printf( "        " PTR_SPACES );
       printf( "   %c%s%c:%d",
@@ -925,8 +933,8 @@ static void printStackCount( uint64_t *frames,int fc,
   if( ft<FT_COUNT )
   {
     textColor *tc = ds->tc;
-    printf( "%c        " PTR_SPACES "   [%c%s%c]\n",
-        ATT_NORMAL,ATT_INFO,ds->funcnames[ft],ATT_NORMAL );
+    printf( "        " PTR_SPACES "   [%c%s%c]\n",
+        ATT_INFO,ds->funcnames[ft],ATT_NORMAL );
   }
 
   int j;
@@ -1216,8 +1224,8 @@ void mainCRTStartup( void )
   if( badArg )
   {
     char arg0[2] = { badArg,0 };
-    printf( "%cunknown argument: %c-%s\n%c",
-        ATT_WARN,ATT_INFO,arg0,ATT_NORMAL );
+    printf( "%cunknown argument: %c-%s\n",
+        ATT_WARN,ATT_INFO,arg0 );
 
     if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
     if( a2l_mi_a ) HeapFree( heap,0,a2l_mi_a );
@@ -1293,9 +1301,8 @@ void mainCRTStartup( void )
       }
 #endif
 
-      printf( "%c\ntrace:\n",ATT_SECTION );
+      printf( "\n%ctrace:\n",ATT_SECTION );
       printStackCount( ptr_a,ptr_q,a2l_mi_a,a2l_mi_q,&ds,FT_COUNT );
-      printf( "%c",ATT_NORMAL );
 
       dbgsym_close( &ds,heap );
     }
@@ -1319,8 +1326,8 @@ void mainCRTStartup( void )
     char *point = strrchr( delim,'.' );
     if( point ) point[0] = 0;
 
-    printf( "Usage: %c%s %c[OPTION]... %cAPP [APP-OPTION]...%c\n",
-        ATT_OK,delim,ATT_INFO,ATT_SECTION,ATT_NORMAL );
+    printf( "Usage: %c%s %c[OPTION]... %cAPP [APP-OPTION]...\n",
+        ATT_OK,delim,ATT_INFO,ATT_SECTION );
     printf( "    %c-o%cX%c    heob output"
         " (%c0%c = stdout, %c1%c = stderr, %c...%c = file) [%c%d%c]\n",
         ATT_INFO,ATT_BASE,ATT_NORMAL,
@@ -1408,7 +1415,7 @@ void mainCRTStartup( void )
       NULL,NULL,&si,&pi );
   if( !result )
   {
-    printf( "%ccan't create process for '%s'\n%c",ATT_WARN,args,ATT_NORMAL );
+    printf( "%ccan't create process for '%s'\n",ATT_WARN,args );
     if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
     ExitProcess( -1 );
   }
@@ -1580,7 +1587,7 @@ void mainCRTStartup( void )
               EX_DESC( SINGLE_STEP );
               EX_DESC( STACK_OVERFLOW );
             }
-            printf( "%c\nunhandled exception code: %x%s\n",
+            printf( "\n%cunhandled exception code: %x%s\n",
                 ATT_WARN,ei.er.ExceptionCode,desc );
 
             printf( "%c  exception on:\n",ATT_SECTION );
@@ -1625,7 +1632,7 @@ void mainCRTStartup( void )
             if( !readFile(readPipe,&a,sizeof(allocation)) )
               break;
 
-            printf( "%c\nallocation failed of %U bytes\n",
+            printf( "\n%callocation failed of %U bytes\n",
                 ATT_WARN,a.size );
             printf( "%c  called on: %c(#%d)\n",ATT_SECTION,
                 ATT_NORMAL,a.id );
@@ -1639,7 +1646,7 @@ void mainCRTStartup( void )
             if( !readFile(readPipe,&a,sizeof(allocation)) )
               break;
 
-            printf( "%c\ndeallocation of invalid pointer %p\n",
+            printf( "\n%cdeallocation of invalid pointer %p\n",
                 ATT_WARN,a.ptr );
             printf( "%c  called on:\n",ATT_SECTION );
             printStack( a.frames,mi_a,mi_q,&ds,a.ft );
@@ -1652,7 +1659,7 @@ void mainCRTStartup( void )
             if( !readFile(readPipe,aa,3*sizeof(allocation)) )
               break;
 
-            printf( "%c\ndouble free of %p (size %U)\n",
+            printf( "\n%cdouble free of %p (size %U)\n",
                 ATT_WARN,aa[1].ptr,aa[1].size );
             printf( "%c  called on:\n",ATT_SECTION );
             printStack( aa[0].frames,mi_a,mi_q,&ds,aa[0].ft );
@@ -1672,7 +1679,7 @@ void mainCRTStartup( void )
             if( !readFile(readPipe,aa,2*sizeof(allocation)) )
               break;
 
-            printf( "%c\nwrite access violation at %p\n",
+            printf( "\n%cwrite access violation at %p\n",
                 ATT_WARN,aa[1].ptr );
             printf( "%c  slack area of %p (size %U, offset %s%D)\n",
                 ATT_INFO,aa[0].ptr,aa[0].size,
@@ -1686,7 +1693,7 @@ void mainCRTStartup( void )
           break;
 
         case WRITE_MAIN_ALLOC_FAIL:
-          printf( "%c\nnot enough memory to keep track of allocations\n",
+          printf( "\n%cnot enough memory to keep track of allocations\n",
               ATT_WARN );
           alloc_q = -1;
           break;
@@ -1697,7 +1704,7 @@ void mainCRTStartup( void )
             if( !readFile(readPipe,aa,2*sizeof(allocation)) )
               break;
 
-            printf( "%c\nmismatching allocation/release method"
+            printf( "\n%cmismatching allocation/release method"
                 " of %p (size %U)\n",ATT_WARN,aa[0].ptr,aa[0].size );
             printf( "%c  allocated on: %c(#%d)\n",ATT_SECTION,
                 ATT_NORMAL,aa[0].id );
@@ -1745,7 +1752,7 @@ void mainCRTStartup( void )
             if( !readFile(readPipe,&ft,sizeof(funcType)) )
               break;
 
-            printf( "%c\nreached allocation #%d %c[%c%s%c]\n",
+            printf( "\n%creached allocation #%d %c[%c%s%c]\n",
                 ATT_SECTION,id,ATT_NORMAL,
                 ATT_INFO,funcnames[ft],ATT_NORMAL );
           }
@@ -1770,12 +1777,12 @@ void mainCRTStartup( void )
 
     if( !alloc_q )
     {
-      printf( "%c\n",ATT_OK );
+      printf( "\n" );
 
       if( !terminated )
       {
         if( opt.handleException<2 )
-          printf( "no leaks found\n" );
+          printf( "%cno leaks found\n",ATT_OK );
 
         if( exitTrace.at==AT_EXIT )
         {
@@ -1831,7 +1838,7 @@ void mainCRTStartup( void )
         alloc_a[combined_q++] = a;
       }
       if( opt.leakDetails<=1 )
-        printf( "%c\nleaks:\n",ATT_SECTION );
+        printf( "\n%cleaks:\n",ATT_SECTION );
       else
         printf( "\n" );
       int l;
@@ -1951,7 +1958,7 @@ void mainCRTStartup( void )
     }
     else if( alloc_q<-1 )
     {
-      printf( "%c\nunexpected end of application\n",ATT_WARN );
+      printf( "\n%cunexpected end of application\n",ATT_WARN );
     }
 
     dbgsym_close( &ds,heap );
@@ -1965,8 +1972,6 @@ void mainCRTStartup( void )
   CloseHandle( pi.hProcess );
 
   if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
-
-  printf( "%c",ATT_NORMAL );
 
   ExitProcess( exitCode );
 }
