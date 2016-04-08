@@ -208,12 +208,16 @@ typedef struct remoteData
     char exePathA[MAX_PATH];
   };
 
+  size_t injOffset;
+
   options opt;
 
   int raise_alloc_q;
   int raise_alloc_a[1];
 }
 remoteData;
+
+void inj( remoteData *rd,HMODULE app );
 
 // }}}
 // extra communication declarations {{{

@@ -2236,7 +2236,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 // }}}
 // injected main {{{
 
-DLLEXPORT void inj( remoteData *rd,HMODULE app )
+void inj( remoteData *rd,HMODULE app )
 {
   PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)app;
   PIMAGE_NT_HEADERS inh = (PIMAGE_NT_HEADERS)REL_PTR( idh,idh->e_lfanew );

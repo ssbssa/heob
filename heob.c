@@ -500,13 +500,13 @@ static int isWrongArch( HANDLE process )
 #define UNREACHABLE __assume(0)
 #endif
 
+typedef void func_inj( remoteData*,HMODULE );
+
 static CODE_SEG(".text$1") DWORD WINAPI remoteCall( remoteData *rd )
 {
   HMODULE app = rd->fLoadLibraryW( rd->exePath );
-  char inj_name[] = { 'i','n','j',0 };
-  void (*func_inj)( remoteData*,HMODULE );
-  func_inj = rd->fGetProcAddress( app,inj_name );
-  func_inj( rd,app );
+  func_inj *finj = (func_inj*)( (size_t)app + rd->injOffset );
+  finj( rd,app );
 
   UNREACHABLE;
 
@@ -556,6 +556,7 @@ static CODE_SEG(".text$2") HANDLE inject(
     (func_ExitProcess*)GetProcAddress( kernel32,"ExitProcess" );
 
   GetModuleFileNameW( NULL,data->exePath,MAX_PATH );
+  data->injOffset = (size_t)&inj - (size_t)GetModuleHandle( NULL );
 
   HANDLE readPipe,writePipe;
   CreatePipe( &readPipe,&writePipe,NULL,0 );
