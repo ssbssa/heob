@@ -502,7 +502,7 @@ static CODE_SEG(".text$1") DWORD WINAPI remoteCall( remoteData *rd )
 {
   HMODULE app = rd->fLoadLibraryW( rd->exePath );
   char inj_name[] = { 'i','n','j',0 };
-  DWORD (*func_inj)( remoteData*,void* );
+  void (*func_inj)( remoteData*,HMODULE );
   func_inj = rd->fGetProcAddress( app,inj_name );
   func_inj( rd,app );
 
