@@ -492,14 +492,6 @@ static int isWrongArch( HANDLE process )
 // }}}
 // code injection {{{
 
-#ifndef _MSC_VER
-#define CODE_SEG(seg) __attribute__((section(seg)))
-#define UNREACHABLE __builtin_unreachable()
-#else
-#define CODE_SEG(seg) __declspec(code_seg(seg))
-#define UNREACHABLE __assume(0)
-#endif
-
 typedef void func_inj( remoteData*,HMODULE );
 
 static CODE_SEG(".text$1") DWORD WINAPI remoteCall( remoteData *rd )

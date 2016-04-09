@@ -21,8 +21,6 @@
 
 #define REL_PTR( base,ofs ) ( ((PBYTE)base)+ofs )
 
-#define DLLEXPORT __declspec(dllexport)
-
 // }}}
 // local data {{{
 

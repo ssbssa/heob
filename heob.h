@@ -21,10 +21,16 @@
 #define USE_STACKWALK       1
 #define WRITE_DEBUG_STRINGS 0
 
+#define DLLEXPORT __declspec(dllexport)
+
 #ifndef _MSC_VER
 #define NOINLINE __attribute__((noinline))
+#define CODE_SEG(seg) __attribute__((section(seg)))
+#define UNREACHABLE __builtin_unreachable()
 #else
 #define NOINLINE __declspec(noinline)
+#define CODE_SEG(seg) __declspec(code_seg(seg))
+#define UNREACHABLE __assume(0)
 #endif
 
 #if defined(NO_DBGHELP) && USE_STACKWALK
