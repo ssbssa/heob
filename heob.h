@@ -25,10 +25,12 @@
 
 #ifndef _MSC_VER
 #define NOINLINE __attribute__((noinline))
+#define NORETURN __attribute__((noreturn))
 #define CODE_SEG(seg) __attribute__((section(seg)))
 #define UNREACHABLE __builtin_unreachable()
 #else
 #define NOINLINE __declspec(noinline)
+#define NORETURN __declspec(noreturn)
 #define CODE_SEG(seg) __declspec(code_seg(seg))
 #define UNREACHABLE __assume(0)
 #endif

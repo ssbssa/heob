@@ -132,7 +132,7 @@ static localData *g_ld = NULL;
 // }}}
 // process exit {{{
 
-static void exitWait( UINT c,int terminate )
+static NORETURN void exitWait( UINT c,int terminate )
 {
   GET_REMOTEDATA( rd );
 
@@ -168,6 +168,8 @@ static void exitWait( UINT c,int terminate )
     rd->fExitProcess( c );
   else
     rd->fTerminateProcess( GetCurrentProcess(),c );
+
+  UNREACHABLE;
 }
 
 // }}}
