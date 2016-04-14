@@ -1055,8 +1055,11 @@ void mainCRTStartup( void )
         break;
 
       case 'a':
-        opt.align = atoi( args+2 );
-        if( opt.align<1 ) opt.align = 1;
+        {
+          int align = atoi( args+2 );
+          if( align>0 && !(align&(align-1)) )
+            opt.align = align;
+        }
         break;
 
       case 'i':
