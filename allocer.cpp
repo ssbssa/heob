@@ -148,7 +148,7 @@ void choose( int arg )
     case 7:
       // multiple free / free of invalid pointer
       free( mem );
-      free( (void*)0x80000000 );
+      free( (void*)(size_t)0x80000000 );
       break;
 
     case 8:
