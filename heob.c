@@ -659,7 +659,9 @@ void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
   ds->funcnames = funcnames;
 
 #ifndef NO_DBGHELP
-  ds->symMod = LoadLibrary( "dbghelp.dll" );
+  ds->symMod = LoadLibrary( "dbghelp" BITS ".dll" );
+  if( !ds->symMod )
+    ds->symMod = LoadLibrary( "dbghelp.dll" );
   if( ds->symMod )
   {
     func_SymSetOptions *fSymSetOptions =
@@ -705,9 +707,9 @@ void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
 #endif
 
 #ifndef NO_DWARFSTACK
-  ds->dwstMod = LoadLibrary( "dwarfstack.dll" );
+  ds->dwstMod = LoadLibrary( "dwarfstack" BITS ".dll" );
   if( !ds->dwstMod )
-    ds->dwstMod = LoadLibrary( "dwarfstack" BITS ".dll" );
+    ds->dwstMod = LoadLibrary( "dwarfstack.dll" );
   if( ds->dwstMod )
   {
     ds->fdwstOfFile =
