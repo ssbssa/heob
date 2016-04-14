@@ -348,6 +348,13 @@ void choose( int arg )
     case 22:
       TerminateProcess( GetCurrentProcess(),arg );
       break;
+
+    case 23:
+      {
+        char *emptyness = (char*)malloc( 30 );
+        mem[1] = emptyness[0];
+      }
+      break;
   }
 
   mem = (char*)realloc( mem,30 );

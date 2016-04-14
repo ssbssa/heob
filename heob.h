@@ -174,7 +174,7 @@ typedef struct
 {
   int protect;
   int align;
-  int init;
+  UINT64 init;
   int slackInit;
   int protectFree;
   int handleException;

@@ -169,7 +169,19 @@ T_H54=-p1 -a4 -f0
 T_A54=21
 T_H55=-p1 -a4 -f0
 T_A55=22
-TESTS:=$(shell seq -w 01 55)
+T_H56=-p1 -a4 -f0 -L100 -i0x7c:1
+T_A56=23
+T_H57=-p1 -a8 -f0 -L100 -i0x7c:1
+T_A57=23
+T_H58=-p1 -a8 -f0 -L100 -i0x7c:2
+T_A58=23
+T_H59=-p1 -a8 -f0 -L100 -i0x7c:4
+T_A59=23
+T_H60=-p1 -a8 -f0 -L100 -i0x7c:8
+T_A60=23
+T_H61=-p1 -a8 -f0 -L100 -i0x7c00000000000000:8
+T_A61=23
+TESTS:=$(shell seq -w 01 61)
 
 testres:
 	mkdir -p $@

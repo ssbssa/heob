@@ -230,9 +230,9 @@ static NOINLINE char *mstrrchr( const char *s,char c )
 }
 #define strrchr mstrrchr
 
-static NOINLINE uintptr_t atop( const char *s )
+static NOINLINE uint64_t atou64( const char *s )
 {
-  uintptr_t ret = 0;
+  uint64_t ret = 0;
 
   if( s[0]=='0' && s[1]=='x' )
   {
@@ -257,7 +257,11 @@ static NOINLINE uintptr_t atop( const char *s )
     ret = ret*10 + ( *s - '0' );
   return( ret );
 }
-static NOINLINE int matoi( const char *s )
+static inline uintptr_t atop( const char *s )
+{
+  return( (uintptr_t)atou64(s) );
+}
+static inline int matoi( const char *s )
 {
   return( (int)atop(s) );
 }
@@ -1015,7 +1019,7 @@ void mainCRTStartup( void )
   options defopt = {
     1,
     MEMORY_ALLOCATION_ALIGNMENT,
-    0xff,
+    0xffffffffffffffffULL,
     0xcc,
     0,
     1,
@@ -1063,7 +1067,21 @@ void mainCRTStartup( void )
         break;
 
       case 'i':
-        opt.init = atoi( args+2 );
+        {
+          const char *pos = args + 2;
+          uint64_t init = atou64( pos );
+          int initSize = 1;
+          while( *pos && *pos!=':' ) pos++;
+          if( *pos )
+            initSize = atoi( pos+1 );
+          if( initSize<2 )
+            init = init | ( init<<8 );
+          if( initSize<4 )
+            init = init | ( init<<16 );
+          if( initSize<8 )
+            init = init | ( init<<32 );
+          opt.init = init;
+        }
         break;
 
       case 's':
@@ -1216,6 +1234,7 @@ void mainCRTStartup( void )
     }
     while( args && args[0] && args[0]!=' ' ) args++;
   }
+  if( opt.init && opt.align<8 ) opt.init = 0;
   if( !out || out==INVALID_HANDLE_VALUE )
     out = GetStdHandle( STD_OUTPUT_HANDLE );
   if( opt.protect<1 ) opt.protectFree = 0;
@@ -1354,7 +1373,8 @@ void mainCRTStartup( void )
           ATT_INFO,ATT_BASE,ATT_NORMAL,
           ATT_INFO,defopt.minProtectSize,ATT_NORMAL );
       printf( "    %c-i%cX%c    initial value [%c%d%c]\n",
-          ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.init,ATT_NORMAL );
+          ATT_INFO,ATT_BASE,ATT_NORMAL,
+          ATT_INFO,(int)(defopt.init&0xff),ATT_NORMAL );
       printf( "    %c-s%cX%c    initial value for slack [%c%d%c]\n",
           ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.slackInit,ATT_NORMAL );
     }

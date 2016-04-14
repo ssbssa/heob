@@ -1,0 +1,9 @@
+allocer: main()
+
+leaks:
+  32 B * 1 = 32 B (#2)
+    [malloc]
+        0000  7C 7C 7C 7C 7C 7C 7C 7C 7C 7C 7C 7C 7C 7C 7C 7C  ||||||||||||||||
+        0010  7C 7C 7C 7C 7C 7C 7C 7C 7C 7C 7C 7C 7C 7C 7C 7C  ||||||||||||||||
+  sum: 32 B / 1
+exit code: 23 (0xPTR)

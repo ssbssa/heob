@@ -1405,8 +1405,17 @@ static void *protect_malloc( size_t s )
   void *b = protect_alloc_m( s );
   if( !b ) return( NULL );
 
-  if( rd->opt.init )
-    RtlFillMemory( b,s,(UCHAR)rd->opt.init );
+  uint64_t init = rd->opt.init;
+  if( init )
+  {
+    uintptr_t align = rd->opt.align;
+    s += ( align - (s%align) )%align;
+    size_t count = s>>3;
+    uint64_t *u64 = b;
+    uint64_t *u64end = u64 + count;
+    for( ; u64<u64end; u64++ )
+      *u64 = init;
+  }
 
   return( b );
 }
@@ -1477,8 +1486,17 @@ static void *protect_realloc( void *b,size_t s )
   if( cs )
     RtlMoveMemory( nb,b,cs );
 
-  if( s>os && rd->opt.init )
-    RtlFillMemory( ((char*)nb)+os,s-os,(UCHAR)rd->opt.init );
+  uint64_t init = rd->opt.init;
+  if( s>os && init )
+  {
+    uintptr_t align = rd->opt.align;
+    s += ( align - (s%align) )%align;
+    size_t count = ( s-os )>>3;
+    uint64_t *u64 = (uint64_t*)((char*)nb+os);
+    uint64_t *u64end = u64 + count;
+    for( ; u64<u64end; u64++ )
+      *u64 = init;
+  }
 
   if( !extern_alloc )
     protect_free_m( b,FT_REALLOC );
