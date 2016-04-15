@@ -28,11 +28,15 @@
 #define NORETURN __attribute__((noreturn))
 #define CODE_SEG(seg) __attribute__((section(seg)))
 #define UNREACHABLE __builtin_unreachable()
+#define ASSUME_ALIGNED(p,a) __builtin_assume_aligned(p,a)
+#define ASSUME(c) ({ if( !(c) ) __builtin_unreachable(); })
 #else
 #define NOINLINE __declspec(noinline)
 #define NORETURN __declspec(noreturn)
 #define CODE_SEG(seg) __declspec(code_seg(seg))
 #define UNREACHABLE __assume(0)
+#define ASSUME_ALIGNED(p,a) (p)
+#define ASSUME(c) __assume(c)
 #endif
 
 #if defined(NO_DBGHELP) && USE_STACKWALK

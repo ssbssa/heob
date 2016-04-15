@@ -1405,16 +1405,20 @@ static void *protect_malloc( size_t s )
   void *b = protect_alloc_m( s );
   if( !b ) return( NULL );
 
-  uint64_t init = rd->opt.init;
-  if( init )
+  if( s )
   {
-    uintptr_t align = rd->opt.align;
-    s += ( align - (s%align) )%align;
-    size_t count = s>>3;
-    uint64_t *u64 = b;
-    uint64_t *u64end = u64 + count;
-    for( ; u64<u64end; u64++ )
-      *u64 = init;
+    uint64_t init = rd->opt.init;
+    if( init )
+    {
+      uintptr_t align = rd->opt.align;
+      s += ( align - (s%align) )%align;
+      size_t count = s>>3;
+      ASSUME( count>0 );
+      uint64_t *u64 = ASSUME_ALIGNED( b,MEMORY_ALLOCATION_ALIGNMENT );
+      size_t i;
+      for( i=0; i<count; i++ )
+        u64[i] = init;
+    }
   }
 
   return( b );
@@ -1486,16 +1490,21 @@ static void *protect_realloc( void *b,size_t s )
   if( cs )
     RtlMoveMemory( nb,b,cs );
 
-  uint64_t init = rd->opt.init;
-  if( s>os && init )
+  if( s>os )
   {
-    uintptr_t align = rd->opt.align;
-    s += ( align - (s%align) )%align;
-    size_t count = ( s-os )>>3;
-    uint64_t *u64 = (uint64_t*)((char*)nb+os);
-    uint64_t *u64end = u64 + count;
-    for( ; u64<u64end; u64++ )
-      *u64 = init;
+    uint64_t init = rd->opt.init;
+    if( init )
+    {
+      uintptr_t align = rd->opt.align;
+      s += ( align - (s%align) )%align;
+      size_t count = ( s-os )>>3;
+      ASSUME( count>0 );
+      uint64_t *u64 = (uint64_t*)ASSUME_ALIGNED(
+          (char*)nb+os,MEMORY_ALLOCATION_ALIGNMENT );
+      size_t i;
+      for( i=0; i<count; i++ )
+        u64[i] = init;
+    }
   }
 
   if( !extern_alloc )

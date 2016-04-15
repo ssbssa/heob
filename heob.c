@@ -1236,7 +1236,7 @@ void mainCRTStartup( void )
     }
     while( args && args[0] && args[0]!=' ' ) args++;
   }
-  if( opt.init && opt.align<8 ) opt.init = 0;
+  if( opt.align<MEMORY_ALLOCATION_ALIGNMENT ) opt.init = 0;
   if( !out || out==INVALID_HANDLE_VALUE )
     out = GetStdHandle( STD_OUTPUT_HANDLE );
   if( opt.protect<1 ) opt.protectFree = 0;
