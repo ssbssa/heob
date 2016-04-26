@@ -17,7 +17,7 @@
 // }}}
 // defines {{{
 
-#define SPLIT_MASK 0x3ff
+#define SPLIT_MASK 0x3fff
 
 #define REL_PTR( base,ofs ) ( ((PBYTE)base)+ofs )
 
