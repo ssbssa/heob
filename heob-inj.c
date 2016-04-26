@@ -2391,7 +2391,7 @@ void inj( remoteData *rd,HMODULE app )
   ld->splits = HeapAlloc( heap,HEAP_ZERO_MEMORY,
       (SPLIT_MASK+1)*sizeof(splitAllocation) );
 
-  ld->ptrShift = 4;
+  ld->ptrShift = 5;
   if( rd->opt.protect )
   {
 #ifndef _MSC_VER
@@ -2401,7 +2401,7 @@ void inj( remoteData *rd,HMODULE app )
     _BitScanForward( &index,si.dwPageSize );
     ld->ptrShift = index + 4;
 #endif
-    if( ld->ptrShift<4 ) ld->ptrShift = 4;
+    if( ld->ptrShift<5 ) ld->ptrShift = 5;
   }
 
   ld->newArrAllocMethod = rd->opt.allocMethod>1 ? AT_NEW_ARR : AT_NEW;
