@@ -26,6 +26,7 @@
 
 typedef struct
 {
+  CRITICAL_SECTION cs;
   allocation *alloc_a;
   int alloc_q;
   int alloc_s;
@@ -93,25 +94,6 @@ typedef struct localData
   int ptrShift;
   allocType newArrAllocMethod;
 
-  freed *freed_a;
-  int freed_q;
-  int freed_s;
-
-  HMODULE *mod_a;
-  int mod_q;
-  int mod_s;
-  int mod_d;
-
-  HMODULE *freed_mod_a;
-  int freed_mod_q;
-  int freed_mod_s;
-  int inExit;
-
-  modMemType *mod_mem_a;
-  int mod_mem_q;
-  int mod_mem_s;
-
-  CRITICAL_SECTION cs;
   HANDLE heap;
   DWORD pageSize;
   size_t pageAdd;
@@ -119,10 +101,38 @@ typedef struct localData
 
   options opt;
 
+  CRITICAL_SECTION csWrite;
+  CRITICAL_SECTION csFreed;
+
+  // protected by csWrite {{{
+
+  HMODULE *mod_a;
+  int mod_q;
+  int mod_s;
+  int mod_d;
+
+  modMemType *mod_mem_a;
+  int mod_mem_q;
+  int mod_mem_s;
+
   int cur_id;
   int raise_id;
   int raise_alloc_q;
   int *raise_alloc_a;
+
+  // }}}
+  // protected by csFreed {{{
+
+  freed *freed_a;
+  int freed_q;
+  int freed_s;
+
+  HMODULE *freed_mod_a;
+  int freed_mod_q;
+  int freed_mod_s;
+  int inExit;
+
+  // }}}
 }
 localData;
 
@@ -307,14 +317,32 @@ static NOINLINE void trackAllocs(
     int splitIdx = (((uintptr_t)free_ptr)>>rd->ptrShift)&SPLIT_MASK;
     splitAllocation *sa = rd->splits + splitIdx;
 
-    EnterCriticalSection( &rd->cs );
+    EnterCriticalSection( &sa->cs );
 
     int i;
     for( i=sa->alloc_q-1; i>=0 && sa->alloc_a[i].ptr!=free_ptr; i-- );
     if( i>=0 )
     {
+      allocation a;
+      RtlMoveMemory( &a,&sa->alloc_a[i],sizeof(allocation) );
+      sa->alloc_q--;
+      if( i<sa->alloc_q ) sa->alloc_a[i] = sa->alloc_a[sa->alloc_q];
+
+      LeaveCriticalSection( &sa->cs );
+
       if( rd->opt.protectFree )
       {
+        freed f;
+        RtlMoveMemory( &f.a,&a,sizeof(allocation) );
+        f.a.ftFreed = ft;
+
+        void **frames = f.frames;
+        int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
+        if( ptrs<PTRS )
+          RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
+
+        EnterCriticalSection( &rd->csFreed );
+
         if( rd->freed_q>=rd->freed_s )
         {
           rd->freed_s += 65536;
@@ -327,29 +355,30 @@ static NOINLINE void trackAllocs(
                 rd->heap,0,rd->freed_a,rd->freed_s*sizeof(freed) );
           if( !freed_an )
           {
+            LeaveCriticalSection( &rd->csFreed );
+            EnterCriticalSection( &rd->csWrite );
+
             DWORD written;
             int type = WRITE_MAIN_ALLOC_FAIL;
             WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+
+            LeaveCriticalSection( &rd->csWrite );
+
             exitWait( 1,0 );
           }
           rd->freed_a = freed_an;
         }
 
-        freed *f = rd->freed_a + rd->freed_q;
+        RtlMoveMemory( rd->freed_a+rd->freed_q,&f,sizeof(freed) );
         rd->freed_q++;
-        RtlMoveMemory( &f->a,&sa->alloc_a[i],sizeof(allocation) );
-        f->a.ftFreed = ft;
 
-        void **frames = f->frames;
-        int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
-        if( ptrs<PTRS )
-          RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
+        LeaveCriticalSection( &rd->csFreed );
       }
 
-      if( rd->opt.allocMethod && sa->alloc_a[i].at!=at )
+      if( rd->opt.allocMethod && a.at!=at )
       {
         allocation aa[2];
-        RtlMoveMemory( aa,sa->alloc_a+i,sizeof(allocation) );
+        RtlMoveMemory( aa,&a,sizeof(allocation) );
         void **frames = aa[1].frames;
         int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
         if( ptrs<PTRS )
@@ -360,6 +389,8 @@ static NOINLINE void trackAllocs(
         aa[1].lt = LT_LOST;
         aa[1].ft = ft;
 
+        EnterCriticalSection( &rd->csWrite );
+
         writeMods( aa,2 );
 
         int type = WRITE_WRONG_DEALLOC;
@@ -367,27 +398,36 @@ static NOINLINE void trackAllocs(
         WriteFile( rd->master,&type,sizeof(int),&written,NULL );
         WriteFile( rd->master,aa,2*sizeof(allocation),&written,NULL );
 
+        LeaveCriticalSection( &rd->csWrite );
+
         if( rd->opt.raiseException>1 )
           DebugBreak();
       }
-
-      sa->alloc_q--;
-      if( i<sa->alloc_q ) sa->alloc_a[i] = sa->alloc_a[sa->alloc_q];
     }
     else
     {
+      LeaveCriticalSection( &sa->cs );
+      EnterCriticalSection( &rd->csFreed );
+
+      int inExit = rd->inExit;
+
       for( i=rd->freed_q-1; i>=0 && rd->freed_a[i].a.ptr!=free_ptr; i-- );
       if( i>=0 )
       {
         allocation aa[3];
         RtlMoveMemory( &aa[1],&rd->freed_a[i].a,sizeof(allocation) );
         RtlMoveMemory( aa[2].frames,rd->freed_a[i].frames,PTRS*sizeof(void*) );
+
+        LeaveCriticalSection( &rd->csFreed );
+
         aa[2].ft = aa[1].ftFreed;
         void **frames = aa[0].frames;
         int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
         if( ptrs<PTRS )
           RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
         aa[0].ft = ft;
+
+        EnterCriticalSection( &rd->csWrite );
 
         writeMods( aa,3 );
 
@@ -396,9 +436,15 @@ static NOINLINE void trackAllocs(
         WriteFile( rd->master,&type,sizeof(int),&written,NULL );
         WriteFile( rd->master,aa,3*sizeof(allocation),&written,NULL );
 
+        LeaveCriticalSection( &rd->csWrite );
+
         if( rd->opt.raiseException )
           DebugBreak();
       }
+      else
+        LeaveCriticalSection( &rd->csFreed );
+
+      if( i>=0 );
       else if( rd->crtHeap &&
           heap_block_size(rd->crtHeap,free_ptr)!=(size_t)-1 )
       {
@@ -409,7 +455,7 @@ static NOINLINE void trackAllocs(
         else if( ft==FT_OP_DELETE_A )
           rd->oop_delete_a( free_ptr );
       }
-      else if( !rd->inExit )
+      else if( !inExit )
       {
         allocation a;
         a.ptr = free_ptr;
@@ -423,6 +469,8 @@ static NOINLINE void trackAllocs(
         if( ptrs<PTRS )
           RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
 
+        EnterCriticalSection( &rd->csWrite );
+
         writeMods( &a,1 );
 
         DWORD written;
@@ -430,12 +478,12 @@ static NOINLINE void trackAllocs(
         WriteFile( rd->master,&type,sizeof(int),&written,NULL );
         WriteFile( rd->master,&a,sizeof(allocation),&written,NULL );
 
+        LeaveCriticalSection( &rd->csWrite );
+
         if( rd->opt.raiseException )
           DebugBreak();
       }
     }
-
-    LeaveCriticalSection( &rd->cs );
   }
 
   if( alloc_ptr )
@@ -443,44 +491,22 @@ static NOINLINE void trackAllocs(
     uintptr_t align = rd->opt.align;
     alloc_size += ( align - (alloc_size%align) )%align;
 
-    int splitIdx = (((uintptr_t)alloc_ptr)>>rd->ptrShift)&SPLIT_MASK;
-    splitAllocation *sa = rd->splits + splitIdx;
+    allocation a;
+    a.ptr = alloc_ptr;
+    a.size = alloc_size;
+    a.at = at;
+    a.lt = LT_LOST;
+    a.ft = ft;
 
-    EnterCriticalSection( &rd->cs );
-
-    if( sa->alloc_q>=sa->alloc_s )
-    {
-      sa->alloc_s += 64;
-      allocation *alloc_an;
-      if( !sa->alloc_a )
-        alloc_an = HeapAlloc(
-            rd->heap,0,sa->alloc_s*sizeof(allocation) );
-      else
-        alloc_an = HeapReAlloc(
-            rd->heap,0,sa->alloc_a,sa->alloc_s*sizeof(allocation) );
-      if( !alloc_an )
-      {
-        DWORD written;
-        int type = WRITE_MAIN_ALLOC_FAIL;
-        WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-        exitWait( 1,0 );
-      }
-      sa->alloc_a = alloc_an;
-    }
-    allocation *a = sa->alloc_a + sa->alloc_q;
-    sa->alloc_q++;
-    a->ptr = alloc_ptr;
-    a->size = alloc_size;
-    int id = a->id = ++rd->cur_id;
-    a->at = at;
-    a->lt = LT_LOST;
-    a->ft = ft;
-
-    void **frames = a->frames;
+    void **frames = a.frames;
     int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
     if( !ptrs ) frames[ptrs++] = caller;
     if( ptrs<PTRS )
       RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
+
+    EnterCriticalSection( &rd->csWrite );
+
+    int id = a.id = ++rd->cur_id;
 
     int raiseException = 0;
     if( id==rd->raise_id && id )
@@ -496,7 +522,42 @@ static NOINLINE void trackAllocs(
       raiseException = 1;
     }
 
-    LeaveCriticalSection( &rd->cs );
+    LeaveCriticalSection( &rd->csWrite );
+
+    int splitIdx = (((uintptr_t)alloc_ptr)>>rd->ptrShift)&SPLIT_MASK;
+    splitAllocation *sa = rd->splits + splitIdx;
+
+    EnterCriticalSection( &sa->cs );
+
+    if( sa->alloc_q>=sa->alloc_s )
+    {
+      sa->alloc_s += 64;
+      allocation *alloc_an;
+      if( !sa->alloc_a )
+        alloc_an = HeapAlloc(
+            rd->heap,0,sa->alloc_s*sizeof(allocation) );
+      else
+        alloc_an = HeapReAlloc(
+            rd->heap,0,sa->alloc_a,sa->alloc_s*sizeof(allocation) );
+      if( !alloc_an )
+      {
+        LeaveCriticalSection( &sa->cs );
+        EnterCriticalSection( &rd->csWrite );
+
+        DWORD written;
+        int type = WRITE_MAIN_ALLOC_FAIL;
+        WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+
+        LeaveCriticalSection( &rd->csWrite );
+
+        exitWait( 1,0 );
+      }
+      sa->alloc_a = alloc_an;
+    }
+    RtlMoveMemory( sa->alloc_a+sa->alloc_q,&a,sizeof(allocation) );
+    sa->alloc_q++;
+
+    LeaveCriticalSection( &sa->cs );
 
     if( raiseException )
       DebugBreak();
@@ -515,7 +576,7 @@ static NOINLINE void trackAllocs(
     if( ptrs<PTRS )
       RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
 
-    EnterCriticalSection( &rd->cs );
+    EnterCriticalSection( &rd->csWrite );
 
     int id = a.id = ++rd->cur_id;
 
@@ -539,7 +600,7 @@ static NOINLINE void trackAllocs(
       raiseException = 1;
     }
 
-    LeaveCriticalSection( &rd->cs );
+    LeaveCriticalSection( &rd->csWrite );
 
     if( raiseException )
       DebugBreak();
@@ -1001,7 +1062,7 @@ static VOID WINAPI new_ExitProcess( UINT c )
 {
   GET_REMOTEDATA( rd );
 
-  int type;
+  int type,i;
   DWORD written;
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_ExitProcess\n";
@@ -1010,7 +1071,9 @@ static VOID WINAPI new_ExitProcess( UINT c )
   WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
 #endif
 
-  EnterCriticalSection( &rd->cs );
+  EnterCriticalSection( &rd->csWrite );
+  for( i=0; i<=SPLIT_MASK; i++ )
+    EnterCriticalSection( &rd->splits[i].cs );
 
   if( rd->opt.leakDetails>1 )
   {
@@ -1021,7 +1084,7 @@ static VOID WINAPI new_ExitProcess( UINT c )
     int k;
     for( k=0; k<2; k++ )
     {
-      int i,j;
+      int j;
       for( i=0; i<=SPLIT_MASK; i++ )
       {
         splitAllocation *sa = rd->splits + i;
@@ -1044,7 +1107,6 @@ static VOID WINAPI new_ExitProcess( UINT c )
   if( rd->opt.exitTrace )
     trackAllocs( NULL,(void*)-1,0,AT_EXIT,FT_COUNT );
 
-  int i;
   int mi_q = 0;
   modInfo *mi_a = NULL;
   for( i=0; i<=SPLIT_MASK; i++ )
@@ -1055,13 +1117,20 @@ static VOID WINAPI new_ExitProcess( UINT c )
 
   if( rd->freed_mod_q )
   {
+    LeaveCriticalSection( &rd->csWrite );
+    for( i=0; i<=SPLIT_MASK; i++ )
+      LeaveCriticalSection( &rd->splits[i].cs );
+
+    EnterCriticalSection( &rd->csFreed );
     rd->inExit = 1;
-    LeaveCriticalSection( &rd->cs );
+    LeaveCriticalSection( &rd->csFreed );
 
     for( i=0; i<rd->freed_mod_q; i++ )
       rd->fFreeLibrary( rd->freed_mod_a[i] );
 
-    EnterCriticalSection( &rd->cs );
+    EnterCriticalSection( &rd->csWrite );
+    for( i=0; i<=SPLIT_MASK; i++ )
+      EnterCriticalSection( &rd->splits[i].cs );
   }
 
   writeModsSend( mi_a,mi_q );
@@ -1151,7 +1220,9 @@ static VOID WINAPI new_ExitProcess( UINT c )
     }
   }
 
-  LeaveCriticalSection( &rd->cs );
+  LeaveCriticalSection( &rd->csWrite );
+  for( i=0; i<=SPLIT_MASK; i++ )
+    LeaveCriticalSection( &rd->splits[i].cs );
 
   exitWait( c,0 );
 }
@@ -1162,6 +1233,8 @@ static BOOL WINAPI new_TerminateProcess( HANDLE p,UINT c )
 
   if( p==GetCurrentProcess() )
   {
+    EnterCriticalSection( &rd->csWrite );
+
     DWORD written;
     int type = WRITE_LEAKS;
     int terminated = 1;
@@ -1170,6 +1243,8 @@ static BOOL WINAPI new_TerminateProcess( HANDLE p,UINT c )
     WriteFile( rd->master,&c,sizeof(UINT),&written,NULL );
     WriteFile( rd->master,&terminated,sizeof(int),&written,NULL );
     WriteFile( rd->master,&alloc_q,sizeof(int),&written,NULL );
+
+    LeaveCriticalSection( &rd->csWrite );
 
     exitWait( c,1 );
   }
@@ -1195,10 +1270,10 @@ static HMODULE WINAPI new_LoadLibraryA( LPCSTR name )
 
   HMODULE mod = rd->fLoadLibraryA( name );
 
-  EnterCriticalSection( &rd->cs );
+  EnterCriticalSection( &rd->csWrite );
   addModule( mod );
   replaceModFuncs();
-  LeaveCriticalSection( &rd->cs );
+  LeaveCriticalSection( &rd->csWrite );
 
   return( mod );
 }
@@ -1218,10 +1293,10 @@ static HMODULE WINAPI new_LoadLibraryW( LPCWSTR name )
 
   HMODULE mod = rd->fLoadLibraryW( name );
 
-  EnterCriticalSection( &rd->cs );
+  EnterCriticalSection( &rd->csWrite );
   addModule( mod );
   replaceModFuncs();
-  LeaveCriticalSection( &rd->cs );
+  LeaveCriticalSection( &rd->csWrite );
 
   return( mod );
 }
@@ -1232,11 +1307,11 @@ static BOOL WINAPI new_FreeLibrary( HMODULE mod )
 
   if( rd->opt.dlls<=2 ) return( TRUE );
 
-  EnterCriticalSection( &rd->cs );
+  EnterCriticalSection( &rd->csFreed );
 
   if( rd->inExit )
   {
-    LeaveCriticalSection( &rd->cs );
+    LeaveCriticalSection( &rd->csFreed );
     return( TRUE );
   }
 
@@ -1252,16 +1327,22 @@ static BOOL WINAPI new_FreeLibrary( HMODULE mod )
           rd->heap,0,rd->freed_mod_a,rd->freed_mod_s*sizeof(HMODULE) );
     if( !freed_mod_an )
     {
+      LeaveCriticalSection( &rd->csFreed );
+      EnterCriticalSection( &rd->csWrite );
+
       DWORD written;
       int type = WRITE_MAIN_ALLOC_FAIL;
       WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+
+      LeaveCriticalSection( &rd->csWrite );
+
       exitWait( 1,0 );
     }
     rd->freed_mod_a = freed_mod_an;
   }
   rd->freed_mod_a[rd->freed_mod_q++] = mod;
 
-  LeaveCriticalSection( &rd->cs );
+  LeaveCriticalSection( &rd->csFreed );
 
   return( TRUE );
 }
@@ -1276,13 +1357,13 @@ static size_t alloc_size( void *p )
   int splitIdx = (((uintptr_t)p)>>rd->ptrShift)&SPLIT_MASK;
   splitAllocation *sa = rd->splits + splitIdx;
 
-  EnterCriticalSection( &rd->cs );
+  EnterCriticalSection( &sa->cs );
 
   int i;
   for( i=sa->alloc_q-1; i>=0 && sa->alloc_a[i].ptr!=p; i-- );
   size_t s = i>=0 ? sa->alloc_a[i].size : (size_t)-1;
 
-  LeaveCriticalSection( &rd->cs );
+  LeaveCriticalSection( &sa->cs );
 
   return( s );
 }
@@ -1360,7 +1441,7 @@ static NOINLINE void protect_free_m( void *b,funcType ft )
       int splitIdx = (((uintptr_t)b)>>rd->ptrShift)&SPLIT_MASK;
       splitAllocation *sa = rd->splits + splitIdx;
 
-      EnterCriticalSection( &rd->cs );
+      EnterCriticalSection( &sa->cs );
 
       int j;
       for( j=sa->alloc_q-1; j>=0 && sa->alloc_a[j].ptr!=b; j-- );
@@ -1368,6 +1449,9 @@ static NOINLINE void protect_free_m( void *b,funcType ft )
       {
         allocation aa[2];
         RtlMoveMemory( aa,sa->alloc_a+j,sizeof(allocation) );
+
+        LeaveCriticalSection( &sa->cs );
+
         void **frames = aa[1].frames;
         int ptrs = CaptureStackBackTrace( 3,PTRS,frames,NULL );
         if( ptrs<PTRS )
@@ -1375,15 +1459,19 @@ static NOINLINE void protect_free_m( void *b,funcType ft )
         aa[1].ptr = slackStart + i;
         aa[1].ft = ft;
 
+        EnterCriticalSection( &rd->csWrite );
+
         writeMods( aa,2 );
 
         int type = WRITE_SLACK;
         DWORD written;
         WriteFile( rd->master,&type,sizeof(int),&written,NULL );
         WriteFile( rd->master,aa,2*sizeof(allocation),&written,NULL );
-      }
 
-      LeaveCriticalSection( &rd->cs );
+        LeaveCriticalSection( &rd->csWrite );
+      }
+      else
+        LeaveCriticalSection( &sa->cs );
     }
   }
 
@@ -2366,7 +2454,7 @@ void inj( remoteData *rd,HMODULE app )
 
   rd->fFlushInstructionCache( rd->fGetCurrentProcess(),NULL,0 );
 
-  HANDLE heap = HeapCreate( HEAP_NO_SERIALIZE,0,0 );
+  HANDLE heap = HeapCreate( 0,0,0 );
   localData *ld = HeapAlloc( heap,HEAP_ZERO_MEMORY,
       sizeof(localData)+rd->raise_alloc_q*sizeof(int) );
   g_ld = ld;
@@ -2380,7 +2468,6 @@ void inj( remoteData *rd,HMODULE app )
   ld->master = rd->master;
   ld->kernel32 = rd->kernel32;
 
-  InitializeCriticalSection( &ld->cs );
   ld->heap = heap;
 
   SYSTEM_INFO si;
@@ -2390,6 +2477,27 @@ void inj( remoteData *rd,HMODULE app )
 
   ld->splits = HeapAlloc( heap,HEAP_ZERO_MEMORY,
       (SPLIT_MASK+1)*sizeof(splitAllocation) );
+
+  typedef BOOL WINAPI func_InitializeCriticalSectionEx(
+      LPCRITICAL_SECTION,DWORD,DWORD );
+  func_InitializeCriticalSectionEx *fInitCritSecEx =
+    rd->fGetProcAddress( rd->kernel32,"InitializeCriticalSectionEx" );
+  if( fInitCritSecEx )
+  {
+    fInitCritSecEx( &ld->csWrite,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
+    fInitCritSecEx( &ld->csFreed,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
+    int i;
+    for( i=0; i<=SPLIT_MASK; i++ )
+      fInitCritSecEx( &ld->splits[i].cs,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
+  }
+  else
+  {
+    InitializeCriticalSection( &ld->csWrite );
+    InitializeCriticalSection( &ld->csFreed );
+    int i;
+    for( i=0; i<=SPLIT_MASK; i++ )
+      InitializeCriticalSection( &ld->splits[i].cs );
+  }
 
   ld->ptrShift = 5;
   if( rd->opt.protect )

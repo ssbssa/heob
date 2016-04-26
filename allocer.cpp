@@ -48,6 +48,23 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 }
 
 
+static DWORD WINAPI workerThread( LPVOID arg )
+{
+  int alloc_count = (UINT_PTR)arg;
+  DWORD sum = 0;
+  unsigned char **allocs = (unsigned char**)malloc(
+      alloc_count*sizeof(unsigned char*) );
+  for( int i=0; i<alloc_count; i++ )
+    allocs[i] = (unsigned char*)malloc( 16 );
+  for( int i=0; i<alloc_count; i++ )
+    sum += allocs[i][0];
+  for( int i=0; i<alloc_count; i++ )
+    free( allocs[i] );
+  free( allocs );
+  return( sum );
+}
+
+
 void choose( int arg )
 {
   printf( "allocer: main()\n" );
@@ -203,6 +220,7 @@ void choose( int arg )
       break;
 
     case 11:
+      // exit-call
       exit( arg );
 
     case 12:
@@ -346,13 +364,35 @@ void choose( int arg )
       break;
 
     case 22:
+      // self-termination
       TerminateProcess( GetCurrentProcess(),arg );
       break;
 
     case 23:
+      // initial value
       {
         char *emptyness = (char*)malloc( 30 );
         mem[1] = emptyness[0];
+      }
+      break;
+
+#define THREAD_COUNT 8
+#define ALLOC_COUNT (256*1024)
+    case 24:
+      // benchmark: single thread
+      workerThread( (LPVOID)(THREAD_COUNT*ALLOC_COUNT) );
+      break;
+
+    case 25:
+      // benchmark: multi-threading
+      {
+        HANDLE threads[THREAD_COUNT];
+        for( int i=0; i<THREAD_COUNT; i++ )
+          threads[i] = CreateThread( NULL,0,
+              &workerThread,(LPVOID)ALLOC_COUNT,0,NULL );
+        WaitForMultipleObjects( THREAD_COUNT,threads,TRUE,INFINITE );
+        for( int i=0; i<THREAD_COUNT; i++ )
+          CloseHandle( threads[i] );
       }
       break;
   }
