@@ -370,18 +370,25 @@ static void checkOutputVariant( textColor *tc,const char *cmdLine,HANDLE out )
   if( GetConsoleMode(tc->out,&flags) )
   {
     // windows console
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    GetConsoleScreenBufferInfo( tc->out,&csbi );
+    int bg = csbi.wAttributes&0xf0;
+
     tc->fTextColor = &TextColorConsole;
 
-    tc->colors[ATT_NORMAL]  = FOREGROUND_BLUE|FOREGROUND_GREEN|FOREGROUND_RED;
-    tc->colors[ATT_OK]      = FOREGROUND_GREEN|FOREGROUND_INTENSITY;
+    tc->colors[ATT_NORMAL]  = csbi.wAttributes&0xff;
+    tc->colors[ATT_OK]      = bg|FOREGROUND_GREEN|FOREGROUND_INTENSITY;
     tc->colors[ATT_SECTION] =
-      FOREGROUND_BLUE|FOREGROUND_GREEN|FOREGROUND_INTENSITY;
+      bg|FOREGROUND_BLUE|FOREGROUND_GREEN|FOREGROUND_INTENSITY;
     tc->colors[ATT_INFO]    =
-      FOREGROUND_BLUE|FOREGROUND_RED|FOREGROUND_INTENSITY;
-    tc->colors[ATT_WARN]    = FOREGROUND_RED|FOREGROUND_INTENSITY;
-    tc->colors[ATT_BASE]    = BACKGROUND_INTENSITY;
+      bg|FOREGROUND_BLUE|FOREGROUND_RED|FOREGROUND_INTENSITY;
+    tc->colors[ATT_WARN]    = bg|FOREGROUND_RED|FOREGROUND_INTENSITY;
+    tc->colors[ATT_BASE]    = ( bg^BACKGROUND_INTENSITY )|( bg>>4 );
 
-    TextColorConsole( tc,ATT_NORMAL );
+    int i;
+    bg = bg | ( bg>>4 );
+    for( i=0; i<ATT_COUNT; i++ )
+      if( tc->colors[i]==bg ) tc->colors[i] ^=0x08;
     return;
   }
 
