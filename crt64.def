@@ -18,3 +18,7 @@ _ZdlPvRKSt9nothrow_t == ??3@YAXPEAX@Z
 _ZnayRKSt9nothrow_t == ??_U@YAPEAX_K@Z
 ; delete[](std::nothrow)
 _ZdaPvRKSt9nothrow_t == ??_V@YAXPEAX@Z
+; delete(size_t)
+_ZdlPvy == ??3@YAXPEAX@Z
+; delete[](size_t)
+_ZdaPvy == ??3@YAXPEAX@Z

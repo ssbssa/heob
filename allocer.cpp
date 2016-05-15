@@ -11,10 +11,6 @@
 #include <direct.h>
 
 
-#ifdef __GNUC__
-__declspec(dllimport) void *operator new( size_t );
-__declspec(dllimport) void operator delete( void* );
-#endif
 #if !defined(_MSC_VER) || _MSC_VER<1900
 __declspec(dllimport) void *operator new[]( size_t );
 __declspec(dllimport) void operator delete[]( void* );

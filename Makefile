@@ -17,7 +17,7 @@ CFLAGS=-Wall -Wextra -Wshadow -fno-omit-frame-pointer -fno-optimize-sibling-call
 CFLAGS_HEOB=$(CPPFLAGS) $(CFLAGS) -O3 -DHEOB_VER="\"$(HEOB_VERSION)\"" \
 	    -ffreestanding -mno-stack-arg-probe
 LDFLAGS_HEOB=-s -nostdlib -lkernel32
-CFLAGS_TEST=$(CFLAGS) -O3 -g
+CFLAGS_TEST=$(CFLAGS) -O3 -g -D_GLIBCXX_INCLUDE_NEXT_C_HEADERS
 
 
 all: heob$(BITS).exe allocer$(BITS).exe
