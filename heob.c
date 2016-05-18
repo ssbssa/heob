@@ -1591,9 +1591,9 @@ void mainCRTStartup( void )
             const char *desc = NULL;
             switch( ei.er.ExceptionCode )
             {
+#define EXCEPTION_FATAL_APP_EXIT STATUS_FATAL_APP_EXIT
 #define EX_DESC( name ) \
-              case EXCEPTION_##name: desc = " (" #name ")"; \
-                                     break
+              case EXCEPTION_##name: desc = " (" #name ")"; break
 
               EX_DESC( ACCESS_VIOLATION );
               EX_DESC( ARRAY_BOUNDS_EXCEEDED );
@@ -1615,6 +1615,7 @@ void mainCRTStartup( void )
               EX_DESC( PRIV_INSTRUCTION );
               EX_DESC( SINGLE_STEP );
               EX_DESC( STACK_OVERFLOW );
+              EX_DESC( FATAL_APP_EXIT );
             }
             printf( "\n%cunhandled exception code: %x%s\n",
                 ATT_WARN,ei.er.ExceptionCode,desc );
