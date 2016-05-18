@@ -1469,6 +1469,9 @@ static NOINLINE void protect_free_m( void *b,funcType ft )
         WriteFile( rd->master,aa,2*sizeof(allocation),&written,NULL );
 
         LeaveCriticalSection( &rd->csWrite );
+
+        if( rd->opt.raiseException )
+          DebugBreak();
       }
       else
         LeaveCriticalSection( &sa->cs );
