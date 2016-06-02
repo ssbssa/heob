@@ -2245,7 +2245,9 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   void **frames = ei.aa[0].frames;
 
 #if USE_STACKWALK
-  HMODULE symMod = rd->fLoadLibraryA( "dbghelp.dll" );
+  HMODULE symMod = NULL;
+  if( ep->ExceptionRecord->ExceptionCode!=EXCEPTION_STACK_OVERFLOW )
+    symMod = rd->fLoadLibraryA( "dbghelp.dll" );
   func_SymInitialize *fSymInitialize = NULL;
   func_StackWalk64 *fStackWalk64 = NULL;
   func_SymCleanup *fSymCleanup = NULL;
