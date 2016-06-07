@@ -216,7 +216,7 @@ static void writeModsFind( allocation *alloc_a,int alloc_q,
         continue;
       size_t base = (size_t)mbi.AllocationBase;
       size_t size = mbi.RegionSize;
-      if( base+size<ptr ) size = ptr - base;
+      if( base+size<=ptr ) size = ptr - base + 1;
 
       for( k=0; k<mi_q && mi_a[k].base!=base; k++ );
       if( k<mi_q )
