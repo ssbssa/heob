@@ -181,17 +181,31 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
             tc->fWriteText( tc,str,end-str );
           }
           break;
-
-        case 'c': // textColorAtt
-          {
-            textColorAtt arg = va_arg( vl,int );
-            if( tc->fTextColor && tc->color!=arg )
-            {
-              tc->fTextColor( tc,arg );
-              tc->color = arg;
-            }
-          }
-          break;
+      }
+      ptr += 2;
+      format = ptr;
+      continue;
+    }
+    else if( ptr[0]=='$' && ptr[1] )
+    {
+      if( ptr>format )
+        tc->fWriteText( tc,format,ptr-format );
+      if( tc->fTextColor )
+      {
+        textColorAtt color = ATT_NORMAL;
+        switch( ptr[1] )
+        {
+          case 'O': color = ATT_OK;      break;
+          case 'S': color = ATT_SECTION; break;
+          case 'I': color = ATT_INFO;    break;
+          case 'W': color = ATT_WARN;    break;
+          case 'B': color = ATT_BASE;    break;
+        }
+        if( tc->color!=color )
+        {
+          tc->fTextColor( tc,color );
+          tc->color = color;
+        }
       }
       ptr += 2;
       format = ptr;
@@ -591,7 +605,7 @@ static CODE_SEG(".text$2") HANDLE inject(
     CloseHandle( thread );
     CloseHandle( readPipe );
     HeapFree( heap,0,fullData );
-    printf( "%cprocess failed to initialize\n",ATT_WARN );
+    printf( "$Wprocess failed to initialize\n" );
     return( NULL );
   }
   CloseHandle( initFinished );
@@ -605,7 +619,7 @@ static CODE_SEG(".text$2") HANDLE inject(
   {
     CloseHandle( readPipe );
     readPipe = NULL;
-    printf( "%conly works with dynamically linked CRT\n",ATT_WARN );
+    printf( "$Wonly works with dynamically linked CRT\n" );
   }
   else
     RtlMoveMemory( exePath,data->exePathA,MAX_PATH );
@@ -847,9 +861,7 @@ static void locFunc(
   switch( lineno )
   {
     case DWST_BASE_ADDR:
-      printf( "    %c%X%c   %c%s\n",
-          ATT_BASE,(uintptr_t)addr,ATT_NORMAL,
-          ATT_BASE,filename );
+      printf( "    $B%X$N   $B%s\n",(uintptr_t)addr,filename );
       break;
 
     case DWST_NO_DBG_SYM:
@@ -859,7 +871,7 @@ static void locFunc(
 #endif
       printf( "      %X",(uintptr_t)addr );
       if( funcname )
-        printf( "   [%c%s%c]",ATT_INFO,funcname,ATT_NORMAL );
+        printf( "   [$I%s$N]",funcname );
       printf( "\n" );
       break;
 
@@ -868,10 +880,9 @@ static void locFunc(
         printf( "      %X",(uintptr_t)printAddr );
       else
         printf( "        " PTR_SPACES );
-      printf( "   %c%s%c:%d",
-          ATT_OK,filename,ATT_NORMAL,lineno );
+      printf( "   $O%s$N:%d",filename,lineno );
       if( funcname )
-        printf( " [%c%s%c]",ATT_INFO,funcname,ATT_NORMAL );
+        printf( " [$I%s$N]",funcname );
       printf( "\n" );
 
       if( ds->opt->sourceCode && ds->absPath[0] )
@@ -907,10 +918,10 @@ static void locFunc(
 
                   if( i>=firstLine )
                   {
-                    if( i==lineno ) printf( "%c>",ATT_SECTION );
+                    if( i==lineno ) printf( "$S>" );
                     printf( "\t" );
                     tc->fWriteText( tc,bol,eol-bol );
-                    if( i==lineno ) printf( "%c",ATT_NORMAL );
+                    if( i==lineno ) printf( "$N" );
                   }
 
                   bol = eol;
@@ -943,8 +954,7 @@ static void printStackCount( uint64_t *frames,int fc,
   if( ft<FT_COUNT )
   {
     textColor *tc = ds->tc;
-    printf( "        " PTR_SPACES "   [%c%s%c]\n",
-        ATT_INFO,ds->funcnames[ft],ATT_NORMAL );
+    printf( "        " PTR_SPACES "   [$I%s$N]\n",ds->funcnames[ft] );
   }
 
   int j;
@@ -1252,8 +1262,7 @@ void mainCRTStartup( void )
   if( badArg )
   {
     char arg0[2] = { badArg,0 };
-    printf( "%cunknown argument: %c-%s\n",
-        ATT_WARN,ATT_INFO,arg0 );
+    printf( "$Wunknown argument: $I-%s\n",arg0 );
 
     if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
     if( a2l_mi_a ) HeapFree( heap,0,a2l_mi_a );
@@ -1329,7 +1338,7 @@ void mainCRTStartup( void )
       }
 #endif
 
-      printf( "\n%ctrace:\n",ATT_SECTION );
+      printf( "\n$Strace:\n" );
       printStackCount( ptr_a,ptr_q,a2l_mi_a,a2l_mi_q,&ds,FT_COUNT );
 
       dbgsym_close( &ds,heap );
@@ -1354,82 +1363,68 @@ void mainCRTStartup( void )
     char *point = strrchr( delim,'.' );
     if( point ) point[0] = 0;
 
-    printf( "Usage: %c%s %c[OPTION]... %cAPP [APP-OPTION]...\n",
-        ATT_OK,delim,ATT_INFO,ATT_SECTION );
-    printf( "    %c-o%cX%c    heob output"
-        " (%c0%c = stdout, %c1%c = stderr, %c...%c = file) [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,
-        ATT_INFO,ATT_NORMAL,ATT_INFO,ATT_NORMAL,ATT_INFO,ATT_NORMAL,
-        ATT_INFO,0,ATT_NORMAL );
-    printf( "    %c-P%cX%c    show process ID and wait [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.pid,ATT_NORMAL );
-    printf( "    %c-c%cX%c    create new console [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.newConsole,ATT_NORMAL );
-    printf( "    %c-p%cX%c    page protection"
-        " (%c0%c = off, %c1%c = after, %c2%c = before) [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,
-        ATT_INFO,ATT_NORMAL,ATT_INFO,ATT_NORMAL,ATT_INFO,ATT_NORMAL,
-        ATT_INFO,defopt.protect,ATT_NORMAL );
-    printf( "    %c-f%cX%c    freed memory protection [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.protectFree,ATT_NORMAL );
-    printf( "    %c-d%cX%c    monitor dlls [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.dlls,ATT_NORMAL );
+    printf( "Usage: $O%s $I[OPTION]... $SAPP [APP-OPTION]...\n",
+        delim );
+    printf( "    $I-o$BX$N    heob output"
+        " ($I0$N = stdout, $I1$N = stderr, $I...$N = file) [$I%d$N]\n",
+        0 );
+    printf( "    $I-P$BX$N    show process ID and wait [$I%d$N]\n",
+        defopt.pid );
+    printf( "    $I-c$BX$N    create new console [$I%d$N]\n",
+        defopt.newConsole );
+    printf( "    $I-p$BX$N    page protection"
+        " ($I0$N = off, $I1$N = after, $I2$N = before) [$I%d$N]\n",
+        defopt.protect );
+    printf( "    $I-f$BX$N    freed memory protection [$I%d$N]\n",
+        defopt.protectFree );
+    printf( "    $I-d$BX$N    monitor dlls [$I%d$N]\n",
+        defopt.dlls );
     if( fullhelp )
     {
-      printf( "    %c-a%cX%c    alignment [%c%d%c]\n",
-          ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.align,ATT_NORMAL );
-      printf( "    %c-M%cX%c    minimum page protection size [%c%d%c]\n",
-          ATT_INFO,ATT_BASE,ATT_NORMAL,
-          ATT_INFO,defopt.minProtectSize,ATT_NORMAL );
-      printf( "    %c-i%cX%c    initial value [%c%d%c]\n",
-          ATT_INFO,ATT_BASE,ATT_NORMAL,
-          ATT_INFO,(int)(defopt.init&0xff),ATT_NORMAL );
-      printf( "    %c-s%cX%c    initial value for slack [%c%d%c]\n",
-          ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.slackInit,ATT_NORMAL );
+      printf( "    $I-a$BX$N    alignment [$I%d$N]\n",
+          defopt.align );
+      printf( "    $I-M$BX$N    minimum page protection size [$I%d$N]\n",
+          defopt.minProtectSize );
+      printf( "    $I-i$BX$N    initial value [$I%d$N]\n",
+          (int)(defopt.init&0xff) );
+      printf( "    $I-s$BX$N    initial value for slack [$I%d$N]\n",
+          defopt.slackInit );
     }
-    printf( "    %c-h%cX%c    handle exceptions [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,
-        ATT_INFO,defopt.handleException,ATT_NORMAL );
-    printf( "    %c-R%cX%c    "
-        "raise breakpoint exception on allocation # [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,0,ATT_NORMAL );
-    printf( "    %c-r%cX%c    raise breakpoint exception on error [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,
-        ATT_INFO,defopt.raiseException,ATT_NORMAL );
+    printf( "    $I-h$BX$N    handle exceptions [$I%d$N]\n",
+        defopt.handleException );
+    printf( "    $I-R$BX$N    "
+        "raise breakpoint exception on allocation # [$I%d$N]\n",
+        0 );
+    printf( "    $I-r$BX$N    raise breakpoint exception on error [$I%d$N]\n",
+        defopt.raiseException );
     if( fullhelp )
     {
-      printf( "    %c-S%cX%c    use stack pointer in exception [%c%d%c]\n",
-          ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.useSp,ATT_NORMAL );
-      printf( "    %c-m%cX%c    compare allocation/release method [%c%d%c]\n",
-          ATT_INFO,ATT_BASE,ATT_NORMAL,
-          ATT_INFO,defopt.allocMethod,ATT_NORMAL );
-      printf( "    %c-n%cX%c    find nearest allocation [%c%d%c]\n",
-          ATT_INFO,ATT_BASE,ATT_NORMAL,
-          ATT_INFO,defopt.findNearest,ATT_NORMAL );
-      printf( "    %c-I%cX%c    merge identical leaks [%c%d%c]\n",
-          ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.mergeLeaks,ATT_NORMAL );
+      printf( "    $I-S$BX$N    use stack pointer in exception [$I%d$N]\n",
+          defopt.useSp );
+      printf( "    $I-m$BX$N    compare allocation/release method [$I%d$N]\n",
+          defopt.allocMethod );
+      printf( "    $I-n$BX$N    find nearest allocation [$I%d$N]\n",
+          defopt.findNearest );
+      printf( "    $I-I$BX$N    merge identical leaks [$I%d$N]\n",
+          defopt.mergeLeaks );
     }
-    printf( "    %c-F%cX%c    show full path [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.fullPath,ATT_NORMAL );
-    printf( "    %c-l%cX%c    show leak details [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.leakDetails,ATT_NORMAL );
-    printf( "    %c-L%cX%c    show leak contents [%c%d%c]\n",
-        ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.leakContents,ATT_NORMAL );
+    printf( "    $I-F$BX$N    show full path [$I%d$N]\n",
+        defopt.fullPath );
+    printf( "    $I-l$BX$N    show leak details [$I%d$N]\n",
+        defopt.leakDetails );
+    printf( "    $I-L$BX$N    show leak contents [$I%d$N]\n",
+        defopt.leakContents );
     if( fullhelp )
     {
-      printf( "    %c-C%cX%c    show source code [%c%d%c]\n",
-          ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.sourceCode,ATT_NORMAL );
-      printf( "    %c-e%cX%c    show exit trace [%c%d%c]\n",
-          ATT_INFO,ATT_BASE,ATT_NORMAL,ATT_INFO,defopt.exitTrace,ATT_NORMAL );
-      printf( "    %c-\"%cM%c\"%cB%c  trace mode:"
-          " load %cm%codule on %cb%case address\n",
-          ATT_INFO,ATT_BASE,ATT_INFO,ATT_BASE,ATT_NORMAL,
-          ATT_INFO,ATT_NORMAL,ATT_INFO,ATT_NORMAL );
+      printf( "    $I-C$BX$N    show source code [$I%d$N]\n",
+          defopt.sourceCode );
+      printf( "    $I-e$BX$N    show exit trace [$I%d$N]\n",
+          defopt.exitTrace );
+      printf( "    $I-\"$BM$I\"$BB$N  trace mode:"
+          " load $Im$Nodule on $Ib$Nase address\n" );
     }
-    printf( "    %c-H%c     show full help\n",
-        ATT_INFO,ATT_NORMAL );
-    printf( "\n%che%cap-%cob%cserver " HEOB_VER " (%c" BITS "%cbit)\n",
-        ATT_OK,ATT_NORMAL,ATT_OK,ATT_NORMAL,ATT_OK,ATT_NORMAL );
+    printf( "    $I-H$N     show full help\n" );
+    printf( "\n$Ohe$Nap-$Oob$Nserver " HEOB_VER " ($O" BITS "$Nbit)\n" );
     if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
     ExitProcess( -1 );
   }
@@ -1444,7 +1439,7 @@ void mainCRTStartup( void )
       NULL,NULL,&si,&pi );
   if( !result )
   {
-    printf( "%ccan't create process for '%s'\n",ATT_WARN,args );
+    printf( "$Wcan't create process for '%s'\n",args );
     if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
     ExitProcess( -1 );
   }
@@ -1452,7 +1447,7 @@ void mainCRTStartup( void )
   HANDLE readPipe = NULL;
   char exePath[MAX_PATH];
   if( isWrongArch(pi.hProcess) )
-    printf( "%conly " BITS "bit applications possible\n",ATT_WARN );
+    printf( "$Wonly " BITS "bit applications possible\n" );
   else
     readPipe = inject( pi.hProcess,&opt,exePath,tc,
         raise_alloc_q,raise_alloc_a );
@@ -1617,10 +1612,10 @@ void mainCRTStartup( void )
               EX_DESC( STACK_OVERFLOW );
               EX_DESC( FATAL_APP_EXIT );
             }
-            printf( "\n%cunhandled exception code: %x%s\n",
-                ATT_WARN,ei.er.ExceptionCode,desc );
+            printf( "\n$Wunhandled exception code: %x%s\n",
+                ei.er.ExceptionCode,desc );
 
-            printf( "%c  exception on:\n",ATT_SECTION );
+            printf( "$S  exception on:\n" );
             printStack( ei.aa[0].frames,mi_a,mi_q,&ds,FT_COUNT );
 
             if( ei.er.ExceptionCode==EXCEPTION_ACCESS_VIOLATION &&
@@ -1628,25 +1623,24 @@ void mainCRTStartup( void )
             {
               ULONG_PTR flag = ei.er.ExceptionInformation[0];
               char *addr = (char*)ei.er.ExceptionInformation[1];
-              printf( "%c  %s violation at %p\n",
-                  ATT_WARN,flag==8?"data execution prevention":
+              printf( "$W  %s violation at %p\n",
+                  flag==8?"data execution prevention":
                   (flag?"write access":"read access"),addr );
 
               if( ei.aq>1 )
               {
                 char *ptr = (char*)ei.aa[1].ptr;
                 size_t size = ei.aa[1].size;
-                printf( "%c  %s%s %p (size %U, offset %s%D)\n",
-                    ATT_INFO,ei.nearest?"near ":"",
+                printf( "$I  %s%s %p (size %U, offset %s%D)\n",
+                    ei.nearest?"near ":"",
                     ei.aq>2?"freed block":"protected area of",
                     ptr,size,addr>ptr?"+":"",addr-ptr );
-                printf( "%c  allocated on: %c(#%d)\n",ATT_SECTION,
-                    ATT_NORMAL,ei.aa[1].id );
+                printf( "$S  allocated on: $N(#%d)\n",ei.aa[1].id );
                 printStack( ei.aa[1].frames,mi_a,mi_q,&ds,ei.aa[1].ft );
 
                 if( ei.aq>2 )
                 {
-                  printf( "%c  freed on:\n",ATT_SECTION );
+                  printf( "$S  freed on:\n" );
                   printStack( ei.aa[2].frames,mi_a,mi_q,&ds,ei.aa[2].ft );
                 }
               }
@@ -1662,10 +1656,8 @@ void mainCRTStartup( void )
             if( !readFile(readPipe,&a,sizeof(allocation)) )
               break;
 
-            printf( "\n%callocation failed of %U bytes\n",
-                ATT_WARN,a.size );
-            printf( "%c  called on: %c(#%d)\n",ATT_SECTION,
-                ATT_NORMAL,a.id );
+            printf( "\n$Wallocation failed of %U bytes\n",a.size );
+            printf( "$S  called on: $N(#%d)\n",a.id );
             printStack( a.frames,mi_a,mi_q,&ds,a.ft );
           }
           break;
@@ -1676,9 +1668,8 @@ void mainCRTStartup( void )
             if( !readFile(readPipe,&a,sizeof(allocation)) )
               break;
 
-            printf( "\n%cdeallocation of invalid pointer %p\n",
-                ATT_WARN,a.ptr );
-            printf( "%c  called on:\n",ATT_SECTION );
+            printf( "\n$Wdeallocation of invalid pointer %p\n",a.ptr );
+            printf( "$S  called on:\n" );
             printStack( a.frames,mi_a,mi_q,&ds,a.ft );
           }
           break;
@@ -1689,16 +1680,14 @@ void mainCRTStartup( void )
             if( !readFile(readPipe,aa,3*sizeof(allocation)) )
               break;
 
-            printf( "\n%cdouble free of %p (size %U)\n",
-                ATT_WARN,aa[1].ptr,aa[1].size );
-            printf( "%c  called on:\n",ATT_SECTION );
+            printf( "\n$Wdouble free of %p (size %U)\n",aa[1].ptr,aa[1].size );
+            printf( "$S  called on:\n" );
             printStack( aa[0].frames,mi_a,mi_q,&ds,aa[0].ft );
 
-            printf( "%c  allocated on: %c(#%d)\n",ATT_SECTION,
-                ATT_NORMAL,aa[1].id );
+            printf( "$S  allocated on: $N(#%d)\n",aa[1].id );
             printStack( aa[1].frames,mi_a,mi_q,&ds,aa[1].ft );
 
-            printf( "%c  freed on:\n",ATT_SECTION );
+            printf( "$S  freed on:\n" );
             printStack( aa[2].frames,mi_a,mi_q,&ds,aa[2].ft );
           }
           break;
@@ -1709,22 +1698,19 @@ void mainCRTStartup( void )
             if( !readFile(readPipe,aa,2*sizeof(allocation)) )
               break;
 
-            printf( "\n%cwrite access violation at %p\n",
-                ATT_WARN,aa[1].ptr );
-            printf( "%c  slack area of %p (size %U, offset %s%D)\n",
-                ATT_INFO,aa[0].ptr,aa[0].size,
+            printf( "\n$Wwrite access violation at %p\n",aa[1].ptr );
+            printf( "$I  slack area of %p (size %U, offset %s%D)\n",
+                aa[0].ptr,aa[0].size,
                 aa[1].ptr>aa[0].ptr?"+":"",(char*)aa[1].ptr-(char*)aa[0].ptr );
-            printf( "%c  allocated on: %c(#%d)\n",ATT_SECTION,
-                ATT_NORMAL,aa[0].id );
+            printf( "$S  allocated on: $N(#%d)\n",aa[0].id );
             printStack( aa[0].frames,mi_a,mi_q,&ds,aa[0].ft );
-            printf( "%c  freed on:\n",ATT_SECTION );
+            printf( "$S  freed on:\n" );
             printStack( aa[1].frames,mi_a,mi_q,&ds,aa[1].ft );
           }
           break;
 
         case WRITE_MAIN_ALLOC_FAIL:
-          printf( "\n%cnot enough memory to keep track of allocations\n",
-              ATT_WARN );
+          printf( "\n$Wnot enough memory to keep track of allocations\n" );
           alloc_q = -1;
           break;
 
@@ -1734,12 +1720,11 @@ void mainCRTStartup( void )
             if( !readFile(readPipe,aa,2*sizeof(allocation)) )
               break;
 
-            printf( "\n%cmismatching allocation/release method"
-                " of %p (size %U)\n",ATT_WARN,aa[0].ptr,aa[0].size );
-            printf( "%c  allocated on: %c(#%d)\n",ATT_SECTION,
-                ATT_NORMAL,aa[0].id );
+            printf( "\n$Wmismatching allocation/release method"
+                " of %p (size %U)\n",aa[0].ptr,aa[0].size );
+            printf( "$S  allocated on: $N(#%d)\n",aa[0].id );
             printStack( aa[0].frames,mi_a,mi_q,&ds,aa[0].ft );
-            printf( "%c  freed on:\n",ATT_SECTION );
+            printf( "$S  freed on:\n" );
             printStack( aa[1].frames,mi_a,mi_q,&ds,aa[1].ft );
           }
           break;
@@ -1782,9 +1767,8 @@ void mainCRTStartup( void )
             if( !readFile(readPipe,&ft,sizeof(funcType)) )
               break;
 
-            printf( "\n%creached allocation #%d %c[%c%s%c]\n",
-                ATT_SECTION,id,ATT_NORMAL,
-                ATT_INFO,funcnames[ft],ATT_NORMAL );
+            printf( "\n$Sreached allocation #%d $N[$I%s$N]\n",
+                id,funcnames[ft] );
           }
           break;
       }
@@ -1812,17 +1796,17 @@ void mainCRTStartup( void )
       if( !terminated )
       {
         if( opt.handleException<2 )
-          printf( "%cno leaks found\n",ATT_OK );
+          printf( "$Ono leaks found\n" );
 
         if( exitTrace.at==AT_EXIT )
         {
-          printf( "%cexit on:\n",ATT_SECTION );
+          printf( "$Sexit on:\n" );
           printStack( exitTrace.frames,mi_a,mi_q,&ds,FT_COUNT );
         }
       }
 
-      printf( "%c%s code: %u (%x)\n",
-          ATT_SECTION,terminated?"termination":"exit",exitCode,exitCode );
+      printf( "$S%s code: %u (%x)\n",
+          terminated?"termination":"exit",exitCode,exitCode );
     }
     else if( alloc_q>0 )
     {
@@ -1868,7 +1852,7 @@ void mainCRTStartup( void )
         alloc_a[combined_q++] = a;
       }
       if( opt.leakDetails<=1 )
-        printf( "\n%cleaks:\n",ATT_SECTION );
+        printf( "\n$Sleaks:\n" );
       else
         printf( "\n" );
       int l;
@@ -1915,7 +1899,7 @@ void mainCRTStartup( void )
           alloc_a[best].count = 0;
 
           if( opt.leakDetails>1 && !i )
-            printf( "%cleaks (%s):\n",ATT_SECTION,
+            printf( "$Sleaks (%s):\n",
                 l==LT_LOST?"lost":l==LT_JOINTLY_LOST?"jointly lost":
                 l==LT_INDIRECTLY_LOST?"indirectly lost":
                 l==LT_REACHABLE?"reachable":"indirectly reachable" );
@@ -1925,9 +1909,8 @@ void mainCRTStartup( void )
 
           if( l<lDetails )
           {
-            printf( "%c  %U B * %d = %U B %c(#%d)\n",
-                ATT_WARN,a.size,a.count,a.size*a.count,
-                ATT_NORMAL,a.id );
+            printf( "$W  %U B * %d = %U B $N(#%d)\n",
+                a.size,a.count,a.size*a.count,a.id );
 
             printStack( a.frames,mi_a,mi_q,&ds,a.ft );
 
@@ -1947,7 +1930,7 @@ void mainCRTStartup( void )
                 text[1] = num2hex( lc>>4 );
                 text[2] = num2hex( lc );
                 text[3] = '0';
-                printf( "        %c%s%c ",ATT_INFO,text,ATT_NORMAL );
+                printf( "        $I%s$N ",text );
                 int p;
                 text[2] = 0;
                 for( p=0; p<line_size; p++ )
@@ -1959,7 +1942,7 @@ void mainCRTStartup( void )
                 }
                 for( ; p<16; p++ )
                   printf( "   " );
-                printf( "  %c",ATT_SECTION );
+                printf( "  $S" );
                 text[1] = 0;
                 for( p=0; p<line_size; p++ )
                 {
@@ -1973,22 +1956,22 @@ void mainCRTStartup( void )
           }
         }
         if( opt.leakDetails>1 && ltCount )
-          printf( "%c  sum: %U B / %d\n",ATT_WARN,ltSumSize,ltCount );
+          printf( "$W  sum: %U B / %d\n",ltSumSize,ltCount );
       }
       if( opt.leakDetails<=1 )
-        printf( "%c  sum: %U B / %d\n",ATT_WARN,sumSize,alloc_q );
+        printf( "$W  sum: %U B / %d\n",sumSize,alloc_q );
 
       if( exitTrace.at==AT_EXIT )
       {
-        printf( "%cexit on:\n",ATT_SECTION );
+        printf( "$Sexit on:\n" );
         printStack( exitTrace.frames,mi_a,mi_q,&ds,FT_COUNT );
       }
-      printf( "%c%s code: %u (%x)\n",
-          ATT_SECTION,terminated?"termination":"exit",exitCode,exitCode );
+      printf( "$S%s code: %u (%x)\n",
+          terminated?"termination":"exit",exitCode,exitCode );
     }
     else if( alloc_q<-1 )
     {
-      printf( "\n%cunexpected end of application\n",ATT_WARN );
+      printf( "\n$Wunexpected end of application\n" );
     }
 
     dbgsym_close( &ds,heap );
