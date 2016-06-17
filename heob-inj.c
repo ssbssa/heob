@@ -42,6 +42,15 @@ freed;
 
 typedef struct
 {
+  CRITICAL_SECTION cs;
+  freed *freed_a;
+  int freed_q;
+  int freed_s;
+}
+splitFreed;
+
+typedef struct
+{
   const void **start;
   const void **end;
 }
@@ -94,6 +103,8 @@ typedef struct localData
   int ptrShift;
   allocType newArrAllocMethod;
 
+  splitFreed *freeds;
+
   HANDLE heap;
   DWORD pageSize;
   size_t pageAdd;
@@ -102,7 +113,7 @@ typedef struct localData
   options opt;
 
   CRITICAL_SECTION csWrite;
-  CRITICAL_SECTION csFreed;
+  CRITICAL_SECTION csFreedMod;
 
   // protected by csWrite {{{
 
@@ -121,11 +132,7 @@ typedef struct localData
   int *raise_alloc_a;
 
   // }}}
-  // protected by csFreed {{{
-
-  freed *freed_a;
-  int freed_q;
-  int freed_s;
+  // protected by csFreedMod {{{
 
   HMODULE *freed_mod_a;
   int freed_mod_q;
@@ -340,21 +347,23 @@ static NOINLINE void trackAllocs(
         if( ptrs<PTRS )
           RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
 
-        EnterCriticalSection( &rd->csFreed );
+        splitFreed *sf = rd->freeds + splitIdx;
 
-        if( rd->freed_q>=rd->freed_s )
+        EnterCriticalSection( &sf->cs );
+
+        if( sf->freed_q>=sf->freed_s )
         {
-          rd->freed_s += 65536;
+          sf->freed_s += 64;
           freed *freed_an;
-          if( !rd->freed_a )
+          if( !sf->freed_a )
             freed_an = HeapAlloc(
-                rd->heap,0,rd->freed_s*sizeof(freed) );
+                rd->heap,0,sf->freed_s*sizeof(freed) );
           else
             freed_an = HeapReAlloc(
-                rd->heap,0,rd->freed_a,rd->freed_s*sizeof(freed) );
+                rd->heap,0,sf->freed_a,sf->freed_s*sizeof(freed) );
           if( !freed_an )
           {
-            LeaveCriticalSection( &rd->csFreed );
+            LeaveCriticalSection( &sf->cs );
             EnterCriticalSection( &rd->csWrite );
 
             DWORD written;
@@ -365,13 +374,13 @@ static NOINLINE void trackAllocs(
 
             exitWait( 1,0 );
           }
-          rd->freed_a = freed_an;
+          sf->freed_a = freed_an;
         }
 
-        RtlMoveMemory( rd->freed_a+rd->freed_q,&f,sizeof(freed) );
-        rd->freed_q++;
+        RtlMoveMemory( sf->freed_a+sf->freed_q,&f,sizeof(freed) );
+        sf->freed_q++;
 
-        LeaveCriticalSection( &rd->csFreed );
+        LeaveCriticalSection( &sf->cs );
       }
 
       if( rd->opt.allocMethod && a.at!=at )
@@ -406,42 +415,52 @@ static NOINLINE void trackAllocs(
     else
     {
       LeaveCriticalSection( &sa->cs );
-      EnterCriticalSection( &rd->csFreed );
+      EnterCriticalSection( &rd->csFreedMod );
 
       int inExit = rd->inExit;
 
-      for( i=rd->freed_q-1; i>=0 && rd->freed_a[i].a.ptr!=free_ptr; i-- );
-      if( i>=0 )
+      LeaveCriticalSection( &rd->csFreedMod );
+
+      if( rd->opt.protectFree )
       {
-        allocation aa[3];
-        RtlMoveMemory( &aa[1],&rd->freed_a[i].a,sizeof(allocation) );
-        RtlMoveMemory( aa[2].frames,rd->freed_a[i].frames,PTRS*sizeof(void*) );
+        splitFreed *sf = rd->freeds + splitIdx;
 
-        LeaveCriticalSection( &rd->csFreed );
+        EnterCriticalSection( &sf->cs );
 
-        aa[2].ft = aa[1].ftFreed;
-        void **frames = aa[0].frames;
-        int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
-        if( ptrs<PTRS )
-          RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
-        aa[0].ft = ft;
+        for( i=sf->freed_q-1; i>=0 && sf->freed_a[i].a.ptr!=free_ptr; i-- );
+        if( i>=0 )
+        {
+          allocation aa[3];
+          RtlMoveMemory( &aa[1],&sf->freed_a[i].a,sizeof(allocation) );
+          RtlMoveMemory( aa[2].frames,
+              sf->freed_a[i].frames,PTRS*sizeof(void*) );
 
-        EnterCriticalSection( &rd->csWrite );
+          LeaveCriticalSection( &sf->cs );
 
-        writeMods( aa,3 );
+          aa[2].ft = aa[1].ftFreed;
+          void **frames = aa[0].frames;
+          int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
+          if( ptrs<PTRS )
+            RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
+          aa[0].ft = ft;
 
-        int type = WRITE_DOUBLE_FREE;
-        DWORD written;
-        WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-        WriteFile( rd->master,aa,3*sizeof(allocation),&written,NULL );
+          EnterCriticalSection( &rd->csWrite );
 
-        LeaveCriticalSection( &rd->csWrite );
+          writeMods( aa,3 );
 
-        if( rd->opt.raiseException )
-          DebugBreak();
+          int type = WRITE_DOUBLE_FREE;
+          DWORD written;
+          WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+          WriteFile( rd->master,aa,3*sizeof(allocation),&written,NULL );
+
+          LeaveCriticalSection( &rd->csWrite );
+
+          if( rd->opt.raiseException )
+            DebugBreak();
+        }
+        else
+          LeaveCriticalSection( &sf->cs );
       }
-      else
-        LeaveCriticalSection( &rd->csFreed );
 
       if( i>=0 );
       else if( rd->crtHeap &&
@@ -1070,6 +1089,10 @@ static VOID WINAPI new_ExitProcess( UINT c )
   WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
 #endif
 
+  EnterCriticalSection( &rd->csFreedMod );
+  rd->inExit = 1;
+  LeaveCriticalSection( &rd->csFreedMod );
+
   EnterCriticalSection( &rd->csWrite );
   for( i=0; i<=SPLIT_MASK; i++ )
     EnterCriticalSection( &rd->splits[i].cs );
@@ -1119,10 +1142,6 @@ static VOID WINAPI new_ExitProcess( UINT c )
     LeaveCriticalSection( &rd->csWrite );
     for( i=0; i<=SPLIT_MASK; i++ )
       LeaveCriticalSection( &rd->splits[i].cs );
-
-    EnterCriticalSection( &rd->csFreed );
-    rd->inExit = 1;
-    LeaveCriticalSection( &rd->csFreed );
 
     for( i=0; i<rd->freed_mod_q; i++ )
       rd->fFreeLibrary( rd->freed_mod_a[i] );
@@ -1306,11 +1325,11 @@ static BOOL WINAPI new_FreeLibrary( HMODULE mod )
 
   if( rd->opt.dlls<=2 ) return( TRUE );
 
-  EnterCriticalSection( &rd->csFreed );
+  EnterCriticalSection( &rd->csFreedMod );
 
   if( rd->inExit )
   {
-    LeaveCriticalSection( &rd->csFreed );
+    LeaveCriticalSection( &rd->csFreedMod );
     return( TRUE );
   }
 
@@ -1326,7 +1345,7 @@ static BOOL WINAPI new_FreeLibrary( HMODULE mod )
           rd->heap,0,rd->freed_mod_a,rd->freed_mod_s*sizeof(HMODULE) );
     if( !freed_mod_an )
     {
-      LeaveCriticalSection( &rd->csFreed );
+      LeaveCriticalSection( &rd->csFreedMod );
       EnterCriticalSection( &rd->csWrite );
 
       DWORD written;
@@ -1341,7 +1360,7 @@ static BOOL WINAPI new_FreeLibrary( HMODULE mod )
   }
   rd->freed_mod_a[rd->freed_mod_q++] = mod;
 
-  LeaveCriticalSection( &rd->csFreed );
+  LeaveCriticalSection( &rd->csFreedMod );
 
   return( TRUE );
 }
@@ -2084,29 +2103,33 @@ DLLEXPORT freed *heob_find_freed( uintptr_t addr )
 {
   GET_REMOTEDATA( rd );
 
-  int i;
-  for( i=rd->freed_q-1; i>=0; i-- )
-  {
-    freed *f = rd->freed_a + i;
+  if( !rd->opt.protectFree ) return( NULL );
 
-    uintptr_t ptr = (uintptr_t)f->a.ptr;
-    size_t size = f->a.size;
-    uintptr_t noAccessStart;
-    uintptr_t noAccessEnd;
-    if( rd->opt.protect==1 )
+  int i,j;
+  splitFreed *sf;
+  for( j=SPLIT_MASK,sf=rd->freeds; j>=0; j--,sf++ )
+    for( i=sf->freed_q-1; i>=0; i-- )
     {
-      noAccessStart = ptr - ( ptr%rd->pageSize );
-      noAccessEnd = ptr + f->a.size + rd->pageSize*rd->pageAdd;
-    }
-    else
-    {
-      noAccessStart = ptr - rd->pageSize*rd->pageAdd;
-      noAccessEnd = ptr + ( size?(size-1)/rd->pageSize+1:0 )*rd->pageSize;
-    }
+      freed *f = sf->freed_a + i;
 
-    if( addr>=noAccessStart && addr<noAccessEnd )
-      return( f );
-  }
+      uintptr_t ptr = (uintptr_t)f->a.ptr;
+      size_t size = f->a.size;
+      uintptr_t noAccessStart;
+      uintptr_t noAccessEnd;
+      if( rd->opt.protect==1 )
+      {
+        noAccessStart = ptr - ( ptr%rd->pageSize );
+        noAccessEnd = ptr + f->a.size + rd->pageSize*rd->pageAdd;
+      }
+      else
+      {
+        noAccessStart = ptr - rd->pageSize*rd->pageAdd;
+        noAccessEnd = ptr + ( size?(size-1)/rd->pageSize+1:0 )*rd->pageSize;
+      }
+
+      if( addr>=noAccessStart && addr<noAccessEnd )
+        return( f );
+    }
 
   return( NULL );
 }
@@ -2141,22 +2164,26 @@ DLLEXPORT freed *heob_find_nearest_freed( uintptr_t addr )
 {
   GET_REMOTEDATA( rd );
 
-  int i;
+  if( !rd->opt.protectFree ) return( NULL );
+
+  int i,j;
   uintptr_t nearestPtr = 0;
   freed *nearestF = NULL;
-  for( i=rd->freed_q-1; i>=0; i-- )
-  {
-    freed *f = rd->freed_a + i;
-
-    uintptr_t ptr = (uintptr_t)f->a.ptr;
-
-    if( addr>=ptr && (!nearestPtr || ptr>nearestPtr) &&
-        addr-ptr<INTPTR_MAX )
+  splitFreed *sf;
+  for( j=SPLIT_MASK,sf=rd->freeds; j>=0; j--,sf++ )
+    for( i=sf->freed_q-1; i>=0; i-- )
     {
-      nearestPtr = ptr;
-      nearestF = f;
+      freed *f = sf->freed_a + i;
+
+      uintptr_t ptr = (uintptr_t)f->a.ptr;
+
+      if( addr>=ptr && (!nearestPtr || ptr>nearestPtr) &&
+          addr-ptr<INTPTR_MAX )
+      {
+        nearestPtr = ptr;
+        nearestF = f;
+      }
     }
-  }
 
   return( nearestF );
 }
@@ -2481,6 +2508,9 @@ void inj( remoteData *rd,HMODULE app )
 
   ld->splits = HeapAlloc( heap,HEAP_ZERO_MEMORY,
       (SPLIT_MASK+1)*sizeof(splitAllocation) );
+  if( rd->opt.protectFree )
+    ld->freeds = HeapAlloc( heap,HEAP_ZERO_MEMORY,
+        (SPLIT_MASK+1)*sizeof(splitFreed) );
 
   typedef BOOL WINAPI func_InitializeCriticalSectionEx(
       LPCRITICAL_SECTION,DWORD,DWORD );
@@ -2489,18 +2519,27 @@ void inj( remoteData *rd,HMODULE app )
   if( fInitCritSecEx )
   {
     fInitCritSecEx( &ld->csWrite,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
-    fInitCritSecEx( &ld->csFreed,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
+    fInitCritSecEx( &ld->csFreedMod,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
     int i;
     for( i=0; i<=SPLIT_MASK; i++ )
+    {
       fInitCritSecEx( &ld->splits[i].cs,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
+      if( rd->opt.protectFree )
+        fInitCritSecEx( &ld->freeds[i].cs,
+            4000,CRITICAL_SECTION_NO_DEBUG_INFO );
+    }
   }
   else
   {
     InitializeCriticalSection( &ld->csWrite );
-    InitializeCriticalSection( &ld->csFreed );
+    InitializeCriticalSection( &ld->csFreedMod );
     int i;
     for( i=0; i<=SPLIT_MASK; i++ )
+    {
       InitializeCriticalSection( &ld->splits[i].cs );
+      if( rd->opt.protectFree )
+        InitializeCriticalSection( &ld->freeds[i].cs );
+    }
   }
 
   ld->ptrShift = 5;
