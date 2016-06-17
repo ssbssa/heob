@@ -770,7 +770,7 @@ void dbgsym_close( dbgsym *ds,HANDLE heap )
 
 static void locFunc(
     uint64_t addr,const char *filename,int lineno,const char *funcname,
-    void *context )
+    void *context,int columnno )
 {
   dbgsym *ds = context;
   textColor *tc = ds->tc;
@@ -805,7 +805,7 @@ static void locFunc(
                   ds->process,addr,inlineContext,&dis64,si) )
             {
               si->Name[MAX_SYM_NAME] = 0;
-              locFunc( printAddr,il->FileName,il->LineNumber,si->Name,ds );
+              locFunc( printAddr,il->FileName,il->LineNumber,si->Name,ds,0 );
               printAddr = 0;
             }
           }
@@ -881,6 +881,8 @@ static void locFunc(
       else
         printf( "        " PTR_SPACES );
       printf( "   $O%s$N:%d",filename,lineno );
+      if( columnno>0 )
+        printf( ":$S%d$N",columnno );
       if( funcname )
         printf( " [$I%s$N]",funcname );
       printf( "\n" );
@@ -910,6 +912,7 @@ static void locFunc(
                 if( firstLine>1 )
                   printf( "\t...\n" );
                 int i;
+                if( columnno>0 ) columnno--;
                 for( i=1; i<=lastLine; i++ )
                 {
                   const char *eol = memchr( bol,'\n',eof-bol );
@@ -918,10 +921,24 @@ static void locFunc(
 
                   if( i>=firstLine )
                   {
-                    if( i==lineno ) printf( "$S>" );
-                    printf( "\t" );
-                    tc->fWriteText( tc,bol,eol-bol );
-                    if( i==lineno ) printf( "$N" );
+                    if( i==lineno )
+                    {
+                      printf( "$S>\t" );
+                      if( columnno>0 && columnno<eol-bol )
+                      {
+                        printf( "$N" );
+                        tc->fWriteText( tc,bol,columnno );
+                        bol += columnno;
+                        printf( "$S" );
+                      }
+                      tc->fWriteText( tc,bol,eol-bol );
+                      printf( "$N" );
+                    }
+                    else
+                    {
+                      printf( "\t" );
+                      tc->fWriteText( tc,bol,eol-bol );
+                    }
                   }
 
                   bol = eol;
@@ -966,7 +983,7 @@ static void printStackCount( uint64_t *frames,int fc,
           frame>=mi_a[k].base+mi_a[k].size); k++ );
     if( k>=mi_q )
     {
-      locFunc( frame,"?",DWST_BASE_ADDR,NULL,ds );
+      locFunc( frame,"?",DWST_BASE_ADDR,NULL,ds,0 );
       continue;
     }
     modInfo *mi = mi_a + k;
@@ -981,10 +998,10 @@ static void printStackCount( uint64_t *frames,int fc,
     else
 #endif
     {
-      locFunc( mi->base,mi->path,DWST_BASE_ADDR,NULL,ds );
+      locFunc( mi->base,mi->path,DWST_BASE_ADDR,NULL,ds,0 );
       int i;
       for( i=j; i<l; i++ )
-        locFunc( frames[i],mi->path,DWST_NO_DBG_SYM,NULL,ds );
+        locFunc( frames[i],mi->path,DWST_NO_DBG_SYM,NULL,ds,0 );
     }
 
     j = l - 1;
