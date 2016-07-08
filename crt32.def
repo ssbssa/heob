@@ -21,4 +21,4 @@ _ZdaPvRKSt9nothrow_t == ??_V@YAXPAX@Z
 ; delete(size_t)
 _ZdlPvj == ??3@YAXPAX@Z
 ; delete[](size_t)
-_ZdaPvj == ??3@YAXPAX@Z
+_ZdaPvj == ??_V@YAXPAX@Z
