@@ -430,19 +430,23 @@ static NOINLINE void trackAllocs(
         for( i=sf->freed_q-1; i>=0 && sf->freed_a[i].a.ptr!=free_ptr; i-- );
         if( i>=0 )
         {
-          allocation aa[3];
-          RtlMoveMemory( &aa[1],&sf->freed_a[i].a,sizeof(allocation) );
-          RtlMoveMemory( aa[2].frames,
-              sf->freed_a[i].frames,PTRS*sizeof(void*) );
+          freed f;
+          RtlMoveMemory( &f,&sf->freed_a[i],sizeof(freed) );
 
           LeaveCriticalSection( &sf->cs );
 
-          aa[2].ft = aa[1].ftFreed;
+          allocation aa[3];
+
           void **frames = aa[0].frames;
           int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
           if( ptrs<PTRS )
             RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
           aa[0].ft = ft;
+
+          RtlMoveMemory( &aa[1],&f.a,sizeof(allocation) );
+
+          RtlMoveMemory( aa[2].frames,f.frames,PTRS*sizeof(void*) );
+          aa[2].ft = aa[1].ftFreed;
 
           EnterCriticalSection( &rd->csWrite );
 
