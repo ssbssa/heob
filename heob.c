@@ -1763,7 +1763,7 @@ void mainCRTStartup( void )
             size_t leakContents = opt.leakContents;
             size_t content_pos = 0;
             int lDetails = opt.leakDetails ?
-              ( opt.leakDetails&1 ? LT_COUNT : LT_REACHABLE ) : 0;
+              ( (opt.leakDetails&1) ? LT_COUNT : LT_REACHABLE ) : 0;
             for( lc=0; lc<content_q; lc++ )
             {
               content_ptrs[lc] = contents + content_pos;
@@ -1874,7 +1874,7 @@ void mainCRTStartup( void )
         printf( "\n" );
       int l;
       int lMax = opt.leakDetails ? LT_COUNT : 0;
-      int lDetails = opt.leakDetails&1 ? LT_COUNT : LT_REACHABLE;
+      int lDetails = ( opt.leakDetails&1 ) ? LT_COUNT : LT_REACHABLE;
       for( l=0; l<lMax; l++ )
       {
         int ltCount = 0;

@@ -1194,7 +1194,7 @@ static VOID WINAPI new_ExitProcess( UINT c )
   size_t alloc_mem_sum = 0;
   size_t leakContents = rd->opt.leakContents;
   int lDetails = rd->opt.leakDetails ?
-    ( rd->opt.leakDetails&1 ? LT_COUNT : LT_REACHABLE ) : 0;
+    ( (rd->opt.leakDetails&1) ? LT_COUNT : LT_REACHABLE ) : 0;
   for( i=0; i<=SPLIT_MASK; i++ )
   {
     splitAllocation *sa = rd->splits + i;
