@@ -1397,8 +1397,9 @@ static void *protect_alloc_m( size_t s )
   uintptr_t align = rd->opt.align;
   s += ( align - (s%align) )%align;
 
+  size_t pageAdd = rd->pageAdd;
   DWORD pageSize = rd->pageSize;
-  size_t pages = ( s ? (s-1)/pageSize + 1 : 0 ) + rd->pageAdd;
+  size_t pages = ( s ? (s-1)/pageSize + 1 : 0 ) + pageAdd;
 
   unsigned char *b = (unsigned char*)VirtualAlloc(
       NULL,pages*pageSize,MEM_RESERVE,PAGE_NOACCESS );
@@ -1408,10 +1409,10 @@ static void *protect_alloc_m( size_t s )
   size_t slackSize = ( pageSize - (s%pageSize) )%pageSize;
 
   if( rd->opt.protect>1 )
-    b += pageSize*rd->pageAdd;
+    b += pageSize*pageAdd;
 
-  if( pages>rd->pageAdd )
-    VirtualAlloc( b,(pages-rd->pageAdd)*pageSize,MEM_COMMIT,PAGE_READWRITE );
+  if( pages>pageAdd )
+    VirtualAlloc( b,(pages-pageAdd)*pageSize,MEM_COMMIT,PAGE_READWRITE );
 
   if( slackSize && rd->opt.slackInit )
   {
@@ -1435,8 +1436,9 @@ static NOINLINE void protect_free_m( void *b,funcType ft )
 
   GET_REMOTEDATA( rd );
 
+  size_t pageAdd = rd->pageAdd;
   DWORD pageSize = rd->pageSize;
-  size_t pages = ( s ? (s-1)/pageSize + 1 : 0 ) + rd->pageAdd;
+  size_t pages = ( s ? (s-1)/pageSize + 1 : 0 ) + pageAdd;
 
   uintptr_t p = (uintptr_t)b;
   unsigned char *slackStart;
@@ -1451,7 +1453,7 @@ static NOINLINE void protect_free_m( void *b,funcType ft )
   {
     slackStart = ((unsigned char*)p) + s;
     slackSize = ( pageSize - (s%pageSize) )%pageSize;
-    p -= pageSize*rd->pageAdd;
+    p -= pageSize*pageAdd;
   }
 
   if( slackSize )
@@ -2075,6 +2077,11 @@ DLLEXPORT allocation *heob_find_allocation( uintptr_t addr )
 {
   GET_REMOTEDATA( rd );
 
+  if( !rd->opt.protect ) return( NULL );
+
+  int protect = rd->opt.protect;
+  size_t sizeAdd = rd->pageSize*rd->pageAdd;
+
   int i,j;
   splitAllocation *sa;
   for( j=SPLIT_MASK,sa=rd->splits; j>=0; j--,sa++ )
@@ -2085,14 +2092,14 @@ DLLEXPORT allocation *heob_find_allocation( uintptr_t addr )
       uintptr_t ptr = (uintptr_t)a->ptr;
       uintptr_t noAccessStart;
       uintptr_t noAccessEnd;
-      if( rd->opt.protect==1 )
+      if( protect==1 )
       {
         noAccessStart = ptr + a->size;
-        noAccessEnd = noAccessStart + rd->pageSize*rd->pageAdd;
+        noAccessEnd = noAccessStart + sizeAdd;
       }
       else
       {
-        noAccessStart = ptr - rd->pageSize*rd->pageAdd;
+        noAccessStart = ptr - sizeAdd;
         noAccessEnd = ptr;
       }
 
@@ -2109,6 +2116,10 @@ DLLEXPORT freed *heob_find_freed( uintptr_t addr )
 
   if( !rd->opt.protectFree ) return( NULL );
 
+  int protect = rd->opt.protect;
+  size_t sizeAdd = rd->pageSize*rd->pageAdd;
+  DWORD pageSize = rd->pageSize;
+
   int i,j;
   splitFreed *sf;
   for( j=SPLIT_MASK,sf=rd->freeds; j>=0; j--,sf++ )
@@ -2120,15 +2131,15 @@ DLLEXPORT freed *heob_find_freed( uintptr_t addr )
       size_t size = f->a.size;
       uintptr_t noAccessStart;
       uintptr_t noAccessEnd;
-      if( rd->opt.protect==1 )
+      if( protect==1 )
       {
-        noAccessStart = ptr - ( ptr%rd->pageSize );
-        noAccessEnd = ptr + f->a.size + rd->pageSize*rd->pageAdd;
+        noAccessStart = ptr - ( ptr%pageSize );
+        noAccessEnd = ptr + f->a.size + sizeAdd;
       }
       else
       {
-        noAccessStart = ptr - rd->pageSize*rd->pageAdd;
-        noAccessEnd = ptr + ( size?(size-1)/rd->pageSize+1:0 )*rd->pageSize;
+        noAccessStart = ptr - sizeAdd;
+        noAccessEnd = ptr + ( size?(size-1)/pageSize+1:0 )*pageSize;
       }
 
       if( addr>=noAccessStart && addr<noAccessEnd )
