@@ -1022,6 +1022,23 @@ static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbgsym *ds,
 }
 
 // }}}
+// thread name {{{
+
+#ifndef NO_THREADNAMES
+void printThreadName( int threadNameIdx,
+    textColor *tc,int threadName_q,threadNameInfo *threadName_a )
+{
+  if( threadNameIdx>0 && threadNameIdx<=threadName_q )
+    printf( " $S\"%s\"\n",threadName_a[threadNameIdx-1].name );
+  else
+    printf( "\n" );
+}
+#define printThreadName(tni) printThreadName(tni,tc,threadName_q,threadName_a)
+#else
+#define printThreadName(tni) printf("\n")
+#endif
+
+// }}}
 // read all requested data from pipe {{{
 
 static int readFile( HANDLE file,void *destV,size_t count )
@@ -1516,6 +1533,10 @@ void mainCRTStartup( void )
     int terminated = 0;
     unsigned char *contents = NULL;
     unsigned char **content_ptrs = NULL;
+#ifndef NO_THREADNAMES
+    int threadName_q = 0;
+    threadNameInfo *threadName_a = NULL;
+#endif
     while( readFile(readPipe,&type,sizeof(int)) )
     {
       switch( type )
@@ -1632,7 +1653,8 @@ void mainCRTStartup( void )
             printf( "\n$Wunhandled exception code: %x%s\n",
                 ei.er.ExceptionCode,desc );
 
-            printf( "$S  exception on:\n" );
+            printf( "$S  exception on:" );
+            printThreadName( ei.aa[0].threadNameIdx );
             printStack( ei.aa[0].frames,mi_a,mi_q,&ds,FT_COUNT );
 
             if( ei.er.ExceptionCode==EXCEPTION_ACCESS_VIOLATION &&
@@ -1652,12 +1674,14 @@ void mainCRTStartup( void )
                     ei.nearest?"near ":"",
                     ei.aq>2?"freed block":"protected area of",
                     ptr,size,addr>ptr?"+":"",addr-ptr );
-                printf( "$S  allocated on: $N(#%d)\n",ei.aa[1].id );
+                printf( "$S  allocated on: $N(#%d)",ei.aa[1].id );
+                printThreadName( ei.aa[1].threadNameIdx );
                 printStack( ei.aa[1].frames,mi_a,mi_q,&ds,ei.aa[1].ft );
 
                 if( ei.aq>2 )
                 {
-                  printf( "$S  freed on:\n" );
+                  printf( "$S  freed on:" );
+                  printThreadName( ei.aa[2].threadNameIdx );
                   printStack( ei.aa[2].frames,mi_a,mi_q,&ds,ei.aa[2].ft );
                 }
               }
@@ -1674,7 +1698,8 @@ void mainCRTStartup( void )
               break;
 
             printf( "\n$Wallocation failed of %U bytes\n",a.size );
-            printf( "$S  called on: $N(#%d)\n",a.id );
+            printf( "$S  called on: $N(#%d)",a.id );
+            printThreadName( a.threadNameIdx );
             printStack( a.frames,mi_a,mi_q,&ds,a.ft );
           }
           break;
@@ -1686,7 +1711,8 @@ void mainCRTStartup( void )
               break;
 
             printf( "\n$Wdeallocation of invalid pointer %p\n",a.ptr );
-            printf( "$S  called on:\n" );
+            printf( "$S  called on:" );
+            printThreadName( a.threadNameIdx );
             printStack( a.frames,mi_a,mi_q,&ds,a.ft );
           }
           break;
@@ -1698,13 +1724,16 @@ void mainCRTStartup( void )
               break;
 
             printf( "\n$Wdouble free of %p (size %U)\n",aa[1].ptr,aa[1].size );
-            printf( "$S  called on:\n" );
+            printf( "$S  called on:" );
+            printThreadName( aa[0].threadNameIdx );
             printStack( aa[0].frames,mi_a,mi_q,&ds,aa[0].ft );
 
-            printf( "$S  allocated on: $N(#%d)\n",aa[1].id );
+            printf( "$S  allocated on: $N(#%d)",aa[1].id );
+            printThreadName( aa[1].threadNameIdx );
             printStack( aa[1].frames,mi_a,mi_q,&ds,aa[1].ft );
 
-            printf( "$S  freed on:\n" );
+            printf( "$S  freed on:" );
+            printThreadName( aa[2].threadNameIdx );
             printStack( aa[2].frames,mi_a,mi_q,&ds,aa[2].ft );
           }
           break;
@@ -1719,9 +1748,11 @@ void mainCRTStartup( void )
             printf( "$I  slack area of %p (size %U, offset %s%D)\n",
                 aa[0].ptr,aa[0].size,
                 aa[1].ptr>aa[0].ptr?"+":"",(char*)aa[1].ptr-(char*)aa[0].ptr );
-            printf( "$S  allocated on: $N(#%d)\n",aa[0].id );
+            printf( "$S  allocated on: $N(#%d)",aa[0].id );
+            printThreadName( aa[0].threadNameIdx );
             printStack( aa[0].frames,mi_a,mi_q,&ds,aa[0].ft );
-            printf( "$S  freed on:\n" );
+            printf( "$S  freed on:" );
+            printThreadName( aa[1].threadNameIdx );
             printStack( aa[1].frames,mi_a,mi_q,&ds,aa[1].ft );
           }
           break;
@@ -1739,9 +1770,11 @@ void mainCRTStartup( void )
 
             printf( "\n$Wmismatching allocation/release method"
                 " of %p (size %U)\n",aa[0].ptr,aa[0].size );
-            printf( "$S  allocated on: $N(#%d)\n",aa[0].id );
+            printf( "$S  allocated on: $N(#%d)",aa[0].id );
+            printThreadName( aa[0].threadNameIdx );
             printStack( aa[0].frames,mi_a,mi_q,&ds,aa[0].ft );
-            printf( "$S  freed on:\n" );
+            printf( "$S  freed on:" );
+            printThreadName( aa[1].threadNameIdx );
             printStack( aa[1].frames,mi_a,mi_q,&ds,aa[1].ft );
           }
           break;
@@ -1788,6 +1821,30 @@ void mainCRTStartup( void )
                 id,funcnames[ft] );
           }
           break;
+
+#ifndef NO_THREADNAMES
+        case WRITE_THREAD_NAMES:
+          {
+            int add_q;
+            if( !readFile(readPipe,&add_q,sizeof(int)) )
+              break;
+            int old_q = threadName_q;
+            threadName_q += add_q;
+            if( !threadName_a )
+              threadName_a = HeapAlloc( heap,0,
+                  threadName_q*sizeof(threadNameInfo) );
+            else
+              threadName_a = HeapReAlloc( heap,0,
+                  threadName_a,threadName_q*sizeof(threadNameInfo) );
+            if( !readFile(readPipe,threadName_a+old_q,
+                  add_q*sizeof(threadNameInfo)) )
+            {
+              threadName_q = 0;
+              break;
+            }
+          }
+          break;
+#endif
       }
     }
 
@@ -1817,7 +1874,8 @@ void mainCRTStartup( void )
 
         if( exitTrace.at==AT_EXIT )
         {
-          printf( "$Sexit on:\n" );
+          printf( "$Sexit on:" );
+          printThreadName( exitTrace.threadNameIdx );
           printStack( exitTrace.frames,mi_a,mi_q,&ds,FT_COUNT );
         }
       }
@@ -1926,9 +1984,9 @@ void mainCRTStartup( void )
 
           if( l<lDetails )
           {
-            printf( "$W  %U B * %d = %U B $N(#%d)\n",
+            printf( "$W  %U B * %d = %U B $N(#%d)",
                 a.size,a.count,a.size*a.count,a.id );
-
+            printThreadName( a.threadNameIdx );
             printStack( a.frames,mi_a,mi_q,&ds,a.ft );
 
             if( content_ptrs && a.size )
@@ -1980,7 +2038,8 @@ void mainCRTStartup( void )
 
       if( exitTrace.at==AT_EXIT )
       {
-        printf( "$Sexit on:\n" );
+        printf( "$Sexit on:" );
+        printThreadName( exitTrace.threadNameIdx );
         printStack( exitTrace.frames,mi_a,mi_q,&ds,FT_COUNT );
       }
       printf( "$S%s code: %u (%x)\n",
@@ -1996,6 +2055,9 @@ void mainCRTStartup( void )
     if( mi_a ) HeapFree( heap,0,mi_a );
     if( contents ) HeapFree( heap,0,contents );
     if( content_ptrs ) HeapFree( heap,0,content_ptrs );
+#ifndef NO_THREADNAMES
+    if( threadName_a ) HeapFree( heap,0,threadName_a );
+#endif
     CloseHandle( readPipe );
   }
   CloseHandle( pi.hThread );

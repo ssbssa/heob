@@ -37,6 +37,9 @@ typedef struct
 {
   allocation a;
   void *frames[PTRS];
+#ifndef NO_THREADNAMES
+  int threadNameIdx;
+#endif
 }
 freed;
 
@@ -56,6 +59,16 @@ typedef struct
 }
 modMemType;
 
+typedef enum _THREADINFOCLASS
+{
+  ThreadBasicInformation,
+} THREADINFOCLASS;
+
+#define NTSTATUS LONG
+
+typedef LONG WINAPI func_NtQueryInformationThread(
+    HANDLE,THREADINFOCLASS,PVOID,ULONG,PULONG );
+
 typedef struct localData
 {
   func_LoadLibraryA *fLoadLibraryA;
@@ -64,6 +77,11 @@ typedef struct localData
   func_GetProcAddress *fGetProcAddress;
   func_ExitProcess *fExitProcess;
   func_TerminateProcess *fTerminateProcess;
+
+#ifndef NO_THREADNAMES
+  func_RaiseException *fRaiseException;
+  func_NtQueryInformationThread *fNtQueryInformationThread;
+#endif
 
   func_malloc *fmalloc;
   func_calloc *fcalloc;
@@ -110,6 +128,10 @@ typedef struct localData
   size_t pageAdd;
   HANDLE crtHeap;
 
+#ifndef NO_THREADNAMES
+  DWORD threadNameTls;
+#endif
+
   options opt;
 
   CRITICAL_SECTION csWrite;
@@ -130,6 +152,13 @@ typedef struct localData
   int raise_id;
   int raise_alloc_q;
   int *raise_alloc_a;
+
+#ifndef NO_THREADNAMES
+  threadNameInfo *threadName_a;
+  int threadName_q;
+  int threadName_s;
+  int threadName_w;
+#endif
 
   // }}}
   // protected by csFreedMod {{{
@@ -275,6 +304,19 @@ static void writeModsSend( modInfo *mi_a,int mi_q )
   WriteFile( rd->master,&mi_q,sizeof(int),&written,NULL );
   if( mi_q )
     WriteFile( rd->master,mi_a,mi_q*sizeof(modInfo),&written,NULL );
+
+#ifndef NO_THREADNAMES
+  if( rd->threadName_q>rd->threadName_w )
+  {
+    type = WRITE_THREAD_NAMES;
+    WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+    type = rd->threadName_q - rd->threadName_w;
+    WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+    WriteFile( rd->master,rd->threadName_a+rd->threadName_w,
+        type*sizeof(threadNameInfo),&written,NULL );
+    rd->threadName_w = rd->threadName_q;
+  }
+#endif
 }
 
 static void writeMods( allocation *alloc_a,int alloc_q )
@@ -341,6 +383,9 @@ static NOINLINE void trackAllocs(
         freed f;
         RtlMoveMemory( &f.a,&a,sizeof(allocation) );
         f.a.ftFreed = ft;
+#ifndef NO_THREADNAMES
+        f.threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
+#endif
 
         void **frames = f.frames;
         int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
@@ -396,6 +441,9 @@ static NOINLINE void trackAllocs(
         aa[1].at = at;
         aa[1].lt = LT_LOST;
         aa[1].ft = ft;
+#ifndef NO_THREADNAMES
+        aa[1].threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
+#endif
 
         EnterCriticalSection( &rd->csWrite );
 
@@ -442,11 +490,18 @@ static NOINLINE void trackAllocs(
           if( ptrs<PTRS )
             RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
           aa[0].ft = ft;
+#ifndef NO_THREADNAMES
+          aa[0].threadNameIdx =
+            (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
+#endif
 
           RtlMoveMemory( &aa[1],&f.a,sizeof(allocation) );
 
           RtlMoveMemory( aa[2].frames,f.frames,PTRS*sizeof(void*) );
           aa[2].ft = aa[1].ftFreed;
+#ifndef NO_THREADNAMES
+          aa[2].threadNameIdx = f.threadNameIdx;
+#endif
 
           EnterCriticalSection( &rd->csWrite );
 
@@ -485,6 +540,9 @@ static NOINLINE void trackAllocs(
         a.at = at;
         a.lt = LT_LOST;
         a.ft = ft;
+#ifndef NO_THREADNAMES
+        a.threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
+#endif
 
         void **frames = a.frames;
         int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
@@ -519,6 +577,9 @@ static NOINLINE void trackAllocs(
     a.at = at;
     a.lt = LT_LOST;
     a.ft = ft;
+#ifndef NO_THREADNAMES
+    a.threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
+#endif
 
     void **frames = a.frames;
     int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
@@ -592,6 +653,9 @@ static NOINLINE void trackAllocs(
     a.at = at;
     a.lt = LT_LOST;
     a.ft = ft;
+#ifndef NO_THREADNAMES
+    a.threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
+#endif
 
     void **frames = a.frames;
     int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
@@ -1275,6 +1339,149 @@ static BOOL WINAPI new_TerminateProcess( HANDLE p,UINT c )
 }
 
 // }}}
+// replacement for RaiseException {{{
+
+#ifndef NO_THREADNAMES
+#pragma pack(push,8)
+typedef struct tagTHREADNAME_INFO
+{
+  DWORD dwType;
+  LPCSTR szName;
+  DWORD dwThreadID;
+  DWORD dwFlags;
+} THREADNAME_INFO;
+#pragma pack(pop)
+
+typedef struct _TEB
+{
+  BYTE Reserved1[1952];
+  PVOID Reserved2[412];
+  PVOID TlsSlots[64];
+  BYTE Reserved3[8];
+  PVOID Reserved4[26];
+  PVOID ReservedForOle;
+  PVOID Reserved5[4];
+  PVOID *TlsExpansionSlots;
+} TEB, *PTEB;
+
+typedef struct _CLIENT_ID
+{
+  PVOID UniqueProcess;
+  PVOID UniqueThread;
+} CLIENT_ID, *PCLIENT_ID;
+
+typedef DWORD KPRIORITY;
+
+typedef struct _THREAD_BASIC_INFORMATION
+{
+  NTSTATUS ExitStatus;
+  PTEB TebBaseAddress;
+  CLIENT_ID ClientId;
+  KAFFINITY AffinityMask;
+  KPRIORITY Priority;
+  KPRIORITY BasePriority;
+} THREAD_BASIC_INFORMATION, *PTHREAD_BASIC_INFORMATION;
+
+static VOID WINAPI new_RaiseException(
+    DWORD dwExceptionCode,DWORD dwExceptionFlags,
+    DWORD nNumberOfArguments,const ULONG_PTR *lpArguments )
+{
+  GET_REMOTEDATA( rd );
+
+  if( dwExceptionCode==0x406d1388 &&
+      nNumberOfArguments==sizeof(THREADNAME_INFO)/sizeof(ULONG_PTR) )
+  {
+    const THREADNAME_INFO *tni = (const THREADNAME_INFO*)lpArguments;
+
+    if( tni->dwType==0x1000 && !tni->dwFlags )
+    {
+      EnterCriticalSection( &rd->csWrite );
+
+      int newNameIdx = 0;
+      if( tni->szName && tni->szName[0] )
+      {
+        for( newNameIdx=rd->threadName_q; newNameIdx>0 &&
+            lstrcmp(tni->szName,rd->threadName_a[newNameIdx-1].name);
+            newNameIdx-- );
+
+        if( !newNameIdx )
+        {
+          if( rd->threadName_q>=rd->threadName_s )
+          {
+            rd->threadName_s += 64;
+            threadNameInfo *threadName_an;
+            if( !rd->threadName_a )
+              threadName_an = HeapAlloc(
+                  rd->heap,0,rd->threadName_s*sizeof(threadNameInfo) );
+            else
+              threadName_an = HeapReAlloc(
+                  rd->heap,0,rd->threadName_a,
+                  rd->threadName_s*sizeof(threadNameInfo) );
+            if( !threadName_an )
+            {
+              DWORD written;
+              int type = WRITE_MAIN_ALLOC_FAIL;
+              WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+
+              LeaveCriticalSection( &rd->csWrite );
+
+              exitWait( 1,0 );
+            }
+            rd->threadName_a = threadName_an;
+          }
+          threadNameInfo *threadName = &rd->threadName_a[rd->threadName_q++];
+          size_t len = lstrlen( tni->szName );
+          if( len>=sizeof(threadName->name) )
+            len = sizeof(threadName->name) - 1;
+          RtlMoveMemory( threadName->name,tni->szName,len );
+          threadName->name[len] = 0;
+
+          newNameIdx = rd->threadName_q;
+        }
+      }
+
+      DWORD threadId = tni->dwThreadID;
+      DWORD threadNameTls = rd->threadNameTls;
+      if( threadId==(DWORD)-1 || threadId==GetCurrentThreadId() )
+        TlsSetValue( threadNameTls,(void*)(uintptr_t)newNameIdx );
+      else if( rd->fNtQueryInformationThread )
+      {
+        HANDLE thread = OpenThread(
+            THREAD_QUERY_INFORMATION,FALSE,threadId );
+        if( thread )
+        {
+          THREAD_BASIC_INFORMATION tbi;
+          RtlZeroMemory( &tbi,sizeof(THREAD_BASIC_INFORMATION) );
+          if( rd->fNtQueryInformationThread(thread,
+                ThreadBasicInformation,&tbi,sizeof(tbi),NULL)==0 )
+          {
+            PTEB teb = tbi.TebBaseAddress;
+            if( threadNameTls<64 )
+            {
+              void **tlsArr = teb->TlsSlots;
+              tlsArr[threadNameTls] = (void*)(uintptr_t)newNameIdx;
+            }
+            else
+            {
+              void **tlsArr = teb->TlsExpansionSlots;
+              if( tlsArr )
+                tlsArr[threadNameTls-64] = (void*)(uintptr_t)newNameIdx;
+            }
+          }
+          CloseHandle( thread );
+        }
+      }
+
+      LeaveCriticalSection( &rd->csWrite );
+    }
+  }
+
+  rd->fRaiseException( dwExceptionCode,dwExceptionFlags,
+      nNumberOfArguments,lpArguments );
+}
+#endif
+
+// }}}
 // replacements for LoadLibrary/FreeLibrary {{{
 
 static HMODULE WINAPI new_LoadLibraryA( LPCSTR name )
@@ -1482,6 +1689,9 @@ static NOINLINE void protect_free_m( void *b,funcType ft )
           RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
         aa[1].ptr = slackStart + i;
         aa[1].ft = ft;
+#ifndef NO_THREADNAMES
+        aa[1].threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
+#endif
 
         EnterCriticalSection( &rd->csWrite );
 
@@ -1974,9 +2184,15 @@ static void replaceModFuncs( void )
 
   const char *fname_ExitProcess = "ExitProcess";
   const char *fname_TerminateProcess = "TerminateProcess";
+#ifndef NO_THREADNAMES
+  const char *fname_RaiseException = "RaiseException";
+#endif
   replaceData rep2[] = {
     { fname_ExitProcess      ,&rd->fExitProcess      ,&new_ExitProcess      },
     { fname_TerminateProcess ,&rd->fTerminateProcess ,&new_TerminateProcess },
+#ifndef NO_THREADNAMES
+    { fname_RaiseException   ,&rd->fRaiseException   ,&new_RaiseException   },
+#endif
   };
   unsigned int rep2count = sizeof(rep2)/sizeof(replaceData);
 
@@ -2256,6 +2472,9 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
         RtlMoveMemory( &ei.aa[1],&f->a,sizeof(allocation) );
         RtlMoveMemory( &ei.aa[2].frames,&f->frames,PTRS*sizeof(void*) );
         ei.aa[2].ft = f->a.ftFreed;
+#ifndef NO_THREADNAMES
+        ei.aa[2].threadNameIdx = f->threadNameIdx;
+#endif
         ei.aq += 2;
       }
       else if( rd->opt.findNearest )
@@ -2273,6 +2492,9 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
           RtlMoveMemory( &ei.aa[1],&f->a,sizeof(allocation) );
           RtlMoveMemory( &ei.aa[2].frames,&f->frames,PTRS*sizeof(void*) );
           ei.aa[2].ft = f->a.ftFreed;
+#ifndef NO_THREADNAMES
+          ei.aa[2].threadNameIdx = f->threadNameIdx;
+#endif
           ei.aq += 2;
           ei.nearest = 2;
         }
@@ -2284,6 +2506,9 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 
   int count = 0;
   void **frames = ei.aa[0].frames;
+#ifndef NO_THREADNAMES
+  ei.aa[0].threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
+#endif
 
 #if USE_STACKWALK
   HMODULE symMod = NULL;
@@ -2579,6 +2804,14 @@ void inj( remoteData *rd,HMODULE app )
     RtlMoveMemory( ld->raise_alloc_a,
         rd->raise_alloc_a,rd->raise_alloc_q*sizeof(int) );
   ld->raise_id = ld->raise_alloc_q-- ? *(ld->raise_alloc_a++) : 0;
+
+#ifndef NO_THREADNAMES
+  HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
+  if( ntdll )
+    ld->fNtQueryInformationThread = rd->fGetProcAddress(
+        ntdll,"NtQueryInformationThread" );
+  ld->threadNameTls = TlsAlloc();
+#endif
 
   if( rd->opt.protect )
   {

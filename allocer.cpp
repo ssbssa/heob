@@ -61,6 +61,51 @@ static DWORD WINAPI workerThread( LPVOID arg )
 }
 
 
+const DWORD EXCEPTION_THREAD_NAME = 0x406D1388;
+
+#pragma pack(push,8)
+typedef struct tagTHREADNAME_INFO
+{
+  DWORD dwType;
+  LPCSTR szName;
+  DWORD dwThreadID;
+  DWORD dwFlags;
+} THREADNAME_INFO;
+#pragma pack(pop)
+
+static LONG CALLBACK ignoreNameException( PEXCEPTION_POINTERS ExceptionInfo )
+{
+  if( ExceptionInfo->ExceptionRecord->ExceptionCode==EXCEPTION_THREAD_NAME )
+    return EXCEPTION_CONTINUE_EXECUTION;
+  return EXCEPTION_CONTINUE_SEARCH;
+}
+
+static void SetThreadName( DWORD dwThreadID,const char *threadName )
+{
+  THREADNAME_INFO info;
+  info.dwType = 0x1000;
+  info.szName = threadName;
+  info.dwThreadID = dwThreadID;
+  info.dwFlags = 0;
+
+  PVOID veh = AddVectoredExceptionHandler( 1,ignoreNameException );
+
+  RaiseException( EXCEPTION_THREAD_NAME,0,
+      sizeof(info)/sizeof(ULONG_PTR),(ULONG_PTR*)&info );
+
+  RemoveVectoredExceptionHandler( veh );
+}
+
+static DWORD WINAPI namedThread( LPVOID arg )
+{
+  if( arg )
+    SetThreadName( -1,"self named thread" );
+
+  char *leak = (char*)malloc( 10 );
+  return leak[0];
+}
+
+
 void choose( int arg )
 {
   printf( "allocer: main()\n" );
@@ -389,6 +434,28 @@ void choose( int arg )
         WaitForMultipleObjects( THREAD_COUNT,threads,TRUE,INFINITE );
         for( int i=0; i<THREAD_COUNT; i++ )
           CloseHandle( threads[i] );
+      }
+      break;
+
+    case 26:
+      // thread names
+      {
+        SetThreadName( -1,"main thread" );
+        char *mainLeak = (char*)malloc( 11 );
+        mem[1] = mainLeak[0];
+
+        HANDLE thread = CreateThread(
+            NULL,0,&namedThread,(void*)1,0,NULL );
+        WaitForSingleObject( thread,INFINITE );
+        CloseHandle( thread );
+
+        DWORD threadId;
+        thread = CreateThread(
+            NULL,0,&namedThread,NULL,CREATE_SUSPENDED,&threadId );
+        SetThreadName( threadId,"remotely named thread" );
+        ResumeThread( thread );
+        WaitForSingleObject( thread,INFINITE );
+        CloseHandle( thread );
       }
       break;
   }

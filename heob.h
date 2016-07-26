@@ -58,6 +58,7 @@ typedef LPTOP_LEVEL_EXCEPTION_FILTER WINAPI func_SetUnhandledExceptionFilter(
     LPTOP_LEVEL_EXCEPTION_FILTER );
 typedef VOID WINAPI func_ExitProcess( UINT );
 typedef BOOL WINAPI func_TerminateProcess( HANDLE,UINT );
+typedef VOID WINAPI func_RaiseException( DWORD,DWORD,DWORD,const ULONG_PTR* );
 
 typedef void *func_malloc( size_t );
 typedef void *func_calloc( size_t,size_t );
@@ -171,6 +172,9 @@ typedef struct
   leakType lt : 8;
   funcType ft : 8;
   funcType ftFreed : 8;
+#ifndef NO_THREADNAMES
+  int threadNameIdx;
+#endif
 }
 allocation;
 
@@ -250,6 +254,9 @@ enum
   WRITE_WRONG_DEALLOC,
   WRITE_LEAK_CONTENTS,
   WRITE_RAISE_ALLOCATION,
+#ifndef NO_THREADNAMES
+  WRITE_THREAD_NAMES,
+#endif
 };
 
 typedef struct
@@ -268,6 +275,14 @@ typedef struct
   int nearest;
 }
 exceptionInfo;
+
+#ifndef NO_THREADNAMES
+typedef struct
+{
+  char name[64];
+}
+threadNameInfo;
+#endif
 
 // }}}
 
