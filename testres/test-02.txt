@@ -1,25 +1,25 @@
 allocer: main()
 
 leaks:
-  1000 B * 1 = 1000 B (#3)
+  1000 B (#3)
     [calloc]
-  52 B * 1 = 52 B (#5)
+  52 B (#5)
     [operator new[]]
-  12 B * 1 = 12 B (#4)
+  12 B (#4)
     [wcsdup]
-  8 B * 1 = 8 B (#2)
+  8 B (#2)
     [strdup]
-  8 B * 1 = 8 B (#7)
+  8 B (#7)
     [wgetcwd]
-  8 B * 1 = 8 B (#9)
+  8 B (#9)
     [wgetdcwd]
-  8 B * 1 = 8 B (#11)
+  8 B (#11)
     [wfullpath]
-  4 B * 1 = 4 B (#6)
+  4 B (#6)
     [getcwd]
-  4 B * 1 = 4 B (#8)
+  4 B (#8)
     [getdcwd]
-  4 B * 1 = 4 B (#10)
+  4 B (#10)
     [fullpath]
   sum: 1108 B / 10
 exit code: 1 (0xPTR)

@@ -1,7 +1,7 @@
 allocer: main()
 
 leaks:
-  504 B * 1 = 504 B (#2)
+  504 B (#2)
     [realloc]
   sum: 504 B / 1
 exit code: 19 (0xPTR)

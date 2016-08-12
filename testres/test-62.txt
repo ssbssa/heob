@@ -1,11 +1,11 @@
 allocer: main()
 
 leaks:
-  16 B * 1 = 16 B (#2) "main thread"
+  16 B (#2) "main thread"
     [malloc]
-  16 B * 1 = 16 B (#3) "self named thread"
+  16 B (#3) "self named thread"
     [malloc]
-  16 B * 1 = 16 B (#4) "remotely named thread"
+  16 B (#4) "remotely named thread"
     [malloc]
   sum: 48 B / 3
 exit code: 26 (0xPTR)

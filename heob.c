@@ -1984,8 +1984,10 @@ void mainCRTStartup( void )
 
           if( l<lDetails )
           {
-            printf( "$W  %U B * %d = %U B $N(#%d)",
-                a.size,a.count,a.size*a.count,a.id );
+            printf( "$W  %U B ",a.size );
+            if( a.count>1 )
+              printf( "* %d = %U B ",a.count,a.size*a.count );
+            printf( "$N(#%d)",a.id );
             printThreadName( a.threadNameIdx );
             printStack( a.frames,mi_a,mi_q,&ds,a.ft );
 
