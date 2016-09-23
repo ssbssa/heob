@@ -129,6 +129,7 @@ typedef struct localData
   DWORD pageSize;
   size_t pageAdd;
   HANDLE crtHeap;
+  int processors;
 
 #ifndef NO_THREADNAMES
   DWORD threadNameTls;
@@ -138,6 +139,7 @@ typedef struct localData
 
   CRITICAL_SECTION csWrite;
   CRITICAL_SECTION csFreedMod;
+  CRITICAL_SECTION csLeakType;
 
   // protected by csWrite {{{
 
@@ -1086,21 +1088,39 @@ static void addModMem( PBYTE start,PBYTE end )
   mod_mem->end = (const void**)endPtr;
 }
 
-static void findLeakType( leakType lt )
+typedef struct
+{
+  leakType lt;
+  modMemType *mod_mem_a;
+  int mod_mem_q;
+  LONG idx;
+}
+leakTypeInfo;
+
+typedef struct
+{
+  HANDLE startEvent;
+  HANDLE finishedEvent;
+  leakTypeInfo *lti;
+}
+leakTypeThreadInfo;
+
+static void findLeakTypeWork( leakTypeInfo *lti )
 {
   GET_REMOTEDATA( rd );
 
-  modMemType *mod_mem_a = rd->mod_mem_a;
-  int mod_mem_q = rd->mod_mem_q;
-  rd->mod_mem_a = NULL;
-  rd->mod_mem_q = rd->mod_mem_s = 0;
-  if( !mod_mem_a ) return;
+  leakType lt = lti->lt;
+  modMemType *mod_mem_a = lti->mod_mem_a;
+  int mod_mem_q = lti->mod_mem_q;
 
-  int i,j,k;
   int compareExact = rd->opt.leakDetails<4;
   int ltUse = lt==LT_INDIRECTLY_LOST ? LT_JOINTLY_LOST : LT_LOST;
-  for( i=0; i<=SPLIT_MASK; i++ )
+  while( 1 )
   {
+    int i = InterlockedIncrement( &lti->idx );
+    if( i>SPLIT_MASK ) break;
+
+    int j;
     splitAllocation *sa = rd->splits + i;
     int alloc_q = sa->alloc_q;
     allocation *alloc_a = sa->alloc_a;
@@ -1108,6 +1128,7 @@ static void findLeakType( leakType lt )
     {
       allocation *a = alloc_a + j;
       if( a->lt!=ltUse ) continue;
+      int k;
       uintptr_t ptr = (uintptr_t)a->ptr;
       uintptr_t ptrEnd = ptr + a->size;
       for( k=0; k<mod_mem_q; k++ )
@@ -1131,7 +1152,9 @@ static void findLeakType( leakType lt )
           if( lt!=LT_JOINTLY_LOST )
           {
             PBYTE memStart = a->ptr;
+            EnterCriticalSection( &rd->csLeakType );
             addModMem( memStart,memStart+a->size );
+            LeaveCriticalSection( &rd->csLeakType );
           }
           break;
         }
@@ -1139,7 +1162,111 @@ static void findLeakType( leakType lt )
       }
     }
   }
+}
+
+static DWORD WINAPI findLeakTypeThread( LPVOID arg )
+{
+  leakTypeThreadInfo *ltti = arg;
+  HANDLE startEvent = ltti->startEvent;
+  HANDLE finishedEvent = ltti->finishedEvent;
+
+  while( 1 )
+  {
+    WaitForSingleObject( startEvent,INFINITE );
+
+    findLeakTypeWork( ltti->lti );
+
+    SetEvent( finishedEvent );
+  }
+
+  return( 0 );
+}
+
+static void findLeakType( leakType lt,
+    leakTypeThreadInfo *ltti,HANDLE *finishedEvents )
+{
+  GET_REMOTEDATA( rd );
+
+  modMemType *mod_mem_a = rd->mod_mem_a;
+  int mod_mem_q = rd->mod_mem_q;
+  rd->mod_mem_a = NULL;
+  rd->mod_mem_q = rd->mod_mem_s = 0;
+  if( !mod_mem_a ) return;
+
+  leakTypeInfo lti;
+  lti.lt = lt;
+  lti.mod_mem_a = mod_mem_a;
+  lti.mod_mem_q = mod_mem_q;
+  lti.idx = -1;
+
+  if( ltti )
+  {
+    int t;
+    for( t=0; t<rd->processors; t++ )
+    {
+      ltti[t].lti = &lti;
+      SetEvent( ltti[t].startEvent );
+    }
+    WaitForMultipleObjects( rd->processors,finishedEvents,TRUE,INFINITE );
+  }
+  else
+    findLeakTypeWork( &lti );
+
   HeapFree( rd->heap,0,mod_mem_a );
+}
+
+void findLeakTypes( void )
+{
+  GET_REMOTEDATA( rd );
+
+  SetPriorityClass( GetCurrentProcess(),BELOW_NORMAL_PRIORITY_CLASS );
+
+  leakTypeThreadInfo *ltti = NULL;
+  HANDLE *finishedEvents = NULL;
+  int processors = rd->processors;
+  if( processors>1 )
+  {
+    ltti = HeapAlloc( rd->heap,0,processors*sizeof(leakTypeThreadInfo) );
+    finishedEvents = HeapAlloc( rd->heap,0,processors*sizeof(HANDLE) );
+    int t;
+    for( t=0; t<processors; t++ )
+    {
+      ltti[t].startEvent = CreateEvent( NULL,FALSE,FALSE,NULL );
+      ltti[t].finishedEvent = CreateEvent( NULL,FALSE,FALSE,NULL );
+      finishedEvents[t] = ltti[t].finishedEvent;
+      HANDLE thread = CreateThread( NULL,0,&findLeakTypeThread,ltti+t,0,NULL );
+      CloseHandle( thread );
+    }
+  }
+
+  findLeakType( LT_REACHABLE,ltti,finishedEvents );
+  while( rd->mod_mem_a )
+    findLeakType( LT_INDIRECTLY_REACHABLE,ltti,finishedEvents );
+
+  int k;
+  for( k=0; k<2; k++ )
+  {
+    int i,j;
+    for( i=0; i<=SPLIT_MASK; i++ )
+    {
+      splitAllocation *sa = rd->splits + i;
+      int alloc_q = sa->alloc_q;
+      allocation *alloc_a = sa->alloc_a;
+      for( j=0; j<alloc_q; j++ )
+      {
+        allocation *a = alloc_a + j;
+        if( a->lt!=LT_LOST ) continue;
+        PBYTE memStart = a->ptr;
+        addModMem( memStart,memStart+a->size );
+      }
+    }
+    leakType lt = k ? LT_INDIRECTLY_LOST : LT_JOINTLY_LOST;
+    while( rd->mod_mem_a )
+      findLeakType( lt,ltti,finishedEvents );
+  }
+
+  if( ltti ) HeapFree( rd->heap,0,ltti );
+  if( finishedEvents ) HeapFree( rd->heap,0,finishedEvents );
 }
 
 // }}}
@@ -1167,33 +1294,7 @@ static VOID WINAPI new_ExitProcess( UINT c )
     EnterCriticalSection( &rd->splits[i].cs );
 
   if( rd->opt.leakDetails>1 )
-  {
-    findLeakType( LT_REACHABLE );
-    while( rd->mod_mem_a )
-      findLeakType( LT_INDIRECTLY_REACHABLE );
-
-    int k;
-    for( k=0; k<2; k++ )
-    {
-      int j;
-      for( i=0; i<=SPLIT_MASK; i++ )
-      {
-        splitAllocation *sa = rd->splits + i;
-        int alloc_q = sa->alloc_q;
-        allocation *alloc_a = sa->alloc_a;
-        for( j=0; j<alloc_q; j++ )
-        {
-          allocation *a = alloc_a + j;
-          if( a->lt!=LT_LOST ) continue;
-          PBYTE memStart = a->ptr;
-          addModMem( memStart,memStart+a->size );
-        }
-      }
-      leakType lt = k ? LT_INDIRECTLY_LOST : LT_JOINTLY_LOST;
-      while( rd->mod_mem_a )
-        findLeakType( lt );
-    }
-  }
+    findLeakTypes();
 
   if( rd->opt.exitTrace )
     trackAllocs( NULL,(void*)-1,0,AT_EXIT,FT_COUNT );
@@ -2777,6 +2878,7 @@ void inj( remoteData *rd,HMODULE app )
   GetSystemInfo( &si );
   ld->pageSize = si.dwPageSize;
   ld->pageAdd = ( rd->opt.minProtectSize+(ld->pageSize-1) )/ld->pageSize;
+  ld->processors = si.dwNumberOfProcessors;
 
   ld->splits = HeapAlloc( heap,HEAP_ZERO_MEMORY,
       (SPLIT_MASK+1)*sizeof(splitAllocation) );
@@ -2800,6 +2902,8 @@ void inj( remoteData *rd,HMODULE app )
         fInitCritSecEx( &ld->freeds[i].cs,
             4000,CRITICAL_SECTION_NO_DEBUG_INFO );
     }
+    if( rd->opt.leakDetails>1 )
+      fInitCritSecEx( &ld->csLeakType,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
   }
   else
   {
@@ -2812,6 +2916,8 @@ void inj( remoteData *rd,HMODULE app )
       if( rd->opt.protectFree )
         InitializeCriticalSection( &ld->freeds[i].cs );
     }
+    if( rd->opt.leakDetails>1 )
+      InitializeCriticalSection( &ld->csLeakType );
   }
 
   ld->ptrShift = 5;

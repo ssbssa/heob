@@ -458,6 +458,19 @@ void choose( int arg )
         CloseHandle( thread );
       }
       break;
+
+    case 27:
+      // benchmark: leak type detection
+      {
+        unsigned char v = 0;
+        for( int i=0; i<4000; i++ )
+        {
+          unsigned char *b = (unsigned char*)malloc( 10000 );
+          v += b[0];
+        }
+        mem[1] = v;
+      }
+      break;
   }
 
   mem = (char*)realloc( mem,30 );
