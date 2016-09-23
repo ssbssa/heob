@@ -116,6 +116,8 @@ typedef struct localData
 
   HANDLE master;
   HMODULE kernel32;
+  HMODULE msvcrt;
+  HMODULE ucrtbase;
 
   splitAllocation *splits;
   int ptrShift;
@@ -2053,7 +2055,8 @@ static void addModule( HMODULE mod )
 }
 
 static HMODULE replaceFuncs( HMODULE app,
-    replaceData *rep,unsigned int count )
+    replaceData *rep,unsigned int count,
+    HMODULE msvcrt,int findCRT,HMODULE ucrtbase )
 {
   if( !app ) return( NULL );
 
@@ -2086,6 +2089,8 @@ static HMODULE replaceFuncs( HMODULE app,
     if( rd->opt.dlls )
       addModule( curModule );
 
+    if( msvcrt && curModule!=msvcrt ) continue;
+
     PIMAGE_THUNK_DATA thunk =
       (PIMAGE_THUNK_DATA)REL_PTR( idh,iid[i].FirstThunk );
     PIMAGE_THUNK_DATA originalThunk =
@@ -2111,7 +2116,39 @@ static HMODULE replaceFuncs( HMODULE app,
       }
       if( !origFunc ) continue;
 
-      repModule = curModule;
+      if( ucrtbase && curModule!=ucrtbase )
+      {
+        HMODULE funcMod;
+        if( GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|
+              GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+              (LPCSTR)thunk->u1.Function,&funcMod) &&
+            funcMod==ucrtbase )
+          curModule = ucrtbase;
+        else
+          break;
+      }
+
+      if( findCRT )
+      {
+        ucrtbase = GetModuleHandle( "ucrtbase.dll" );
+        if( ucrtbase )
+        {
+          HMODULE funcMod;
+          if( GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|
+                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                (LPCSTR)thunk->u1.Function,&funcMod) &&
+              funcMod==ucrtbase )
+          {
+            curModule = ucrtbase;
+            rd->ucrtbase = ucrtbase;
+          }
+          else
+            ucrtbase = NULL;
+        }
+        findCRT = 0;
+      }
+      if( !repModule )
+        repModule = curModule;
 
       DWORD prot;
       if( !VirtualProtect(thunk,sizeof(size_t),
@@ -2204,23 +2241,15 @@ static void replaceModFuncs( void )
     { fname_FreeLibrary    ,&rd->fFreeLibrary    ,&new_FreeLibrary     },
   };
 
-  HMODULE dll_ucrtbase = GetModuleHandle( "ucrtbase.dll" );
-  if( dll_ucrtbase && !rd->opt.protect )
-  {
-    unsigned int i;
-    for( i=0; i<sizeof(rep)/sizeof(replaceData); i++ )
-    {
-      *(void**)rep[i].origFunc =
-        rd->fGetProcAddress( dll_ucrtbase,rep[i].funcName );
-    }
-  }
-
+  HMODULE msvcrt = rd->msvcrt;
+  HMODULE ucrtbase = rd->ucrtbase;
   for( ; rd->mod_d<rd->mod_q; rd->mod_d++ )
   {
     HMODULE mod = rd->mod_a[rd->mod_d];
 
     HMODULE dll_msvcrt = rd->opt.handleException>=2 ? NULL :
-      replaceFuncs( mod,rep,sizeof(rep)/sizeof(replaceData) );
+      replaceFuncs( mod,rep,sizeof(rep)/sizeof(replaceData),
+          msvcrt,!rd->mod_d,ucrtbase );
     if( !rd->mod_d && rd->opt.handleException<2 )
     {
       if( !dll_msvcrt )
@@ -2228,7 +2257,10 @@ static void replaceModFuncs( void )
         rd->master = NULL;
         return;
       }
-      if( dll_ucrtbase ) dll_msvcrt = dll_ucrtbase;
+
+      ucrtbase = rd->ucrtbase;
+      if( !ucrtbase )
+        msvcrt = dll_msvcrt;
       addModule( dll_msvcrt );
 
       if( rd->opt.protect )
@@ -2278,11 +2310,12 @@ static void replaceModFuncs( void )
 
     unsigned int i;
     for( i=0; i<rep2count; i++ )
-      replaceFuncs( mod,rep2+i,1 );
+      replaceFuncs( mod,rep2+i,1,NULL,0,NULL );
 
     if( rd->opt.dlls>1 )
-      replaceFuncs( mod,repLL,sizeof(repLL)/sizeof(replaceData) );
+      replaceFuncs( mod,repLL,sizeof(repLL)/sizeof(replaceData),NULL,0,NULL );
   }
+  rd->msvcrt = msvcrt;
 }
 
 // }}}
