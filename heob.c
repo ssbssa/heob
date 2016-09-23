@@ -1941,6 +1941,7 @@ void mainCRTStartup( void )
         {
           int best = -1;
           allocation a;
+          size_t fullSizeA = 0;
 
           int j;
           for( j=0; j<combined_q; j++ )
@@ -1948,12 +1949,13 @@ void mainCRTStartup( void )
             allocation b = alloc_a[j];
             if( !b.count || b.lt!=l ) continue;
 
+            size_t fullSizeB = b.size*b.count;
             int use = 0;
             if( best<0 )
               use = 1;
-            else if( b.size>a.size )
+            else if( fullSizeB>fullSizeA )
               use = 1;
-            else if( b.size==a.size )
+            else if( fullSizeB==fullSizeA )
             {
               if( b.ft<a.ft )
                 use = 1;
@@ -1967,6 +1969,7 @@ void mainCRTStartup( void )
             {
               best = j;
               a = b;
+              fullSizeA = fullSizeB;
             }
           }
           if( best<0 ) break;
@@ -1980,13 +1983,13 @@ void mainCRTStartup( void )
                 l==LT_REACHABLE?"reachable":"indirectly reachable" );
 
           ltCount += a.count;
-          ltSumSize += a.size*a.count;
+          ltSumSize += fullSizeA;
 
           if( l<lDetails )
           {
             printf( "$W  %U B ",a.size );
             if( a.count>1 )
-              printf( "* %d = %U B ",a.count,a.size*a.count );
+              printf( "* %d = %U B ",a.count,fullSizeA );
             printf( "$N(#%d)",a.id );
             printThreadName( a.threadNameIdx );
             printStack( a.frames,mi_a,mi_q,&ds,a.ft );
