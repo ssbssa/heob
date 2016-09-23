@@ -1,12 +1,4 @@
 allocer: main()
 
-deallocation of invalid pointer 0xPTR
-  called on:
-    [operator delete]
-
-deallocation of invalid pointer 0xPTR
-  called on:
-    [operator delete[]]
-
 no leaks found
 exit code: 21 (0xPTR)

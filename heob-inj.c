@@ -521,9 +521,8 @@ static NOINLINE void trackAllocs(
           LeaveCriticalSection( &sf->cs );
       }
 
-      if( i>=0 );
-      else if( rd->crtHeap &&
-          heap_block_size(rd->crtHeap,free_ptr)!=(size_t)-1 )
+      if( i>=0 || !rd->crtHeap );
+      else if( heap_block_size(rd->crtHeap,free_ptr)!=(size_t)-1 )
       {
         if( at==AT_MALLOC )
           rd->ofree( free_ptr );
