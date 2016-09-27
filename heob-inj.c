@@ -101,6 +101,7 @@ typedef struct localData
   func_wfullpath *fwfullpath;
   func_tempnam *ftempnam;
   func_wtempnam *fwtempnam;
+  func_free_dbg *ffree_dbg;
 
   func_free *ofree;
   func_free *oop_delete;
@@ -1046,6 +1047,14 @@ static wchar_t *new_wtempnam( wchar_t *dir,wchar_t *prefix )
 #endif
 
   return( tn );
+}
+
+static void new_free_dbg( void *b,int blockType )
+{
+  GET_REMOTEDATA( rd );
+  rd->ffree_dbg( b,blockType );
+
+  trackAllocs( b,NULL,-1,AT_MALLOC,FT_FREE_DBG );
 }
 
 // }}}
@@ -2111,6 +2120,12 @@ static wchar_t *protect_wtempnam( wchar_t *dir,wchar_t *prefix )
   return( tn_copy );
 }
 
+static void protect_free_dbg( void *b,int blockType )
+{
+  (void)blockType;
+  protect_free_m( b,FT_FREE );
+}
+
 // }}}
 // function replacement {{{
 
@@ -2298,6 +2313,7 @@ static void replaceModFuncs( void )
   const char *fname_wfullpath = "_wfullpath";
   const char *fname_tempnam = "_tempnam";
   const char *fname_wtempnam = "_wtempnam";
+  const char *fname_free_dbg = "_free_dbg";
   replaceData rep[] = {
     { fname_malloc         ,&rd->fmalloc         ,&new_malloc          },
     { fname_calloc         ,&rd->fcalloc         ,&new_calloc          },
@@ -2317,6 +2333,7 @@ static void replaceModFuncs( void )
     { fname_wfullpath      ,&rd->fwfullpath      ,&new_wfullpath       },
     { fname_tempnam        ,&rd->ftempnam        ,&new_tempnam         },
     { fname_wtempnam       ,&rd->fwtempnam       ,&new_wtempnam        },
+    { fname_free_dbg       ,&rd->ffree_dbg       ,&new_free_dbg        },
   };
 
   const char *fname_ExitProcess = "ExitProcess";
@@ -2971,6 +2988,7 @@ void inj( remoteData *rd,HMODULE app )
     ld->fwfullpath = &protect_wfullpath;
     ld->ftempnam = &protect_tempnam;
     ld->fwtempnam = &protect_wtempnam;
+    ld->ffree_dbg = &protect_free_dbg;
   }
 
   if( rd->opt.handleException )

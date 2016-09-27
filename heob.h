@@ -74,6 +74,7 @@ typedef char *func_fullpath( char*,const char*,size_t );
 typedef wchar_t *func_wfullpath( wchar_t*,const wchar_t*,size_t );
 typedef char *func_tempnam( char*,char* );
 typedef wchar_t *func_wtempnam( wchar_t*,wchar_t* );
+typedef void func_free_dbg( void*,int );
 
 #ifndef NO_DBGHELP
 typedef DWORD WINAPI func_SymSetOptions( DWORD );
@@ -155,6 +156,7 @@ typedef enum
   FT_WFULLPATH,
   FT_TEMPNAM,
   FT_WTEMPNAM,
+  FT_FREE_DBG,
   FT_COUNT,
 }
 funcType;

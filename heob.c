@@ -1322,6 +1322,7 @@ void mainCRTStartup( void )
     "wfullpath",
     "tempnam",
     "wtempnam",
+    "free_dbg",
   };
 
   if( a2l_mi_a )
