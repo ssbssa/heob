@@ -1056,6 +1056,81 @@ static int readFile( HANDLE file,void *destV,size_t count )
 }
 
 // }}}
+// leak sorting {{{
+
+static inline void swap_idxs( int *a,int *b )
+{
+  int t = *a;
+  *a = *b;
+  *b = t;
+}
+
+static void sort_allocations( allocation *a,int *idxs,int num,
+    int (*compar)(const allocation*,const allocation*) )
+{
+  int c,r;
+  int i = num/2 - 1;
+
+  for( ; i>=0; i-- )
+  {
+    for( r=i; r*2+1<num; r=c )
+    {
+      c = r*2 + 1;
+      if( c<num-1 && compar(a+idxs[c],a+idxs[c+1])<0 )
+        c++;
+      if( compar(a+idxs[r],a+idxs[c])>=0 )
+        break;
+      swap_idxs( idxs+r,idxs+c );
+    }
+  }
+
+  for( i=num-1; i>0; i-- )
+  {
+    swap_idxs( idxs,idxs+i );
+    for( r=0; r*2+1<i; r=c )
+    {
+      c = r*2 + 1;
+      if( c<i-1 && compar(a+idxs[c],a+idxs[c+1])<0 )
+        c++;
+      if( compar(a+idxs[r],a+idxs[c])>=0 )
+        break;
+      swap_idxs( idxs+r,idxs+c );
+    }
+  }
+}
+
+static int cmp_merge_allocation( const allocation *a,const allocation *b )
+{
+  if( a->lt>b->lt ) return( 2 );
+  if( a->lt<b->lt ) return( -2 );
+
+  if( a->size>b->size ) return( -2 );
+  if( a->size<b->size ) return( 2 );
+
+  if( a->ft>b->ft ) return( 2 );
+  if( a->ft<b->ft ) return( -2 );
+
+  int c = memcmp( a->frames,b->frames,PTRS*sizeof(void*) );
+  if( c ) return( c>0 ? 2 : -2 );
+
+  return( a->id>b->id ? 1 : -1 );
+}
+
+static int cmp_type_allocation( const allocation *a,const allocation *b )
+{
+  if( a->lt>b->lt ) return( 2 );
+  if( a->lt<b->lt ) return( -2 );
+
+  if( a->size>b->size ) return( -2 );
+  if( a->size<b->size ) return( 2 );
+
+  if( a->ft>b->ft ) return( 2 );
+  if( a->ft<b->ft ) return( -2 );
+
+  return( a->id>b->id ? 1 : -1 );
+}
+
+// }}}
 // main {{{
 
 void mainCRTStartup( void )
@@ -1888,44 +1963,38 @@ void mainCRTStartup( void )
     {
       int i;
       size_t sumSize = 0;
-      int combined_q = 0;
+      int combined_q = alloc_q;
+      int *alloc_idxs =
+        opt.leakDetails ? HeapAlloc( heap,0,alloc_q*sizeof(int) ) : NULL;
       for( i=0; i<alloc_q; i++ )
       {
-        allocation a;
-        a = alloc_a[i];
-
-        if( !a.ptr ) continue;
-
-        size_t size = a.size;
-        int content_idx = i;
-        a.count = 1;
-        if( opt.mergeLeaks )
+        sumSize += alloc_a[i].size;
+        alloc_a[i].count = 1;
+        if( alloc_idxs )
+          alloc_idxs[i] = i;
+      }
+      if( opt.mergeLeaks && opt.leakDetails )
+      {
+        sort_allocations( alloc_a,alloc_idxs,alloc_q,cmp_merge_allocation );
+        combined_q = 0;
+        for( i=0; i<alloc_q; )
         {
+          allocation a;
+          int idx = alloc_idxs[i];
+          a = alloc_a[idx];
           int j;
           for( j=i+1; j<alloc_q; j++ )
           {
-            if( !alloc_a[j].ptr ||
-                a.size!=alloc_a[j].size ||
-                a.lt!=alloc_a[j].lt ||
-                a.ft!=alloc_a[j].ft ||
-                memcmp(a.frames,alloc_a[j].frames,PTRS*sizeof(void*)) )
-              continue;
+            int c = cmp_merge_allocation( &a,alloc_a+alloc_idxs[j] );
+            if( c<-1 || c>1 ) break;
 
-            size += alloc_a[j].size;
-            alloc_a[j].ptr = NULL;
             a.count++;
-            if( alloc_a[j].id<a.id )
-            {
-              a.id = alloc_a[j].id;
-              content_idx = j;
-            }
           }
-        }
-        sumSize += size;
 
-        if( content_ptrs && content_idx!=combined_q )
-          content_ptrs[combined_q] = content_ptrs[content_idx];
-        alloc_a[combined_q++] = a;
+          alloc_a[idx] = a;
+          alloc_idxs[combined_q++] = idx;
+          i = j;
+        }
       }
       if( opt.leakDetails<=1 )
         printf( "\n$Sleaks:\n" );
@@ -1934,63 +2003,39 @@ void mainCRTStartup( void )
       int l;
       int lMax = opt.leakDetails ? LT_COUNT : 0;
       int lDetails = ( opt.leakDetails&1 ) ? LT_COUNT : LT_REACHABLE;
-      for( l=0; l<lMax; l++ )
+      if( opt.leakDetails )
+      {
+        for( i=0; i<combined_q; i++ )
+          alloc_a[alloc_idxs[i]].size *= alloc_a[alloc_idxs[i]].count;
+        sort_allocations( alloc_a,alloc_idxs,combined_q,cmp_type_allocation );
+        for( i=0; i<combined_q; i++ )
+          alloc_a[alloc_idxs[i]].size /= alloc_a[alloc_idxs[i]].count;
+      }
+      for( l=0,i=0; l<lMax; l++ )
       {
         int ltCount = 0;
         size_t ltSumSize = 0;
-        for( i=0; i<combined_q; i++ )
+        for( ; i<combined_q; i++ )
         {
-          int best = -1;
           allocation a;
-          size_t fullSizeA = 0;
+          a = alloc_a[alloc_idxs[i]];
+          if( a.lt<l ) continue;
+          if( a.lt>l ) break;
 
-          int j;
-          for( j=0; j<combined_q; j++ )
-          {
-            allocation b = alloc_a[j];
-            if( !b.count || b.lt!=l ) continue;
-
-            size_t fullSizeB = b.size*b.count;
-            int use = 0;
-            if( best<0 )
-              use = 1;
-            else if( fullSizeB>fullSizeA )
-              use = 1;
-            else if( fullSizeB==fullSizeA )
-            {
-              if( b.ft<a.ft )
-                use = 1;
-              else if( b.ft==a.ft )
-              {
-                if( b.id<a.id )
-                  use = 1;
-              }
-            }
-            if( use )
-            {
-              best = j;
-              a = b;
-              fullSizeA = fullSizeB;
-            }
-          }
-          if( best<0 ) break;
-
-          alloc_a[best].count = 0;
-
-          if( opt.leakDetails>1 && !i )
+          if( opt.leakDetails>1 && !ltCount )
             printf( "$Sleaks (%s):\n",
                 l==LT_LOST?"lost":l==LT_JOINTLY_LOST?"jointly lost":
                 l==LT_INDIRECTLY_LOST?"indirectly lost":
                 l==LT_REACHABLE?"reachable":"indirectly reachable" );
 
           ltCount += a.count;
-          ltSumSize += fullSizeA;
+          ltSumSize += a.size*a.count;
 
           if( l<lDetails )
           {
             printf( "$W  %U B ",a.size );
             if( a.count>1 )
-              printf( "* %d = %U B ",a.count,fullSizeA );
+              printf( "* %d = %U B ",a.count,a.size*a.count );
             printf( "$N(#%d)",a.id );
             printThreadName( a.threadNameIdx );
             printStack( a.frames,mi_a,mi_q,&ds,a.ft );
@@ -2000,7 +2045,7 @@ void mainCRTStartup( void )
               int s = a.size<(size_t)opt.leakContents ?
                 (int)a.size : opt.leakContents;
               char text[5] = { 0,0,0,0,0 };
-              unsigned char *content = content_ptrs[best];
+              unsigned char *content = content_ptrs[alloc_idxs[i]];
               int lines = ( s+15 )/16;
               int lc;
               for( lc=0; lc<lines; lc++,s-=16 )
@@ -2041,6 +2086,8 @@ void mainCRTStartup( void )
       }
       if( opt.leakDetails<=1 )
         printf( "$W  sum: %U B / %d\n",sumSize,alloc_q );
+      if( alloc_idxs )
+        HeapFree( heap,0,alloc_idxs );
 
       if( exitTrace.at==AT_EXIT )
       {
