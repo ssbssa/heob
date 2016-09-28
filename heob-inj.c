@@ -337,7 +337,7 @@ static void writeMods( allocation *alloc_a,int alloc_q )
 }
 
 // }}}
-// low-level function for memory allocation tracking {{{
+// memory allocation tracking {{{
 
 static NOINLINE size_t heap_block_size( HANDLE heap,void *ptr )
 {
@@ -1058,7 +1058,7 @@ static void new_free_dbg( void *b,int blockType )
 }
 
 // }}}
-// low-level functions for leak type detection {{{
+// leak type detection {{{
 
 static void addModMem( PBYTE start,PBYTE end )
 {
@@ -1688,7 +1688,7 @@ static BOOL WINAPI new_FreeLibrary( HMODULE mod )
 }
 
 // }}}
-// low-level functions for page protection {{{
+// page protection {{{
 
 static size_t alloc_size( void *p )
 {

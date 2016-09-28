@@ -1138,6 +1138,7 @@ void mainCRTStartup( void )
   textColor tc_o;
   textColor *tc = &tc_o;
 
+  // command line arguments {{{
   char *cmdLine = GetCommandLineA();
   char *args;
   if( cmdLine[0]=='"' && (args=strchr(cmdLine+1,'"')) )
@@ -1538,6 +1539,7 @@ void mainCRTStartup( void )
     if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
     ExitProcess( -1 );
   }
+  // }}}
 
   STARTUPINFO si;
   PROCESS_INFORMATION pi;
@@ -1600,6 +1602,7 @@ void mainCRTStartup( void )
 
     ResumeThread( pi.hThread );
 
+    // main loop {{{
     int type;
     modInfo *mi_a = NULL;
     int mi_q = 0;
@@ -1923,6 +1926,7 @@ void mainCRTStartup( void )
 #endif
       }
     }
+    // }}}
 
     allocation exitTrace;
     exitTrace.at = AT_MALLOC;
@@ -1961,6 +1965,7 @@ void mainCRTStartup( void )
     }
     else if( alloc_q>0 )
     {
+      // leaks {{{
       int i;
       size_t sumSize = 0;
       int combined_q = alloc_q;
@@ -2088,6 +2093,7 @@ void mainCRTStartup( void )
         printf( "$W  sum: %U B / %d\n",sumSize,alloc_q );
       if( alloc_idxs )
         HeapFree( heap,0,alloc_idxs );
+      // }}}
 
       if( exitTrace.at==AT_EXIT )
       {
