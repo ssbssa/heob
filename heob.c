@@ -1060,6 +1060,11 @@ void printThreadName( int threadNameIdx,
 {
   if( threadNameIdx>0 && threadNameIdx<=threadName_q )
     printf( " $S\"%s\"\n",threadName_a[threadNameIdx-1].name );
+  else if( threadNameIdx<-1 )
+  {
+    unsigned unnamedIdx = -threadNameIdx;
+    printf( " $S'%u'\n",unnamedIdx );
+  }
   else
     printf( "\n" );
 }

@@ -134,6 +134,7 @@ typedef struct localData
 
 #ifndef NO_THREADNAMES
   DWORD threadNameTls;
+  int threadNameIdx;
 #endif
 
   options opt;
@@ -583,6 +584,23 @@ static NOINLINE void trackAllocs(
     a.ft = ft;
 #ifndef NO_THREADNAMES
     a.threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
+    if( !a.threadNameIdx )
+    {
+      DWORD threadNameTls = rd->threadNameTls;
+
+      EnterCriticalSection( &rd->csWrite );
+
+      int threadNameIdx = (int)(uintptr_t)TlsGetValue( threadNameTls );
+      if( !threadNameIdx )
+      {
+        threadNameIdx = --rd->threadNameIdx;
+        TlsSetValue( threadNameTls,(void*)(uintptr_t)threadNameIdx );
+      }
+
+      LeaveCriticalSection( &rd->csWrite );
+
+      a.threadNameIdx = threadNameIdx;
+    }
 #endif
 
     void **frames = a.frames;
