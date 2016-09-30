@@ -1,5 +1,5 @@
 
-//          Copyright Hannes Domani 2014 - 2015.
+//          Copyright Hannes Domani 2014 - 2016.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -635,6 +635,7 @@ struct dbgsym;
 #ifndef NO_DWARFSTACK
 typedef int func_dwstOfFile( const char*,uint64_t,uint64_t*,int,
     dwstCallback*,struct dbgsym* );
+typedef size_t func_dwstDemangle( const char*,char*,size_t );
 #endif
 
 #ifdef _WIN64
@@ -656,12 +657,15 @@ typedef struct dbgsym
   func_SymFromInlineContext *fSymFromInlineContext;
   func_SymGetModuleInfo64 *fSymGetModuleInfo64;
   func_SymLoadModule64 *fSymLoadModule64;
+  func_UnDecorateSymbolName *fUnDecorateSymbolName;
   IMAGEHLP_LINE64 *il;
   SYMBOL_INFO *si;
+  char *undname;
 #endif
 #ifndef NO_DWARFSTACK
   HMODULE dwstMod;
   func_dwstOfFile *fdwstOfFile;
+  func_dwstDemangle *fdwstDemangle;
 #endif
   char *absPath;
   textColor *tc;
@@ -714,8 +718,12 @@ void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
           ds->symMod,"SymGetModuleInfo64" );
     ds->fSymLoadModule64 =
       (func_SymLoadModule64*)GetProcAddress( ds->symMod,"SymLoadModule64" );
+    ds->fUnDecorateSymbolName =
+      (func_UnDecorateSymbolName*)GetProcAddress(
+          ds->symMod,"UnDecorateSymbolName" );
     ds->il = HeapAlloc( heap,0,sizeof(IMAGEHLP_LINE64) );
     ds->si = HeapAlloc( heap,0,sizeof(SYMBOL_INFO)+MAX_SYM_NAME );
+    ds->undname = HeapAlloc( heap,0,MAX_SYM_NAME+1 );
 
     if( fSymSetOptions )
       fSymSetOptions( SYMOPT_LOAD_LINES );
@@ -735,6 +743,8 @@ void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
   {
     ds->fdwstOfFile =
       (func_dwstOfFile*)GetProcAddress( ds->dwstMod,"dwstOfFile" );
+    ds->fdwstDemangle =
+      (func_dwstDemangle*)GetProcAddress( ds->dwstMod,"dwstDemangle" );
   }
 #endif
 
@@ -753,6 +763,7 @@ void dbgsym_close( dbgsym *ds,HANDLE heap )
   }
   if( ds->il ) HeapFree( heap,0,ds->il );
   if( ds->si ) HeapFree( heap,0,ds->si );
+  if( ds->undname ) HeapFree( heap,0,ds->undname );
 #endif
 
 #ifndef NO_DWARFSTACK
@@ -834,6 +845,25 @@ static void locFunc(
       {
         si->Name[MAX_SYM_NAME] = 0;
         funcname = si->Name;
+
+        if( lineno==DWST_NO_DBG_SYM )
+        {
+          if( si->Name[0]=='?' && ds->fUnDecorateSymbolName &&
+              ds->fUnDecorateSymbolName(si->Name,
+                ds->undname,MAX_SYM_NAME,UNDNAME_NAME_ONLY) )
+          {
+            ds->undname[MAX_SYM_NAME] = 0;
+            funcname = ds->undname;
+          }
+#ifndef NO_DWARFSTACK
+          else if( si->Name[0]=='_' && si->Name[1]=='Z' && ds->fdwstDemangle &&
+              ds->fdwstDemangle(si->Name,ds->undname,MAX_SYM_NAME) )
+          {
+            ds->undname[MAX_SYM_NAME] = 0;
+            funcname = ds->undname;
+          }
+#endif
+        }
       }
     }
   }

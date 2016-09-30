@@ -1,5 +1,5 @@
 
-//          Copyright Hannes Domani 2014 - 2015.
+//          Copyright Hannes Domani 2014 - 2016.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -95,6 +95,7 @@ typedef BOOL WINAPI func_SymGetModuleInfo64(
     HANDLE,DWORD64,PIMAGEHLP_MODULE64 );
 typedef DWORD64 WINAPI func_SymLoadModule64(
     HANDLE,HANDLE,PCSTR,PCSTR,DWORD64,DWORD );
+typedef DWORD WINAPI func_UnDecorateSymbolName( PCSTR,PSTR,DWORD,DWORD );
 #if USE_STACKWALK
 typedef BOOL WINAPI func_StackWalk64(
     DWORD,HANDLE,HANDLE,LPSTACKFRAME64,PVOID,PREAD_PROCESS_MEMORY_ROUTINE64,
