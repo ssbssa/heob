@@ -345,14 +345,25 @@ static NOINLINE size_t heap_block_size( HANDLE heap,void *ptr )
   PROCESS_HEAP_ENTRY phe;
   phe.lpData = NULL;
   size_t s = -1;
+  char *p = ptr;
 
   HeapLock( heap );
   while( HeapWalk(heap,&phe) )
   {
-    if( !(phe.wFlags&PROCESS_HEAP_ENTRY_BUSY) || ptr!=phe.lpData )
+    if( !(phe.wFlags&PROCESS_HEAP_ENTRY_BUSY) ||
+        p<(char*)phe.lpData || p>=(char*)phe.lpData+phe.cbData )
       continue;
 
-    s = phe.cbData;
+    if( p==(char*)phe.lpData )
+      s = phe.cbData;
+    else
+    {
+      s = (char*)phe.lpData + phe.cbData - p;
+      if( s>4 ) s -= 4;
+    }
+
+    uintptr_t align = MEMORY_ALLOCATION_ALIGNMENT;
+    s += ( align - (s%align) )%align;
     break;
   }
   HeapUnlock( heap );
