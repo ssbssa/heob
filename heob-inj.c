@@ -2155,6 +2155,15 @@ static void protect_free_dbg( void *b,int blockType )
   protect_free_m( b,FT_FREE );
 }
 
+static size_t protect_msize( void *b )
+{
+  GET_REMOTEDATA( rd );
+  size_t s = alloc_size( b );
+  if( s==(size_t)-1 && rd->crtHeap )
+    s = heap_block_size( rd->crtHeap,b );
+  return( s );
+}
+
 // }}}
 // function replacement {{{
 
@@ -2343,6 +2352,8 @@ static void replaceModFuncs( void )
   const char *fname_tempnam = "_tempnam";
   const char *fname_wtempnam = "_wtempnam";
   const char *fname_free_dbg = "_free_dbg";
+  const char *fname_msize = "_msize";
+  void *fmsize = NULL;
   replaceData rep[] = {
     { fname_malloc         ,&rd->fmalloc         ,&new_malloc          },
     { fname_calloc         ,&rd->fcalloc         ,&new_calloc          },
@@ -2363,7 +2374,11 @@ static void replaceModFuncs( void )
     { fname_tempnam        ,&rd->ftempnam        ,&new_tempnam         },
     { fname_wtempnam       ,&rd->fwtempnam       ,&new_wtempnam        },
     { fname_free_dbg       ,&rd->ffree_dbg       ,&new_free_dbg        },
+    // needs to be last, only used with page protection
+    { fname_msize          ,&fmsize              ,&protect_msize       },
   };
+  unsigned int repcount = sizeof(rep)/sizeof(replaceData);
+  if( !rd->opt.protect ) repcount--;
 
   const char *fname_ExitProcess = "ExitProcess";
   const char *fname_TerminateProcess = "TerminateProcess";
@@ -2395,8 +2410,7 @@ static void replaceModFuncs( void )
     HMODULE mod = rd->mod_a[rd->mod_d];
 
     HMODULE dll_msvcrt = rd->opt.handleException>=2 ? NULL :
-      replaceFuncs( mod,rep,sizeof(rep)/sizeof(replaceData),
-          msvcrt,!rd->mod_d,ucrtbase );
+      replaceFuncs( mod,rep,repcount,msvcrt,!rd->mod_d,ucrtbase );
     if( !rd->mod_d && rd->opt.handleException<2 )
     {
       if( !dll_msvcrt )
