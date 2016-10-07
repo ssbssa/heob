@@ -1529,11 +1529,11 @@ static VOID WINAPI new_RaiseException(
   GET_REMOTEDATA( rd );
 
   if( dwExceptionCode==0x406d1388 &&
-      nNumberOfArguments==sizeof(THREADNAME_INFO)/sizeof(ULONG_PTR) )
+      nNumberOfArguments>=sizeof(THREADNAME_INFO)/sizeof(ULONG_PTR) )
   {
     const THREADNAME_INFO *tni = (const THREADNAME_INFO*)lpArguments;
 
-    if( tni->dwType==0x1000 && !tni->dwFlags )
+    if( tni->dwType==0x1000 )
     {
       EnterCriticalSection( &rd->csWrite );
 
