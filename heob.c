@@ -1201,6 +1201,7 @@ void mainCRTStartup( void )
     1,
     0,
     1,
+    0,
   };
   options opt = defopt;
   HANDLE heap = GetProcessHeap();
@@ -1358,6 +1359,10 @@ void mainCRTStartup( void )
             HeapFree( heap,0,name );
           }
         }
+        break;
+
+      case 'z':
+        opt.minLeakSize = atop( args+2 );
         break;
 
       case '"':
@@ -1558,6 +1563,8 @@ void mainCRTStartup( void )
         defopt.fullPath );
     printf( "    $I-l$BX$N    show leak details [$I%d$N]\n",
         defopt.leakDetails );
+    printf( "    $I-z$BX$N    minimum leak size [$I%U$N]\n",
+        defopt.minLeakSize );
     printf( "    $I-L$BX$N    show leak contents [$I%d$N]\n",
         defopt.leakContents );
     if( fullhelp )
@@ -2069,13 +2076,14 @@ void mainCRTStartup( void )
                 l==LT_REACHABLE?"reachable":"indirectly reachable" );
 
           ltCount += a.count;
-          ltSumSize += a.size*a.count;
+          size_t combSize = a.size*a.count;
+          ltSumSize += combSize;
 
-          if( l<lDetails )
+          if( l<lDetails && combSize>=opt.minLeakSize )
           {
             printf( "$W  %U B ",a.size );
             if( a.count>1 )
-              printf( "* %d = %U B ",a.count,a.size*a.count );
+              printf( "* %d = %U B ",a.count,combSize );
             printf( "$N(#%d)",a.id );
             printThreadName( a.threadNameIdx );
             printStack( a.frames,mi_a,mi_q,&ds,a.ft );

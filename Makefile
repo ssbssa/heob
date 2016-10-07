@@ -183,7 +183,9 @@ T_H61=-p1 -a16 -f0 -L100 -i0x7c00000000000000:8
 T_A61=23
 T_H62=-p1 -a16 -f0 -I0
 T_A62=26
-TESTS:=$(shell seq -w 01 62)
+T_H63=-p1 -a4 -f0 -z50
+T_A63=1
+TESTS:=$(shell seq -w 01 63)
 
 testres:
 	mkdir -p $@

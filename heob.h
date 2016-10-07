@@ -203,6 +203,7 @@ typedef struct
   int findNearest;
   int leakContents;
   int mergeLeaks;
+  size_t minLeakSize;
 }
 options;
 

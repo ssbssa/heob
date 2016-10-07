@@ -1,0 +1,9 @@
+allocer: main()
+
+leaks:
+  1000 B (#3)
+    [calloc]
+  52 B (#5)
+    [operator new[]]
+  sum: 1108 B / 10
+exit code: 1 (0xPTR)
