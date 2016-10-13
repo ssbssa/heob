@@ -102,6 +102,7 @@ typedef struct localData
   func_tempnam *ftempnam;
   func_wtempnam *fwtempnam;
   func_free_dbg *ffree_dbg;
+  func_recalloc *frecalloc;
 
   func_free *ofree;
   func_free *oop_delete;
@@ -1084,6 +1085,24 @@ static void new_free_dbg( void *b,int blockType )
   rd->ffree_dbg( b,blockType );
 
   trackAllocs( b,NULL,-1,AT_MALLOC,FT_FREE_DBG );
+}
+
+static void *new_recalloc( void *b,size_t n,size_t s )
+{
+  GET_REMOTEDATA( rd );
+  void *nb = rd->frecalloc( b,n,s );
+
+  trackAllocs( b,nb,n*s,AT_MALLOC,FT_RECALLOC );
+
+#if WRITE_DEBUG_STRINGS
+  char t[] = "called: new_recalloc\n";
+  DWORD written;
+  int type = WRITE_STRING;
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
+#endif
+
+  return( nb );
 }
 
 // }}}
@@ -2155,6 +2174,68 @@ static void protect_free_dbg( void *b,int blockType )
   protect_free_m( b,FT_FREE );
 }
 
+static void *protect_recalloc( void *b,size_t n,size_t s )
+{
+#ifndef _MSC_VER
+#if defined(__GNUC__) && __GNUC__>=5
+  size_t res;
+  if( __builtin_mul_overflow(n,s,&res) )
+    return( NULL );
+#else
+  if( s && n>SIZE_MAX/s )
+    return( NULL );
+  size_t res = n*s;
+#endif
+#else
+#ifndef _WIN64
+  unsigned __int64 res64 = __emulu( n,s );
+  if( res64>SIZE_MAX )
+    return( NULL );
+  size_t res = (size_t)res64;
+#else
+  size_t res,resHigh;
+  res = _umul128( n,s,&resHigh );
+  if( resHigh )
+    return( NULL );
+#endif
+#endif
+
+  GET_REMOTEDATA( rd );
+
+  if( !res )
+  {
+    protect_free_m( b,FT_RECALLOC );
+    return( NULL );
+  }
+
+  if( !b )
+    return( protect_alloc_m(res) );
+
+  size_t os = alloc_size( b );
+  int extern_alloc = os==(size_t)-1;
+  if( extern_alloc )
+  {
+    if( !rd->crtHeap )
+      return( NULL );
+
+    os = heap_block_size( rd->crtHeap,b );
+    if( os==(size_t)-1 )
+      return( NULL );
+  }
+
+  void *nb = protect_alloc_m( res );
+  if( !nb ) return( NULL );
+
+  size_t cs = os<res ? os : res;
+  if( cs )
+    RtlMoveMemory( nb,b,cs );
+
+  if( !extern_alloc )
+    protect_free_m( b,FT_RECALLOC );
+
+  return( nb );
+}
+
 static size_t protect_msize( void *b )
 {
   GET_REMOTEDATA( rd );
@@ -2352,6 +2433,7 @@ static void replaceModFuncs( void )
   const char *fname_tempnam = "_tempnam";
   const char *fname_wtempnam = "_wtempnam";
   const char *fname_free_dbg = "_free_dbg";
+  const char *fname_recalloc = "_recalloc";
   const char *fname_msize = "_msize";
   void *fmsize = NULL;
   replaceData rep[] = {
@@ -2374,6 +2456,7 @@ static void replaceModFuncs( void )
     { fname_tempnam        ,&rd->ftempnam        ,&new_tempnam         },
     { fname_wtempnam       ,&rd->fwtempnam       ,&new_wtempnam        },
     { fname_free_dbg       ,&rd->ffree_dbg       ,&new_free_dbg        },
+    { fname_recalloc       ,&rd->frecalloc       ,&new_recalloc        },
     // needs to be last, only used with page protection
     { fname_msize          ,&fmsize              ,&protect_msize       },
   };
@@ -3032,6 +3115,7 @@ void inj( remoteData *rd,HMODULE app )
     ld->ftempnam = &protect_tempnam;
     ld->fwtempnam = &protect_wtempnam;
     ld->ffree_dbg = &protect_free_dbg;
+    ld->frecalloc = &protect_recalloc;
   }
 
   if( rd->opt.handleException )

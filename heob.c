@@ -1439,6 +1439,7 @@ void mainCRTStartup( void )
     "tempnam",
     "wtempnam",
     "free_dbg",
+    "recalloc",
   };
 
   if( a2l_mi_a )
