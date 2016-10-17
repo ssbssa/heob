@@ -77,6 +77,7 @@ typedef struct localData
   func_GetProcAddress *fGetProcAddress;
   func_ExitProcess *fExitProcess;
   func_TerminateProcess *fTerminateProcess;
+  func_FreeLibraryAndExitThread *fFreeLibraryAET;
 
 #ifndef NO_THREADNAMES
   func_RaiseException *fRaiseException;
@@ -1735,6 +1736,13 @@ static BOOL WINAPI new_FreeLibrary( HMODULE mod )
   return( TRUE );
 }
 
+static VOID WINAPI new_FreeLibraryAET( HMODULE mod,DWORD exitCode )
+{
+  new_FreeLibrary( mod );
+
+  ExitThread( exitCode );
+}
+
 // }}}
 // page protection {{{
 
@@ -2480,10 +2488,12 @@ static void replaceModFuncs( void )
   const char *fname_LoadLibraryA = "LoadLibraryA";
   const char *fname_LoadLibraryW = "LoadLibraryW";
   const char *fname_FreeLibrary = "FreeLibrary";
+  const char *fname_FreeLibraryAET = "FreeLibraryAndExitThread";
   replaceData repLL[] = {
     { fname_LoadLibraryA   ,&rd->fLoadLibraryA   ,&new_LoadLibraryA    },
     { fname_LoadLibraryW   ,&rd->fLoadLibraryW   ,&new_LoadLibraryW    },
     { fname_FreeLibrary    ,&rd->fFreeLibrary    ,&new_FreeLibrary     },
+    { fname_FreeLibraryAET ,&rd->fFreeLibraryAET ,&new_FreeLibraryAET  },
   };
 
   HMODULE msvcrt = rd->msvcrt;

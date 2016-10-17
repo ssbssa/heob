@@ -59,6 +59,7 @@ typedef LPTOP_LEVEL_EXCEPTION_FILTER WINAPI func_SetUnhandledExceptionFilter(
 typedef VOID WINAPI func_ExitProcess( UINT );
 typedef BOOL WINAPI func_TerminateProcess( HANDLE,UINT );
 typedef VOID WINAPI func_RaiseException( DWORD,DWORD,DWORD,const ULONG_PTR* );
+typedef VOID WINAPI func_FreeLibraryAndExitThread( HMODULE,DWORD );
 
 typedef void *func_malloc( size_t );
 typedef void *func_calloc( size_t,size_t );
