@@ -1,5 +1,8 @@
 
 HEOB_VERSION:=1.3-dev-$(shell date +%Y%m%d)
+HEOB_VER_NUM:=1,3,0,99
+HEOB_PRERELEASE:=1
+HEOB_COPYRIGHT_YEARS:=2014-2016
 
 BITS=32
 ifeq ($(BITS),32)
@@ -12,6 +15,7 @@ endif
 
 CC=$(PREF)gcc
 CXX=$(PREF)g++
+WINDRES=$(PREF)windres
 CPPFLAGS=-DNO_DWARFSTACK
 CFLAGS=-Wall -Wextra -Wshadow -fno-omit-frame-pointer -fno-optimize-sibling-calls
 CFLAGS_HEOB=$(CPPFLAGS) $(CFLAGS) -O3 -DHEOB_VER="\"$(HEOB_VERSION)\"" \
@@ -22,8 +26,11 @@ CFLAGS_TEST=$(CFLAGS) -O3 -g -D_GLIBCXX_INCLUDE_NEXT_C_HEADERS
 
 all: heob$(BITS).exe allocer$(BITS).exe
 
-heob$(BITS).exe: heob.c heob-inj.c heob.h
-	$(CC) $(CFLAGS_HEOB) -o$@ heob.c heob-inj.c $(LDFLAGS_HEOB) || { rm -f $@; exit 1; }
+heob$(BITS).exe: heob.c heob-inj.c heob.h heob-ver$(BITS).o
+	$(CC) $(CFLAGS_HEOB) -o$@ heob.c heob-inj.c heob-ver$(BITS).o $(LDFLAGS_HEOB) || { rm -f $@; exit 1; }
+
+heob-ver$(BITS).o: heob-ver.rc heob.manifest Makefile
+	$(WINDRES) -DHEOB_VER_STR=\\\"$(HEOB_VERSION)\\\" -DHEOB_VER_NUM=$(HEOB_VER_NUM) -DHEOB_PRERELEASE=$(HEOB_PRERELEASE) -DHEOB_COPYRIGHT_YEARS=\\\"$(HEOB_COPYRIGHT_YEARS)\\\" $< $@
 
 allocer$(BITS).exe: allocer.cpp libheobcpp$(BITS).a dll-alloc$(BITS).dll dll-alloc-shared$(BITS).dll
 	$(CXX) $(CFLAGS_TEST) -o$@ $^ -nostdlib -lmsvcrt -lkernel32
@@ -208,4 +215,4 @@ tests:
 
 
 clean:
-	rm -f *.exe *.a dll-alloc*.dll
+	rm -f *.o *.exe *.a dll-alloc*.dll

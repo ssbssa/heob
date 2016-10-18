@@ -1,0 +1,36 @@
+
+#include <windows.h>
+
+CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "heob.manifest"
+
+VS_VERSION_INFO VERSIONINFO
+#ifdef HEOB_VER_NUM
+FILEVERSION HEOB_VER_NUM
+PRODUCTVERSION HEOB_VER_NUM
+#endif
+#if defined(HEOB_PRERELEASE) && HEOB_PRERELEASE
+FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+FILEFLAGS VS_FF_PRERELEASE
+#endif
+FILEOS VOS__WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904E4"
+    BEGIN
+      VALUE "FileDescription", "heap observer"
+#ifdef HEOB_COPYRIGHT_YEARS
+      VALUE "LegalCopyright",  "Copyright \251 " HEOB_COPYRIGHT_YEARS " Hannes Domani"
+#endif
+      VALUE "ProductName",     "heob"
+#ifdef HEOB_VER_STR
+      VALUE "ProductVersion",  HEOB_VER_STR
+#endif
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1252
+  END
+END
