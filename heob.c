@@ -92,24 +92,15 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
             switch( ptr[1] )
             {
               case 'd':
-#ifndef _WIN64
               case 'D':
-#endif
                 {
-                  int argi = va_arg( vl,int );
-                  if( argi<0 )
-                  {
-                    arg = -argi;
-                    minus = 1;
-                  }
-                  else
-                    arg = argi;
-                }
-                break;
+                  intptr_t argi;
 #ifdef _WIN64
-              case 'D':
-                {
-                  intptr_t argi = va_arg( vl,intptr_t );
+                  if( ptr[1]=='D' )
+                    argi = va_arg( vl,intptr_t );
+                  else
+#endif
+                    argi = va_arg( vl,int );
                   if( argi<0 )
                   {
                     arg = -argi;
@@ -119,7 +110,6 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
                     arg = argi;
                 }
                 break;
-#endif
               case 'u':
 #ifndef _WIN64
               case 'U':
