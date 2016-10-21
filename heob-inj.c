@@ -274,7 +274,7 @@ static void writeModsFind( allocation *alloc_a,int alloc_q,
       else
         mi_a = HeapReAlloc(
             rd->heap,0,mi_a,mi_q*sizeof(modInfo) );
-      if( !mi_a )
+      if( UNLIKELY(!mi_a) )
       {
         DWORD written;
         int type = WRITE_MAIN_ALLOC_FAIL;
@@ -388,7 +388,7 @@ static NOINLINE void trackAllocs(
 
     int i;
     for( i=sa->alloc_q-1; i>=0 && sa->alloc_a[i].ptr!=free_ptr; i-- );
-    if( i>=0 )
+    if( LIKELY(i>=0) )
     {
       allocation a;
       RtlMoveMemory( &a,&sa->alloc_a[i],sizeof(allocation) );
@@ -425,7 +425,7 @@ static NOINLINE void trackAllocs(
           else
             freed_an = HeapReAlloc(
                 rd->heap,0,sf->freed_a,sf->freed_s*sizeof(freed) );
-          if( !freed_an )
+          if( UNLIKELY(!freed_an) )
           {
             LeaveCriticalSection( &sf->cs );
             EnterCriticalSection( &rd->csWrite );
@@ -447,7 +447,7 @@ static NOINLINE void trackAllocs(
         LeaveCriticalSection( &sf->cs );
       }
 
-      if( rd->opt.allocMethod && a.at!=at )
+      if( UNLIKELY(rd->opt.allocMethod && a.at!=at) )
       {
         allocation aa[2];
         RtlMoveMemory( aa,&a,sizeof(allocation) );
@@ -597,7 +597,7 @@ static NOINLINE void trackAllocs(
     a.ft = ft;
 #ifndef NO_THREADNAMES
     a.threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
-    if( !a.threadNameIdx )
+    if( UNLIKELY(!a.threadNameIdx) )
     {
       DWORD threadNameTls = rd->threadNameTls;
 
@@ -627,7 +627,7 @@ static NOINLINE void trackAllocs(
     int id = a.id = ++rd->cur_id;
 
     int raiseException = 0;
-    if( id==rd->raise_id && id )
+    if( UNLIKELY(id==rd->raise_id) && id )
     {
       DWORD written;
       int type = WRITE_RAISE_ALLOCATION;
@@ -657,7 +657,7 @@ static NOINLINE void trackAllocs(
       else
         alloc_an = HeapReAlloc(
             rd->heap,0,sa->alloc_a,sa->alloc_s*sizeof(allocation) );
-      if( !alloc_an )
+      if( UNLIKELY(!alloc_an) )
       {
         LeaveCriticalSection( &sa->cs );
         EnterCriticalSection( &rd->csWrite );
@@ -680,7 +680,7 @@ static NOINLINE void trackAllocs(
     if( raiseException )
       DebugBreak();
   }
-  else if( alloc_size!=(size_t)-1 )
+  else if( UNLIKELY(alloc_size!=(size_t)-1) )
   {
     allocation a;
     a.ptr = NULL;
@@ -709,7 +709,7 @@ static NOINLINE void trackAllocs(
     WriteFile( rd->master,&a,sizeof(allocation),&written,NULL );
 
     int raiseException = rd->opt.raiseException;
-    if( id==rd->raise_id && id )
+    if( UNLIKELY(id==rd->raise_id) && id )
     {
       type = WRITE_RAISE_ALLOCATION;
       WriteFile( rd->master,&type,sizeof(int),&written,NULL );
@@ -1131,7 +1131,7 @@ static void addModMem( PBYTE start,PBYTE end )
     else
       mod_mem_an = HeapReAlloc(
           rd->heap,0,rd->mod_mem_a,rd->mod_mem_s*sizeof(modMemType) );
-    if( !mod_mem_an )
+    if( UNLIKELY(!mod_mem_an) )
     {
       DWORD written;
       int type = WRITE_MAIN_ALLOC_FAIL;
@@ -1577,7 +1577,7 @@ static VOID WINAPI new_RaiseException(
               threadName_an = HeapReAlloc(
                   rd->heap,0,rd->threadName_a,
                   rd->threadName_s*sizeof(threadNameInfo) );
-            if( !threadName_an )
+            if( UNLIKELY(!threadName_an) )
             {
               DWORD written;
               int type = WRITE_MAIN_ALLOC_FAIL;
@@ -1714,7 +1714,7 @@ static BOOL WINAPI new_FreeLibrary( HMODULE mod )
     else
       freed_mod_an = HeapReAlloc(
           rd->heap,0,rd->freed_mod_a,rd->freed_mod_s*sizeof(HMODULE) );
-    if( !freed_mod_an )
+    if( UNLIKELY(!freed_mod_an) )
     {
       LeaveCriticalSection( &rd->csFreedMod );
       EnterCriticalSection( &rd->csWrite );
@@ -1777,7 +1777,7 @@ static void *protect_alloc_m( size_t s )
 
   unsigned char *b = (unsigned char*)VirtualAlloc(
       NULL,pages*pageSize,MEM_RESERVE,PAGE_NOACCESS );
-  if( !b )
+  if( UNLIKELY(!b) )
     return( NULL );
 
   size_t slackSize = ( pageSize - (s%pageSize) )%pageSize;
@@ -1806,7 +1806,7 @@ static NOINLINE void protect_free_m( void *b,funcType ft )
   if( !b ) return;
 
   size_t s = alloc_size( b );
-  if( s==(size_t)-1 ) return;
+  if( UNLIKELY(s==(size_t)-1) ) return;
 
   GET_REMOTEDATA( rd );
 
@@ -1833,8 +1833,9 @@ static NOINLINE void protect_free_m( void *b,funcType ft )
   if( slackSize )
   {
     size_t i;
-    for( i=0; i<slackSize && slackStart[i]==rd->opt.slackInit; i++ );
-    if( i<slackSize )
+    int slackInit = rd->opt.slackInit;
+    for( i=0; i<slackSize && slackStart[i]==slackInit; i++ );
+    if( UNLIKELY(i<slackSize) )
     {
       int splitIdx = (((uintptr_t)b)>>rd->ptrShift)&SPLIT_MASK;
       splitAllocation *sa = rd->splits + splitIdx;
@@ -1895,7 +1896,7 @@ static void *protect_malloc( size_t s )
   GET_REMOTEDATA( rd );
 
   void *b = protect_alloc_m( s );
-  if( !b ) return( NULL );
+  if( UNLIKELY(!b) ) return( NULL );
 
   if( s )
   {
@@ -1921,23 +1922,23 @@ static void *protect_calloc( size_t n,size_t s )
 #ifndef _MSC_VER
 #if defined(__GNUC__) && __GNUC__>=5
   size_t res;
-  if( __builtin_mul_overflow(n,s,&res) )
+  if( UNLIKELY(__builtin_mul_overflow(n,s,&res)) )
     return( NULL );
 #else
-  if( s && n>SIZE_MAX/s )
+  if( UNLIKELY(s && n>SIZE_MAX/s) )
     return( NULL );
   size_t res = n*s;
 #endif
 #else
 #ifndef _WIN64
   unsigned __int64 res64 = __emulu( n,s );
-  if( res64>SIZE_MAX )
+  if( UNLIKELY(res64>SIZE_MAX) )
     return( NULL );
   size_t res = (size_t)res64;
 #else
   size_t res,resHigh;
   res = _umul128( n,s,&resHigh );
-  if( resHigh )
+  if( UNLIKELY(resHigh) )
     return( NULL );
 #endif
 #endif
@@ -1965,7 +1966,7 @@ static void *protect_realloc( void *b,size_t s )
 
   size_t os = alloc_size( b );
   int extern_alloc = os==(size_t)-1;
-  if( extern_alloc )
+  if( UNLIKELY(extern_alloc) )
   {
     if( !rd->crtHeap )
       return( NULL );
@@ -1976,7 +1977,7 @@ static void *protect_realloc( void *b,size_t s )
   }
 
   void *nb = protect_alloc_m( s );
-  if( !nb ) return( NULL );
+  if( UNLIKELY(!nb) ) return( NULL );
 
   size_t cs = os<s ? os : s;
   if( cs )
@@ -2010,7 +2011,7 @@ static char *protect_strdup( const char *s )
   size_t l = lstrlen( s ) + 1;
 
   char *b = protect_alloc_m( l );
-  if( !b ) return( NULL );
+  if( UNLIKELY(!b) ) return( NULL );
 
   RtlMoveMemory( b,s,l );
 
@@ -2023,7 +2024,7 @@ static wchar_t *protect_wcsdup( const wchar_t *s )
   l *= 2;
 
   wchar_t *b = protect_alloc_m( l );
-  if( !b ) return( NULL );
+  if( UNLIKELY(!b) ) return( NULL );
 
   RtlMoveMemory( b,s,l );
 
@@ -2040,7 +2041,7 @@ static char *protect_getcwd( char *buffer,int maxlen )
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
 
   char *cwd_copy = protect_alloc_m( l );
-  if( cwd_copy )
+  if( LIKELY(cwd_copy) )
     RtlMoveMemory( cwd_copy,cwd,l );
 
   rd->ofree( cwd );
@@ -2059,7 +2060,7 @@ static wchar_t *protect_wgetcwd( wchar_t *buffer,int maxlen )
   l *= 2;
 
   wchar_t *cwd_copy = protect_alloc_m( l );
-  if( cwd_copy )
+  if( LIKELY(cwd_copy) )
     RtlMoveMemory( cwd_copy,cwd,l );
 
   rd->ofree( cwd );
@@ -2077,7 +2078,7 @@ static char *protect_getdcwd( int drive,char *buffer,int maxlen )
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
 
   char *cwd_copy = protect_alloc_m( l );
-  if( cwd_copy )
+  if( LIKELY(cwd_copy) )
     RtlMoveMemory( cwd_copy,cwd,l );
 
   rd->ofree( cwd );
@@ -2096,7 +2097,7 @@ static wchar_t *protect_wgetdcwd( int drive,wchar_t *buffer,int maxlen )
   l *= 2;
 
   wchar_t *cwd_copy = protect_alloc_m( l );
-  if( cwd_copy )
+  if( LIKELY(cwd_copy) )
     RtlMoveMemory( cwd_copy,cwd,l );
 
   rd->ofree( cwd );
@@ -2114,7 +2115,7 @@ static char *protect_fullpath( char *absPath,const char *relPath,
   size_t l = lstrlen( fp ) + 1;
 
   char *fp_copy = protect_alloc_m( l );
-  if( fp_copy )
+  if( LIKELY(fp_copy) )
     RtlMoveMemory( fp_copy,fp,l );
 
   rd->ofree( fp );
@@ -2133,7 +2134,7 @@ static wchar_t *protect_wfullpath( wchar_t *absPath,const wchar_t *relPath,
   l *= 2;
 
   wchar_t *fp_copy = protect_alloc_m( l );
-  if( fp_copy )
+  if( LIKELY(fp_copy) )
     RtlMoveMemory( fp_copy,fp,l );
 
   rd->ofree( fp );
@@ -2145,12 +2146,12 @@ static char *protect_tempnam( char *dir,char *prefix )
 {
   GET_REMOTEDATA( rd );
   char *tn = rd->otempnam( dir,prefix );
-  if( !tn ) return( tn );
+  if( UNLIKELY(!tn) ) return( tn );
 
   size_t l = lstrlen( tn ) + 1;
 
   char *tn_copy = protect_alloc_m( l );
-  if( tn_copy )
+  if( LIKELY(tn_copy) )
     RtlMoveMemory( tn_copy,tn,l );
 
   rd->ofree( tn );
@@ -2162,13 +2163,13 @@ static wchar_t *protect_wtempnam( wchar_t *dir,wchar_t *prefix )
 {
   GET_REMOTEDATA( rd );
   wchar_t *tn = rd->owtempnam( dir,prefix );
-  if( !tn ) return( tn );
+  if( UNLIKELY(!tn) ) return( tn );
 
   size_t l = lstrlenW( tn ) + 1;
   l *= 2;
 
   wchar_t *tn_copy = protect_alloc_m( l );
-  if( tn_copy )
+  if( LIKELY(tn_copy) )
     RtlMoveMemory( tn_copy,tn,l );
 
   rd->ofree( tn );
@@ -2187,23 +2188,23 @@ static void *protect_recalloc( void *b,size_t n,size_t s )
 #ifndef _MSC_VER
 #if defined(__GNUC__) && __GNUC__>=5
   size_t res;
-  if( __builtin_mul_overflow(n,s,&res) )
+  if( UNLIKELY(__builtin_mul_overflow(n,s,&res)) )
     return( NULL );
 #else
-  if( s && n>SIZE_MAX/s )
+  if( UNLIKELY(s && n>SIZE_MAX/s) )
     return( NULL );
   size_t res = n*s;
 #endif
 #else
 #ifndef _WIN64
   unsigned __int64 res64 = __emulu( n,s );
-  if( res64>SIZE_MAX )
+  if( UNLIKELY(res64>SIZE_MAX) )
     return( NULL );
   size_t res = (size_t)res64;
 #else
   size_t res,resHigh;
   res = _umul128( n,s,&resHigh );
-  if( resHigh )
+  if( UNLIKELY(resHigh) )
     return( NULL );
 #endif
 #endif
@@ -2221,7 +2222,7 @@ static void *protect_recalloc( void *b,size_t n,size_t s )
 
   size_t os = alloc_size( b );
   int extern_alloc = os==(size_t)-1;
-  if( extern_alloc )
+  if( UNLIKELY(extern_alloc) )
   {
     if( !rd->crtHeap )
       return( NULL );
@@ -2232,7 +2233,7 @@ static void *protect_recalloc( void *b,size_t n,size_t s )
   }
 
   void *nb = protect_alloc_m( res );
-  if( !nb ) return( NULL );
+  if( UNLIKELY(!nb) ) return( NULL );
 
   size_t cs = os<res ? os : res;
   if( cs )
@@ -2284,7 +2285,7 @@ static void addModule( HMODULE mod )
     else
       mod_an = HeapReAlloc(
           rd->heap,0,rd->mod_a,rd->mod_s*sizeof(HMODULE) );
-    if( !mod_an )
+    if( UNLIKELY(!mod_an) )
     {
       DWORD written;
       int type = WRITE_MAIN_ALLOC_FAIL;

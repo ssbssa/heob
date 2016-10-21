@@ -30,6 +30,8 @@
 #define UNREACHABLE __builtin_unreachable()
 #define ASSUME_ALIGNED(p,a) __builtin_assume_aligned(p,a)
 #define ASSUME(c) ({ if( !(c) ) __builtin_unreachable(); })
+#define LIKELY(c) __builtin_expect(!!(c),1)
+#define UNLIKELY(c) __builtin_expect(!!(c),0)
 #else
 #define NOINLINE __declspec(noinline)
 #define NORETURN __declspec(noreturn)
@@ -37,6 +39,8 @@
 #define UNREACHABLE __assume(0)
 #define ASSUME_ALIGNED(p,a) (p)
 #define ASSUME(c) __assume(c)
+#define LIKELY(c) (c)
+#define UNLIKELY(c) (c)
 #endif
 
 #if defined(NO_DBGHELP) && USE_STACKWALK
