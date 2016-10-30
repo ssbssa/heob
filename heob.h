@@ -178,7 +178,8 @@ typedef struct
   size_t size;
   void *frames[PTRS];
   int id;
-  allocType at : 8;
+  allocType at : 4;
+  int recording : 4;
   leakType lt : 8;
   funcType ft : 8;
   funcType ftFreed : 8;
@@ -211,6 +212,7 @@ typedef struct
   int leakContents;
   int mergeLeaks;
   size_t minLeakSize;
+  int leakRecording;
 }
 options;
 
@@ -228,6 +230,7 @@ typedef struct remoteData
   func_ExitProcess *fExitProcess;
 
   HANDLE master;
+  HANDLE controlPipe;
   HANDLE initFinished;
 
   union {
@@ -238,6 +241,8 @@ typedef struct remoteData
   size_t injOffset;
 
   options opt;
+
+  int recording;
 
   int raise_alloc_q;
   int raise_alloc_a[1];

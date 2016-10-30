@@ -118,6 +118,7 @@ typedef struct localData
   func_wtempnam *owtempnam;
 
   HANDLE master;
+  HANDLE controlPipe;
   HMODULE kernel32;
   HMODULE msvcrt;
   HMODULE ucrtbase;
@@ -140,6 +141,8 @@ typedef struct localData
 #endif
 
   options opt;
+
+  int recording;
 
   CRITICAL_SECTION csWrite;
   CRITICAL_SECTION csFreedMod;
@@ -593,6 +596,7 @@ static NOINLINE void trackAllocs(
     a.ptr = alloc_ptr;
     a.size = alloc_size;
     a.at = at;
+    a.recording = rd->recording;
     a.lt = LT_LOST;
     a.ft = ft;
 #ifndef NO_THREADNAMES
@@ -1355,7 +1359,14 @@ static VOID WINAPI new_ExitProcess( UINT c )
     findLeakTypes();
 
   if( rd->opt.exitTrace )
+  {
+    int save_recording = rd->recording;
+    rd->recording = 1;
+
     trackAllocs( NULL,(void*)-1,0,AT_EXIT,FT_COUNT );
+
+    rd->recording = save_recording;
+  }
 
   int mi_q = 0;
   modInfo *mi_a = NULL;
@@ -1407,7 +1418,13 @@ static VOID WINAPI new_ExitProcess( UINT c )
 
   alloc_q = 0;
   for( i=0; i<=SPLIT_MASK; i++ )
-    alloc_q += rd->splits[i].alloc_q;
+  {
+    splitAllocation *sa = rd->splits + i;
+    int j;
+    int part_q = sa->alloc_q;
+    for( j=0; j<part_q; j++ )
+      if( sa->alloc_a[j].recording ) alloc_q++;
+  }
   type = WRITE_LEAKS;
   int terminated = 0;
   WriteFile( rd->master,&type,sizeof(int),&written,NULL );
@@ -1422,19 +1439,25 @@ static VOID WINAPI new_ExitProcess( UINT c )
   for( i=0; i<=SPLIT_MASK; i++ )
   {
     splitAllocation *sa = rd->splits + i;
-    if( !sa->alloc_q ) continue;
-    WriteFile( rd->master,sa->alloc_a,sa->alloc_q*sizeof(allocation),
-        &written,NULL );
+    alloc_q = sa->alloc_q;
+    if( !alloc_q ) continue;
+
+    int j;
+    for( j=0; j<alloc_q; j++ )
+    {
+      allocation *a = sa->alloc_a + j;
+      if( a->recording )
+        WriteFile( rd->master,a,sizeof(allocation),&written,NULL );
+    }
 
     if( leakContents )
     {
-      alloc_q = sa->alloc_q;
       if( sa->alloc_a[alloc_q-1].at==AT_EXIT ) alloc_q--;
-      alloc_sum += alloc_q;
-      int j;
       for( j=0; j<alloc_q; j++ )
       {
         allocation *a = sa->alloc_a + j;
+        if( !a->recording ) continue;
+        alloc_sum++;
         if( a->lt>=lDetails ) continue;
         size_t s = a->size;
         alloc_mem_sum += s<leakContents ? s : leakContents;
@@ -1457,7 +1480,7 @@ static VOID WINAPI new_ExitProcess( UINT c )
       for( j=0; j<alloc_q; j++ )
       {
         allocation *a = sa->alloc_a + j;
-        if( a->lt>=lDetails ) continue;
+        if( !a->recording || a->lt>=lDetails ) continue;
         size_t s = a->size;
         if( leakContents<s ) s = leakContents;
         if( s )
@@ -3024,7 +3047,10 @@ void inj( remoteData *rd,HMODULE app )
   ld->fGetProcAddress = rd->fGetProcAddress;
   ld->fExitProcess = rd->fExitProcess;
   ld->master = rd->master;
+  ld->controlPipe = rd->controlPipe;
   ld->kernel32 = rd->kernel32;
+  ld->recording = rd->recording;
+  HANDLE controlPipe = rd->controlPipe;
 
   ld->heap = heap;
 
@@ -3161,6 +3187,15 @@ void inj( remoteData *rd,HMODULE app )
   HANDLE initFinished = rd->initFinished;
   SetEvent( initFinished );
   CloseHandle( initFinished );
+
+  if( controlPipe )
+  {
+    int type;
+    DWORD didread;
+    while( ReadFile(controlPipe,&type,sizeof(int),&didread,NULL) )
+      ld->recording = type;
+  }
+
   while( 1 ) Sleep( INFINITE );
 }
 

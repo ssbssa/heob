@@ -9,6 +9,7 @@
 #include <string.h>
 #include <windows.h>
 #include <direct.h>
+#include <conio.h>
 
 
 #if !defined(_MSC_VER) || _MSC_VER<1900
@@ -469,6 +470,25 @@ void choose( int arg )
           v += b[0];
         }
         mem[1] = v;
+      }
+      break;
+
+    case 28:
+      // leak until escape
+      while( 1 )
+      {
+        int c = _getch();
+        if( c==27 ) break;
+
+        if( c=='f' )
+        {
+          free( (void*)0x1 );
+          continue;
+        }
+
+        unsigned char *b = (unsigned char*)malloc( 15 );
+        b[0] = c;
+        mem[1] += b[0];
       }
       break;
   }

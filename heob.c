@@ -57,6 +57,14 @@ static inline char num2hex( unsigned int bits )
   return( bits>=10 ? bits - 10 + 'A' : bits + '0' );
 }
 
+static inline char *num2hexstr( char *str,uintptr_t arg,int count )
+{
+  int b;
+  for( b=count-1; b>=0; b-- )
+    str++[0] = num2hex( (unsigned)(arg>>(b*4)) );
+  return( str );
+}
+
 static NOINLINE void mprintf( textColor *tc,const char *format,... )
 {
   va_list vl;
@@ -163,11 +171,9 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
             }
             char str[20];
             char *end = str;
-            int b;
             end++[0] = '0';
             end++[0] = 'x';
-            for( b=bytes*2-1; b>=0; b-- )
-              end++[0] = num2hex( (unsigned)(arg>>(b*4)) );
+            end = num2hexstr( end,arg,bytes*2 );
             tc->fWriteText( tc,str,end-str );
           }
           break;
@@ -522,7 +528,7 @@ static CODE_SEG(".text$1") DWORD WINAPI remoteCall( remoteData *rd )
 
 static CODE_SEG(".text$2") HANDLE inject(
     HANDLE process,options *opt,char *exePath,textColor *tc,
-    int raise_alloc_q,int *raise_alloc_a )
+    int raise_alloc_q,int *raise_alloc_a,HANDLE *controlPipe )
 {
   size_t funcSize = (size_t)&inject - (size_t)&remoteCall;
   size_t fullSize = funcSize + sizeof(remoteData) + raise_alloc_q*sizeof(int);
@@ -565,11 +571,27 @@ static CODE_SEG(".text$2") HANDLE inject(
   GetModuleFileNameW( NULL,data->exePath,MAX_PATH );
   data->injOffset = (size_t)&inj - (size_t)GetModuleHandle( NULL );
 
-  HANDLE readPipe,writePipe;
-  CreatePipe( &readPipe,&writePipe,NULL,0 );
+  char pipeName[32] = "\\\\.\\Pipe\\heob.data.";
+  char *end = num2hexstr( pipeName+lstrlen(pipeName),GetCurrentProcessId(),8 );
+  end[0] = 0;
+  HANDLE readPipe = CreateNamedPipe( pipeName,
+      PIPE_ACCESS_INBOUND|FILE_FLAG_OVERLAPPED,PIPE_TYPE_BYTE,
+      1,1024,1024,0,NULL );
+  HANDLE writePipe = CreateFile( pipeName,
+      GENERIC_WRITE,0,NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL );
   DuplicateHandle( GetCurrentProcess(),writePipe,
       process,&data->master,0,FALSE,
       DUPLICATE_CLOSE_SOURCE|DUPLICATE_SAME_ACCESS );
+
+  if( opt->leakRecording )
+  {
+    HANDLE controlReadPipe;
+    CreatePipe( &controlReadPipe,controlPipe,NULL,0 );
+    DuplicateHandle( GetCurrentProcess(),controlReadPipe,
+        process,&data->controlPipe,0,FALSE,
+        DUPLICATE_CLOSE_SOURCE|DUPLICATE_SAME_ACCESS );
+  }
+  data->recording = opt->leakRecording!=1;
 
   HANDLE initFinished = CreateEvent( NULL,FALSE,FALSE,NULL );
   DuplicateHandle( GetCurrentProcess(),initFinished,
@@ -1066,14 +1088,18 @@ void printThreadName( int threadNameIdx,
 // }}}
 // read all requested data from pipe {{{
 
-static int readFile( HANDLE file,void *destV,size_t count )
+static int readFile( HANDLE file,void *destV,size_t count,OVERLAPPED *ov )
 {
   char *dest = destV;
   while( count>0 )
   {
     DWORD didread;
     DWORD readcount = count>0x10000000 ? 0x10000000 : (DWORD)count;
-    if( !ReadFile(file,dest,readcount,&didread,NULL) ) return( 0 );
+    if( !ReadFile(file,dest,readcount,NULL,ov) &&
+        GetLastError()!=ERROR_IO_PENDING )
+      return( 0 );
+    if( !GetOverlappedResult(file,ov,&didread,TRUE) )
+      return( 0 );
     dest += didread;
     count -= didread;
   }
@@ -1156,6 +1182,60 @@ static int cmp_type_allocation( const allocation *a,const allocation *b )
 }
 
 // }}}
+// leak recording status {{{
+
+static void showRecording( HANDLE err,int recording,
+    COORD *consoleCoord,int *errColorP )
+{
+  DWORD didwrite;
+  WriteFile( err,"\n",1,&didwrite,NULL );
+
+  CONSOLE_SCREEN_BUFFER_INFO csbi;
+  GetConsoleScreenBufferInfo( err,&csbi );
+  *consoleCoord = csbi.dwCursorPosition;
+  int errColor = *errColorP = csbi.wAttributes&0xff;
+
+  const char *recText = "leak recording:  on   off ";
+  WriteFile( err,recText,16,&didwrite,NULL );
+  if( recording )
+  {
+    SetConsoleTextAttribute( err,errColor^BACKGROUND_INTENSITY );
+    WriteFile( err,recText+16,4,&didwrite,NULL );
+    SetConsoleTextAttribute( err,errColor );
+    WriteFile( err,recText+20,3,&didwrite,NULL );
+    SetConsoleTextAttribute( err,
+        errColor^(FOREGROUND_RED|FOREGROUND_BLUE|FOREGROUND_INTENSITY) );
+    WriteFile( err,recText+23,1,&didwrite,NULL );
+    SetConsoleTextAttribute( err,errColor );
+    WriteFile( err,recText+24,2,&didwrite,NULL );
+  }
+  else
+  {
+    WriteFile( err,recText+16,2,&didwrite,NULL );
+    SetConsoleTextAttribute( err,
+        errColor^(FOREGROUND_RED|FOREGROUND_BLUE|FOREGROUND_INTENSITY) );
+    WriteFile( err,recText+18,3,&didwrite,NULL );
+    SetConsoleTextAttribute( err,errColor^BACKGROUND_INTENSITY );
+    WriteFile( err,recText+21,5,&didwrite,NULL );
+    SetConsoleTextAttribute( err,errColor );
+  }
+}
+
+static void clearRecording( HANDLE err,
+    COORD consoleCoord,int errColor,int clearAll )
+{
+  COORD moveCoord = { consoleCoord.X,consoleCoord.Y-1 };
+  SetConsoleCursorPosition( err,moveCoord );
+
+  if( !clearAll ) return;
+
+  DWORD didwrite;
+  int recTextLen = 26;
+  FillConsoleOutputAttribute( err,errColor,recTextLen,consoleCoord,&didwrite );
+  FillConsoleOutputCharacter( err,' ',recTextLen,consoleCoord,&didwrite );
+}
+
+// }}}
 // main {{{
 
 void mainCRTStartup( void )
@@ -1191,6 +1271,7 @@ void mainCRTStartup( void )
     1,
     0,
     1,
+    0,
     0,
   };
   options opt = defopt;
@@ -1353,6 +1434,10 @@ void mainCRTStartup( void )
 
       case 'z':
         opt.minLeakSize = atop( args+2 );
+        break;
+
+      case 'k':
+        opt.leakRecording = atoi( args+2 );
         break;
 
       case '"':
@@ -1556,6 +1641,8 @@ void mainCRTStartup( void )
         defopt.leakDetails );
     printf( "    $I-z$BX$N    minimum leak size [$I%U$N]\n",
         defopt.minLeakSize );
+    printf( "    $I-k$BX$N    control leak recording [$I%d$N]\n",
+        defopt.leakRecording );
     printf( "    $I-L$BX$N    show leak contents [$I%d$N]\n",
         defopt.leakContents );
     if( fullhelp )
@@ -1574,6 +1661,17 @@ void mainCRTStartup( void )
   }
   // }}}
 
+  HANDLE in = NULL;
+  if( opt.pid || opt.leakRecording )
+  {
+    in = GetStdHandle( STD_INPUT_HANDLE );
+    if( !FlushConsoleInputBuffer(in) ) in = NULL;
+    if( !in ) opt.pid = opt.leakRecording = 0;
+  }
+
+  if( opt.leakRecording )
+    opt.newConsole = 1;
+
   STARTUPINFO si;
   PROCESS_INFORMATION pi;
   RtlZeroMemory( &si,sizeof(STARTUPINFO) );
@@ -1589,13 +1687,21 @@ void mainCRTStartup( void )
     ExitProcess( -1 );
   }
 
+  if( opt.leakRecording )
+  {
+    DWORD flags;
+    if( GetConsoleMode(in,&flags) )
+      SetConsoleMode( in,flags & ~ENABLE_MOUSE_INPUT );
+  }
+
   HANDLE readPipe = NULL;
+  HANDLE controlPipe = NULL;
   char exePath[MAX_PATH];
   if( isWrongArch(pi.hProcess) )
     printf( "$Wonly " BITS "bit applications possible\n" );
   else
     readPipe = inject( pi.hProcess,&opt,exePath,tc,
-        raise_alloc_q,raise_alloc_a );
+        raise_alloc_q,raise_alloc_a,&controlPipe );
   if( !readPipe )
     TerminateProcess( pi.hProcess,1 );
 
@@ -1607,30 +1713,27 @@ void mainCRTStartup( void )
     dbgsym ds;
     dbgsym_init( &ds,pi.hProcess,tc,&opt,funcnames,heap,exePath,TRUE );
 
+    HANDLE err = GetStdHandle( STD_ERROR_HANDLE );
     if( opt.pid )
     {
-      HANDLE in = GetStdHandle( STD_INPUT_HANDLE );
-      if( FlushConsoleInputBuffer(in) )
-      {
-        tc->out = GetStdHandle( STD_ERROR_HANDLE );
-        printf( "-------------------- PID %u --------------------\n",
-            pi.dwProcessId );
-        printf( "press any key to continue..." );
+      tc->out = err;
+      printf( "-------------------- PID %u --------------------\n",
+          pi.dwProcessId );
+      printf( "press any key to continue..." );
 
-        INPUT_RECORD ir;
-        DWORD didread;
-        while( ReadConsoleInput(in,&ir,1,&didread) &&
-            (ir.EventType!=KEY_EVENT || !ir.Event.KeyEvent.bKeyDown ||
-             ir.Event.KeyEvent.wVirtualKeyCode==VK_SHIFT ||
-             ir.Event.KeyEvent.wVirtualKeyCode==VK_CAPITAL ||
-             ir.Event.KeyEvent.wVirtualKeyCode==VK_CONTROL ||
-             ir.Event.KeyEvent.wVirtualKeyCode==VK_MENU ||
-             ir.Event.KeyEvent.wVirtualKeyCode==VK_LWIN ||
-             ir.Event.KeyEvent.wVirtualKeyCode==VK_RWIN) );
+      INPUT_RECORD ir;
+      DWORD didread;
+      while( ReadConsoleInput(in,&ir,1,&didread) &&
+          (ir.EventType!=KEY_EVENT || !ir.Event.KeyEvent.bKeyDown ||
+           ir.Event.KeyEvent.wVirtualKeyCode==VK_SHIFT ||
+           ir.Event.KeyEvent.wVirtualKeyCode==VK_CAPITAL ||
+           ir.Event.KeyEvent.wVirtualKeyCode==VK_CONTROL ||
+           ir.Event.KeyEvent.wVirtualKeyCode==VK_MENU ||
+           ir.Event.KeyEvent.wVirtualKeyCode==VK_LWIN ||
+           ir.Event.KeyEvent.wVirtualKeyCode==VK_RWIN) );
 
-        printf( " done\n\n" );
-        tc->out = out;
-      }
+      printf( " done\n\n" );
+      tc->out = out;
     }
 
     ResumeThread( pi.hThread );
@@ -1649,8 +1752,71 @@ void mainCRTStartup( void )
     int threadName_q = 0;
     threadNameInfo *threadName_a = NULL;
 #endif
-    while( readFile(readPipe,&type,sizeof(int)) )
+    if( !opt.leakRecording ) in = NULL;
+    int recording = opt.leakRecording!=1;
+    int needData = 1;
+    OVERLAPPED ov;
+    ov.Offset = ov.OffsetHigh = 0;
+    ov.hEvent = CreateEvent( NULL,TRUE,FALSE,NULL );
+    HANDLE handles[2] = { ov.hEvent,in };
+    int waitCount = in ? 2 : 1;
+    int errColor = 0;
+    COORD consoleCoord = { 0,0 };
+    while( 1 )
     {
+      if( needData )
+      {
+        if( !ReadFile(readPipe,&type,sizeof(int),NULL,&ov) &&
+            GetLastError()!=ERROR_IO_PENDING ) break;
+        needData = 0;
+
+        if( in )
+          showRecording( err,recording,&consoleCoord,&errColor );
+      }
+
+      DWORD didread;
+      if( WaitForMultipleObjects(waitCount,handles,
+            FALSE,INFINITE)==WAIT_OBJECT_0+1 )
+      {
+        INPUT_RECORD ir;
+        if( ReadConsoleInput(in,&ir,1,&didread) &&
+            ir.EventType==KEY_EVENT &&
+            ir.Event.KeyEvent.bKeyDown )
+        {
+          int sendType = -1;
+
+          int oldRecording = recording;
+          switch( ir.Event.KeyEvent.wVirtualKeyCode )
+          {
+            case 'N':
+              recording = 1;
+              break;
+            case 'F':
+              recording = 0;
+              break;
+          }
+          if( recording!=oldRecording )
+            sendType = recording;
+
+          if( sendType>=0 )
+          {
+            WriteFile( controlPipe,&sendType,sizeof(int),&didread,NULL );
+
+            clearRecording( err,consoleCoord,errColor,0 );
+            showRecording( err,recording,&consoleCoord,&errColor );
+          }
+        }
+        continue;
+      }
+
+      if( in )
+        clearRecording( err,consoleCoord,errColor,1 );
+
+      if( !GetOverlappedResult(readPipe,&ov,&didread,TRUE) ||
+          didread<sizeof(int) )
+        break;
+      needData = 1;
+
       switch( type )
       {
 #if WRITE_DEBUG_STRINGS
@@ -1658,7 +1824,7 @@ void mainCRTStartup( void )
           {
             char buf[1024];
             char *bufpos = buf;
-            while( readFile(readPipe,bufpos,1) )
+            while( readFile(readPipe,bufpos,1,&ov) )
             {
               if( bufpos[0]!='\n' )
               {
@@ -1675,17 +1841,17 @@ void mainCRTStartup( void )
 #endif
 
         case WRITE_LEAKS:
-          if( !readFile(readPipe,&exitCode,sizeof(UINT)) )
+          if( !readFile(readPipe,&exitCode,sizeof(UINT),&ov) )
           {
             alloc_q = -2;
             break;
           }
-          if( !readFile(readPipe,&terminated,sizeof(int)) )
+          if( !readFile(readPipe,&terminated,sizeof(int),&ov) )
           {
             alloc_q = -2;
             break;
           }
-          if( !readFile(readPipe,&alloc_q,sizeof(int)) )
+          if( !readFile(readPipe,&alloc_q,sizeof(int),&ov) )
           {
             alloc_q = -2;
             break;
@@ -1693,7 +1859,7 @@ void mainCRTStartup( void )
           if( !alloc_q ) break;
           if( alloc_a ) HeapFree( heap,0,alloc_a );
           alloc_a = HeapAlloc( heap,0,alloc_q*sizeof(allocation) );
-          if( !readFile(readPipe,alloc_a,alloc_q*sizeof(allocation)) )
+          if( !readFile(readPipe,alloc_a,alloc_q*sizeof(allocation),&ov) )
           {
             alloc_q = -2;
             break;
@@ -1701,12 +1867,12 @@ void mainCRTStartup( void )
           break;
 
         case WRITE_MODS:
-          if( !readFile(readPipe,&mi_q,sizeof(int)) )
+          if( !readFile(readPipe,&mi_q,sizeof(int),&ov) )
             mi_q = 0;
           if( !mi_q ) break;
           if( mi_a ) HeapFree( heap,0,mi_a );
           mi_a = HeapAlloc( heap,0,mi_q*sizeof(modInfo) );
-          if( !readFile(readPipe,mi_a,mi_q*sizeof(modInfo)) )
+          if( !readFile(readPipe,mi_a,mi_q*sizeof(modInfo),&ov) )
           {
             mi_q = 0;
             break;
@@ -1730,7 +1896,7 @@ void mainCRTStartup( void )
         case WRITE_EXCEPTION:
           {
             exceptionInfo ei;
-            if( !readFile(readPipe,&ei,sizeof(exceptionInfo)) )
+            if( !readFile(readPipe,&ei,sizeof(exceptionInfo),&ov) )
               break;
 
             const char *desc = NULL;
@@ -1806,7 +1972,7 @@ void mainCRTStartup( void )
         case WRITE_ALLOC_FAIL:
           {
             allocation a;
-            if( !readFile(readPipe,&a,sizeof(allocation)) )
+            if( !readFile(readPipe,&a,sizeof(allocation),&ov) )
               break;
 
             printf( "\n$Wallocation failed of %U bytes\n",a.size );
@@ -1819,7 +1985,7 @@ void mainCRTStartup( void )
         case WRITE_FREE_FAIL:
           {
             allocation a;
-            if( !readFile(readPipe,&a,sizeof(allocation)) )
+            if( !readFile(readPipe,&a,sizeof(allocation),&ov) )
               break;
 
             printf( "\n$Wdeallocation of invalid pointer %p\n",a.ptr );
@@ -1832,7 +1998,7 @@ void mainCRTStartup( void )
         case WRITE_DOUBLE_FREE:
           {
             allocation aa[3];
-            if( !readFile(readPipe,aa,3*sizeof(allocation)) )
+            if( !readFile(readPipe,aa,3*sizeof(allocation),&ov) )
               break;
 
             printf( "\n$Wdouble free of %p (size %U)\n",aa[1].ptr,aa[1].size );
@@ -1853,7 +2019,7 @@ void mainCRTStartup( void )
         case WRITE_SLACK:
           {
             allocation aa[2];
-            if( !readFile(readPipe,aa,2*sizeof(allocation)) )
+            if( !readFile(readPipe,aa,2*sizeof(allocation),&ov) )
               break;
 
             printf( "\n$Wwrite access violation at %p\n",aa[1].ptr );
@@ -1877,7 +2043,7 @@ void mainCRTStartup( void )
         case WRITE_WRONG_DEALLOC:
           {
             allocation aa[2];
-            if( !readFile(readPipe,aa,2*sizeof(allocation)) )
+            if( !readFile(readPipe,aa,2*sizeof(allocation),&ov) )
               break;
 
             printf( "\n$Wmismatching allocation/release method"
@@ -1893,14 +2059,14 @@ void mainCRTStartup( void )
 
         case WRITE_LEAK_CONTENTS:
           {
-            if( !readFile(readPipe,&content_q,sizeof(int)) ||
+            if( !readFile(readPipe,&content_q,sizeof(int),&ov) ||
                 content_q>alloc_q  )
               break;
             size_t content_size;
-            if( !readFile(readPipe,&content_size,sizeof(size_t)) )
+            if( !readFile(readPipe,&content_size,sizeof(size_t),&ov) )
               break;
             contents = HeapAlloc( heap,0,content_size );
-            if( !readFile(readPipe,contents,content_size) )
+            if( !readFile(readPipe,contents,content_size,&ov) )
               break;
             content_ptrs =
               HeapAlloc( heap,0,content_q*sizeof(unsigned char*) );
@@ -1923,10 +2089,10 @@ void mainCRTStartup( void )
         case WRITE_RAISE_ALLOCATION:
           {
             int id;
-            if( !readFile(readPipe,&id,sizeof(int)) )
+            if( !readFile(readPipe,&id,sizeof(int),&ov) )
               break;
             funcType ft;
-            if( !readFile(readPipe,&ft,sizeof(funcType)) )
+            if( !readFile(readPipe,&ft,sizeof(funcType),&ov) )
               break;
 
             printf( "\n$Sreached allocation #%d $N[$I%s$N]\n",
@@ -1938,7 +2104,7 @@ void mainCRTStartup( void )
         case WRITE_THREAD_NAMES:
           {
             int add_q;
-            if( !readFile(readPipe,&add_q,sizeof(int)) )
+            if( !readFile(readPipe,&add_q,sizeof(int),&ov) )
               break;
             int old_q = threadName_q;
             threadName_q += add_q;
@@ -1949,7 +2115,7 @@ void mainCRTStartup( void )
               threadName_a = HeapReAlloc( heap,0,
                   threadName_a,threadName_q*sizeof(threadNameInfo) );
             if( !readFile(readPipe,threadName_a+old_q,
-                  add_q*sizeof(threadNameInfo)) )
+                  add_q*sizeof(threadNameInfo),&ov) )
             {
               threadName_q = 0;
               break;
@@ -1959,6 +2125,7 @@ void mainCRTStartup( void )
 #endif
       }
     }
+    CloseHandle( ov.hEvent );
     // }}}
 
     allocation exitTrace;
@@ -2153,6 +2320,7 @@ void mainCRTStartup( void )
 #endif
     CloseHandle( readPipe );
   }
+  if( controlPipe ) CloseHandle( controlPipe );
   CloseHandle( pi.hThread );
   CloseHandle( pi.hProcess );
 
