@@ -569,7 +569,8 @@ static CODE_SEG(".text$2") HANDLE inject(
     (func_ExitProcess*)GetProcAddress( kernel32,"ExitProcess" );
 
   GetModuleFileNameW( NULL,data->exePath,MAX_PATH );
-  data->injOffset = (size_t)&inj - (size_t)GetModuleHandle( NULL );
+  func_inj *finj = &inj;
+  data->injOffset = (size_t)finj - (size_t)GetModuleHandle( NULL );
 
   char pipeName[32] = "\\\\.\\Pipe\\heob.data.";
   char *end = num2hexstr( pipeName+lstrlen(pipeName),GetCurrentProcessId(),8 );
