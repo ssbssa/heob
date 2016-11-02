@@ -183,8 +183,8 @@ typedef struct localData
 }
 localData;
 
-static localData *g_ld = NULL;
-#define GET_REMOTEDATA( ld ) localData *ld = g_ld
+static localData g_ld;
+#define GET_REMOTEDATA( ld ) localData *ld = &g_ld
 
 // }}}
 // process exit {{{
@@ -3036,9 +3036,7 @@ void inj( remoteData *rd,HMODULE app )
   rd->fFlushInstructionCache( rd->fGetCurrentProcess(),NULL,0 );
 
   HANDLE heap = HeapCreate( 0,0,0 );
-  localData *ld = HeapAlloc( heap,HEAP_ZERO_MEMORY,
-      sizeof(localData)+rd->raise_alloc_q*sizeof(int) );
-  g_ld = ld;
+  localData *ld = &g_ld;
 
   RtlMoveMemory( &ld->opt,&rd->opt,sizeof(options) );
   ld->fLoadLibraryA = rd->fLoadLibraryA;
@@ -3117,10 +3115,12 @@ void inj( remoteData *rd,HMODULE app )
 
   ld->cur_id = 0;
   ld->raise_alloc_q = rd->raise_alloc_q;
-  ld->raise_alloc_a = (int*)( ld + 1 );
   if( rd->raise_alloc_q )
+  {
+    ld->raise_alloc_a = HeapAlloc( heap,0,rd->raise_alloc_q*sizeof(int) );
     RtlMoveMemory( ld->raise_alloc_a,
         rd->raise_alloc_a,rd->raise_alloc_q*sizeof(int) );
+  }
   ld->raise_id = ld->raise_alloc_q-- ? *(ld->raise_alloc_a++) : 0;
 
 #ifndef NO_THREADNAMES
