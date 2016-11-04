@@ -1199,28 +1199,34 @@ static void findLeakTypeWork( leakTypeInfo *lti )
         const void **start = mod_mem->start;
         if( (uintptr_t)start==ptr ) continue;
         const void **end = mod_mem->end;
-        for( ; start<end; start++ )
+        if( compareExact )
         {
-          uintptr_t memPtr = (uintptr_t)*start;
-          if( compareExact )
+          for( ; start<end; start++ )
           {
-            if( memPtr!=ptr ) continue;
+            uintptr_t memPtr = (uintptr_t)*start;
+            if( memPtr==ptr ) break;
           }
-          else
+        }
+        else
+        {
+          for( ; start<end; start++ )
           {
-            if( memPtr<ptr || memPtr>=ptrEnd ) continue;
+            uintptr_t memPtr = (uintptr_t)*start;
+            if( memPtr>=ptr && memPtr<ptrEnd ) break;
           }
-          a->lt = lt;
-          if( lt!=LT_JOINTLY_LOST )
-          {
-            PBYTE memStart = a->ptr;
-            EnterCriticalSection( &rd->csLeakType );
-            addModMem( memStart,memStart+a->size );
-            LeaveCriticalSection( &rd->csLeakType );
-          }
-          break;
         }
         if( start<end ) break;
+      }
+      if( k<mod_mem_q )
+      {
+        a->lt = lt;
+        if( lt!=LT_JOINTLY_LOST )
+        {
+          PBYTE memStart = a->ptr;
+          EnterCriticalSection( &rd->csLeakType );
+          addModMem( memStart,memStart+a->size );
+          LeaveCriticalSection( &rd->csLeakType );
+        }
       }
     }
   }
