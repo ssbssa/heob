@@ -2039,6 +2039,12 @@ void mainCRTStartup( void )
               }
             }
           }
+
+          printLeaks( alloc_a,alloc_q,content_ptrs,mi_a,mi_q,
+#ifndef NO_THREADNAMES
+              threadName_a,threadName_q,
+#endif
+              &opt,tc,&ds,heap );
           break;
 
         case WRITE_MODS:
@@ -2281,46 +2287,31 @@ void mainCRTStartup( void )
             terminated = -2;
             break;
           }
+
+          if( !terminated )
+          {
+            if( alloc_q>0 && alloc_a[alloc_q-1].at==AT_EXIT )
+            {
+              allocation *exitTrace = &alloc_a[alloc_q-1];
+              printf( "$Sexit on:" );
+              printThreadName( exitTrace->threadNameIdx );
+              printStack( exitTrace->frames,mi_a,mi_q,&ds,FT_COUNT );
+            }
+
+            printf( "$Sexit code: %u (%x)\n",exitCode,exitCode );
+          }
+          else
+          {
+            printf( "\n$Stermination code: %u (%x)\n",exitCode,exitCode );
+          }
           break;
       }
     }
     CloseHandle( ov.hEvent );
     // }}}
 
-    allocation exitTrace;
-    exitTrace.at = AT_MALLOC;
-    if( alloc_q>0 && alloc_a[alloc_q-1].at==AT_EXIT )
-    {
-      alloc_q--;
-      exitTrace = alloc_a[alloc_q];
-    }
-
-    if( terminated==-1 ); // exception
-    else if( terminated<-1 )
-    {
+    if( terminated==-2 )
       printf( "\n$Wunexpected end of application\n" );
-    }
-    else if( !terminated )
-    {
-      printLeaks( alloc_a,alloc_q,content_ptrs,mi_a,mi_q,
-#ifndef NO_THREADNAMES
-          threadName_a,threadName_q,
-#endif
-          &opt,tc,&ds,heap );
-
-      if( exitTrace.at==AT_EXIT )
-      {
-        printf( "$Sexit on:" );
-        printThreadName( exitTrace.threadNameIdx );
-        printStack( exitTrace.frames,mi_a,mi_q,&ds,FT_COUNT );
-      }
-
-      printf( "$Sexit code: %u (%x)\n",exitCode,exitCode );
-    }
-    else
-    {
-      printf( "\n$Stermination code: %u (%x)\n",exitCode,exitCode );
-    }
 
     dbgsym_close( &ds,heap );
     if( alloc_a ) HeapFree( heap,0,alloc_a );
