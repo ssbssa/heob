@@ -1237,6 +1237,161 @@ static void clearRecording( HANDLE err,
 }
 
 // }}}
+// leak data {{{
+
+static void printLeaks( allocation *alloc_a,int alloc_q,
+    unsigned char **content_ptrs,modInfo *mi_a,int mi_q,
+#ifndef NO_THREADNAMES
+    threadNameInfo *threadName_a,int threadName_q,
+#endif
+    options *opt,textColor *tc,dbgsym *ds,HANDLE heap )
+{
+  if( opt->handleException>=2 )
+  {
+    printf( "\n" );
+    return;
+  }
+
+  if( alloc_q>0 && alloc_a[alloc_q-1].at==AT_EXIT )
+    alloc_q--;
+
+  if( !alloc_q )
+  {
+    printf( "\n$Ono leaks found\n" );
+    return;
+  }
+
+  int i;
+  size_t sumSize = 0;
+  int combined_q = alloc_q;
+  int *alloc_idxs =
+    opt->leakDetails ? HeapAlloc( heap,0,alloc_q*sizeof(int) ) : NULL;
+  for( i=0; i<alloc_q; i++ )
+  {
+    sumSize += alloc_a[i].size;
+    alloc_a[i].count = 1;
+    if( alloc_idxs )
+      alloc_idxs[i] = i;
+  }
+  if( opt->mergeLeaks && opt->leakDetails )
+  {
+    sort_allocations( alloc_a,alloc_idxs,alloc_q,cmp_merge_allocation );
+    combined_q = 0;
+    for( i=0; i<alloc_q; )
+    {
+      allocation a;
+      int idx = alloc_idxs[i];
+      a = alloc_a[idx];
+      int j;
+      for( j=i+1; j<alloc_q; j++ )
+      {
+        int c = cmp_merge_allocation( &a,alloc_a+alloc_idxs[j] );
+        if( c<-1 || c>1 ) break;
+
+        a.count++;
+      }
+
+      alloc_a[idx] = a;
+      alloc_idxs[combined_q++] = idx;
+      i = j;
+    }
+  }
+  if( opt->leakDetails<=1 )
+    printf( "\n$Sleaks:\n" );
+  else
+    printf( "\n" );
+  int l;
+  int lMax = opt->leakDetails ? LT_COUNT : 0;
+  int lDetails = ( opt->leakDetails&1 ) ? LT_COUNT : LT_REACHABLE;
+  if( opt->leakDetails )
+  {
+    for( i=0; i<combined_q; i++ )
+      alloc_a[alloc_idxs[i]].size *= alloc_a[alloc_idxs[i]].count;
+    sort_allocations( alloc_a,alloc_idxs,combined_q,cmp_type_allocation );
+    for( i=0; i<combined_q; i++ )
+      alloc_a[alloc_idxs[i]].size /= alloc_a[alloc_idxs[i]].count;
+  }
+  for( l=0,i=0; l<lMax; l++ )
+  {
+    int ltCount = 0;
+    size_t ltSumSize = 0;
+    for( ; i<combined_q; i++ )
+    {
+      allocation a;
+      a = alloc_a[alloc_idxs[i]];
+      if( a.lt<l ) continue;
+      if( a.lt>l ) break;
+
+      if( opt->leakDetails>1 && !ltCount )
+        printf( "$Sleaks (%s):\n",
+            l==LT_LOST?"lost":l==LT_JOINTLY_LOST?"jointly lost":
+            l==LT_INDIRECTLY_LOST?"indirectly lost":
+            l==LT_REACHABLE?"reachable":"indirectly reachable" );
+
+      ltCount += a.count;
+      size_t combSize = a.size*a.count;
+      ltSumSize += combSize;
+
+      if( l<lDetails && combSize>=opt->minLeakSize )
+      {
+        printf( "$W  %U B ",a.size );
+        if( a.count>1 )
+          printf( "* %d = %U B ",a.count,combSize );
+        printf( "$N(#%d)",a.id );
+        printThreadName( a.threadNameIdx );
+        printStack( a.frames,mi_a,mi_q,ds,a.ft );
+
+        if( content_ptrs && a.size )
+        {
+          int s = a.size<(size_t)opt->leakContents ?
+            (int)a.size : opt->leakContents;
+          char text[5] = { 0,0,0,0,0 };
+          unsigned char *content = content_ptrs[alloc_idxs[i]];
+          int lines = ( s+15 )/16;
+          int lc;
+          for( lc=0; lc<lines; lc++,s-=16 )
+          {
+            unsigned char *line = content + lc*16;
+            int line_size = s>16 ? 16 : s;
+            text[0] = num2hex( lc>>8 );
+            text[1] = num2hex( lc>>4 );
+            text[2] = num2hex( lc );
+            text[3] = '0';
+            printf( "        $I%s$N ",text );
+            int p;
+            text[2] = 0;
+            for( p=0; p<line_size; p++ )
+            {
+              unsigned char c = line[p];
+              text[0] = num2hex( c>>4 );
+              text[1] = num2hex( c );
+              printf( " %s",text );
+            }
+            for( ; p<16; p++ )
+              printf( "   " );
+            printf( "  $S" );
+            text[1] = 0;
+            for( p=0; p<line_size; p++ )
+            {
+              unsigned char c = line[p];
+              text[0] = c>=0x20 && c<=0x7e ? c : '.';
+              printf( "%s",text );
+            }
+            printf( "\n" );
+          }
+        }
+      }
+    }
+    if( opt->leakDetails>1 && ltCount )
+      printf( "$W  sum: %U B / %d\n",ltSumSize,ltCount );
+  }
+  if( opt->leakDetails<=1 )
+    printf( "$W  sum: %U B / %d\n",sumSize,alloc_q );
+  if( alloc_idxs )
+    HeapFree( heap,0,alloc_idxs );
+}
+
+// }}}
 // main {{{
 
 void mainCRTStartup( void )
@@ -2145,158 +2300,13 @@ void mainCRTStartup( void )
     {
       printf( "\n$Wunexpected end of application\n" );
     }
-    else if( !alloc_q )
+    else if( !terminated )
     {
-      printf( "\n" );
-
-      if( !terminated )
-      {
-        if( opt.handleException<2 )
-          printf( "$Ono leaks found\n" );
-
-        if( exitTrace.at==AT_EXIT )
-        {
-          printf( "$Sexit on:" );
-          printThreadName( exitTrace.threadNameIdx );
-          printStack( exitTrace.frames,mi_a,mi_q,&ds,FT_COUNT );
-        }
-      }
-
-      printf( "$S%s code: %u (%x)\n",
-          terminated?"termination":"exit",exitCode,exitCode );
-    }
-    else
-    {
-      // leaks {{{
-      int i;
-      size_t sumSize = 0;
-      int combined_q = alloc_q;
-      int *alloc_idxs =
-        opt.leakDetails ? HeapAlloc( heap,0,alloc_q*sizeof(int) ) : NULL;
-      for( i=0; i<alloc_q; i++ )
-      {
-        sumSize += alloc_a[i].size;
-        alloc_a[i].count = 1;
-        if( alloc_idxs )
-          alloc_idxs[i] = i;
-      }
-      if( opt.mergeLeaks && opt.leakDetails )
-      {
-        sort_allocations( alloc_a,alloc_idxs,alloc_q,cmp_merge_allocation );
-        combined_q = 0;
-        for( i=0; i<alloc_q; )
-        {
-          allocation a;
-          int idx = alloc_idxs[i];
-          a = alloc_a[idx];
-          int j;
-          for( j=i+1; j<alloc_q; j++ )
-          {
-            int c = cmp_merge_allocation( &a,alloc_a+alloc_idxs[j] );
-            if( c<-1 || c>1 ) break;
-
-            a.count++;
-          }
-
-          alloc_a[idx] = a;
-          alloc_idxs[combined_q++] = idx;
-          i = j;
-        }
-      }
-      if( opt.leakDetails<=1 )
-        printf( "\n$Sleaks:\n" );
-      else
-        printf( "\n" );
-      int l;
-      int lMax = opt.leakDetails ? LT_COUNT : 0;
-      int lDetails = ( opt.leakDetails&1 ) ? LT_COUNT : LT_REACHABLE;
-      if( opt.leakDetails )
-      {
-        for( i=0; i<combined_q; i++ )
-          alloc_a[alloc_idxs[i]].size *= alloc_a[alloc_idxs[i]].count;
-        sort_allocations( alloc_a,alloc_idxs,combined_q,cmp_type_allocation );
-        for( i=0; i<combined_q; i++ )
-          alloc_a[alloc_idxs[i]].size /= alloc_a[alloc_idxs[i]].count;
-      }
-      for( l=0,i=0; l<lMax; l++ )
-      {
-        int ltCount = 0;
-        size_t ltSumSize = 0;
-        for( ; i<combined_q; i++ )
-        {
-          allocation a;
-          a = alloc_a[alloc_idxs[i]];
-          if( a.lt<l ) continue;
-          if( a.lt>l ) break;
-
-          if( opt.leakDetails>1 && !ltCount )
-            printf( "$Sleaks (%s):\n",
-                l==LT_LOST?"lost":l==LT_JOINTLY_LOST?"jointly lost":
-                l==LT_INDIRECTLY_LOST?"indirectly lost":
-                l==LT_REACHABLE?"reachable":"indirectly reachable" );
-
-          ltCount += a.count;
-          size_t combSize = a.size*a.count;
-          ltSumSize += combSize;
-
-          if( l<lDetails && combSize>=opt.minLeakSize )
-          {
-            printf( "$W  %U B ",a.size );
-            if( a.count>1 )
-              printf( "* %d = %U B ",a.count,combSize );
-            printf( "$N(#%d)",a.id );
-            printThreadName( a.threadNameIdx );
-            printStack( a.frames,mi_a,mi_q,&ds,a.ft );
-
-            if( content_ptrs && a.size )
-            {
-              int s = a.size<(size_t)opt.leakContents ?
-                (int)a.size : opt.leakContents;
-              char text[5] = { 0,0,0,0,0 };
-              unsigned char *content = content_ptrs[alloc_idxs[i]];
-              int lines = ( s+15 )/16;
-              int lc;
-              for( lc=0; lc<lines; lc++,s-=16 )
-              {
-                unsigned char *line = content + lc*16;
-                int line_size = s>16 ? 16 : s;
-                text[0] = num2hex( lc>>8 );
-                text[1] = num2hex( lc>>4 );
-                text[2] = num2hex( lc );
-                text[3] = '0';
-                printf( "        $I%s$N ",text );
-                int p;
-                text[2] = 0;
-                for( p=0; p<line_size; p++ )
-                {
-                  unsigned char c = line[p];
-                  text[0] = num2hex( c>>4 );
-                  text[1] = num2hex( c );
-                  printf( " %s",text );
-                }
-                for( ; p<16; p++ )
-                  printf( "   " );
-                printf( "  $S" );
-                text[1] = 0;
-                for( p=0; p<line_size; p++ )
-                {
-                  unsigned char c = line[p];
-                  text[0] = c>=0x20 && c<=0x7e ? c : '.';
-                  printf( "%s",text );
-                }
-                printf( "\n" );
-              }
-            }
-          }
-        }
-        if( opt.leakDetails>1 && ltCount )
-          printf( "$W  sum: %U B / %d\n",ltSumSize,ltCount );
-      }
-      if( opt.leakDetails<=1 )
-        printf( "$W  sum: %U B / %d\n",sumSize,alloc_q );
-      if( alloc_idxs )
-        HeapFree( heap,0,alloc_idxs );
-      // }}}
+      printLeaks( alloc_a,alloc_q,content_ptrs,mi_a,mi_q,
+#ifndef NO_THREADNAMES
+          threadName_a,threadName_q,
+#endif
+          &opt,tc,&ds,heap );
 
       if( exitTrace.at==AT_EXIT )
       {
@@ -2304,8 +2314,12 @@ void mainCRTStartup( void )
         printThreadName( exitTrace.threadNameIdx );
         printStack( exitTrace.frames,mi_a,mi_q,&ds,FT_COUNT );
       }
-      printf( "$S%s code: %u (%x)\n",
-          terminated?"termination":"exit",exitCode,exitCode );
+
+      printf( "$Sexit code: %u (%x)\n",exitCode,exitCode );
+    }
+    else
+    {
+      printf( "\n$Stermination code: %u (%x)\n",exitCode,exitCode );
     }
 
     dbgsym_close( &ds,heap );

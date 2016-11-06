@@ -1111,6 +1111,97 @@ static void *new_recalloc( void *b,size_t n,size_t s )
 }
 
 // }}}
+// transfer leak data {{{
+
+static void writeLeakMods( void )
+{
+  GET_REMOTEDATA( rd );
+
+  int i;
+  int mi_q = 0;
+  modInfo *mi_a = NULL;
+  for( i=0; i<=SPLIT_MASK; i++ )
+  {
+    splitAllocation *sa = rd->splits + i;
+    writeModsFind( sa->alloc_a,sa->alloc_q,&mi_a,&mi_q );
+  }
+  writeModsSend( mi_a,mi_q );
+  if( mi_a )
+    HeapFree( rd->heap,0,mi_a );
+}
+
+static void writeLeakData( void )
+{
+  GET_REMOTEDATA( rd );
+
+  int i;
+  int alloc_q = 0;
+  for( i=0; i<=SPLIT_MASK; i++ )
+  {
+    splitAllocation *sa = rd->splits + i;
+    int j;
+    int part_q = sa->alloc_q;
+    for( j=0; j<part_q; j++ )
+      if( sa->alloc_a[j].recording ) alloc_q++;
+  }
+  DWORD written;
+  int type = WRITE_LEAKS;
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,&alloc_q,sizeof(int),&written,NULL );
+  size_t alloc_mem_sum = 0;
+  size_t leakContents = rd->opt.leakContents;
+  int lDetails = rd->opt.leakDetails ?
+    ( (rd->opt.leakDetails&1) ? LT_COUNT : LT_REACHABLE ) : 0;
+  for( i=0; i<=SPLIT_MASK; i++ )
+  {
+    splitAllocation *sa = rd->splits + i;
+    alloc_q = sa->alloc_q;
+    if( !alloc_q ) continue;
+
+    int j;
+    for( j=0; j<alloc_q; j++ )
+    {
+      allocation *a = sa->alloc_a + j;
+      if( a->recording )
+        WriteFile( rd->master,a,sizeof(allocation),&written,NULL );
+    }
+
+    if( leakContents )
+    {
+      if( sa->alloc_a[alloc_q-1].at==AT_EXIT ) alloc_q--;
+      for( j=0; j<alloc_q; j++ )
+      {
+        allocation *a = sa->alloc_a + j;
+        if( !a->recording || a->lt>=lDetails ) continue;
+        size_t s = a->size;
+        alloc_mem_sum += s<leakContents ? s : leakContents;
+      }
+    }
+  }
+
+  WriteFile( rd->master,&alloc_mem_sum,sizeof(size_t),&written,NULL );
+  if( alloc_mem_sum )
+  {
+    for( i=0; i<=SPLIT_MASK; i++ )
+    {
+      splitAllocation *sa = rd->splits + i;
+      alloc_q = sa->alloc_q;
+      if( alloc_q>0 && sa->alloc_a[alloc_q-1].at==AT_EXIT ) alloc_q--;
+      int j;
+      for( j=0; j<alloc_q; j++ )
+      {
+        allocation *a = sa->alloc_a + j;
+        if( !a->recording || a->lt>=lDetails ) continue;
+        size_t s = a->size;
+        if( leakContents<s ) s = leakContents;
+        if( s )
+          WriteFile( rd->master,a->ptr,(DWORD)s,&written,NULL );
+      }
+    }
+  }
+}
+
+// }}}
 // leak type detection {{{
 
 static void addModMem( PBYTE start,PBYTE end )
@@ -1374,19 +1465,13 @@ static VOID WINAPI new_ExitProcess( UINT c )
     rd->recording = save_recording;
   }
 
-  int mi_q = 0;
-  modInfo *mi_a = NULL;
-  for( i=0; i<=SPLIT_MASK; i++ )
-  {
-    splitAllocation *sa = rd->splits + i;
-    writeModsFind( sa->alloc_a,sa->alloc_q,&mi_a,&mi_q );
-  }
+  writeLeakMods();
 
   if( rd->freed_mod_q )
   {
-    LeaveCriticalSection( &rd->csWrite );
     for( i=0; i<=SPLIT_MASK; i++ )
       LeaveCriticalSection( &rd->splits[i].cs );
+    LeaveCriticalSection( &rd->csWrite );
 
     for( i=0; i<rd->freed_mod_q; i++ )
       rd->fFreeLibrary( rd->freed_mod_a[i] );
@@ -1395,10 +1480,6 @@ static VOID WINAPI new_ExitProcess( UINT c )
     for( i=0; i<=SPLIT_MASK; i++ )
       EnterCriticalSection( &rd->splits[i].cs );
   }
-
-  writeModsSend( mi_a,mi_q );
-  if( mi_a )
-    HeapFree( rd->heap,0,mi_a );
 
   // make sure exit trace is still the last {{{
   int alloc_q;
@@ -1422,69 +1503,7 @@ static VOID WINAPI new_ExitProcess( UINT c )
   }
   // }}}
 
-  alloc_q = 0;
-  for( i=0; i<=SPLIT_MASK; i++ )
-  {
-    splitAllocation *sa = rd->splits + i;
-    int j;
-    int part_q = sa->alloc_q;
-    for( j=0; j<part_q; j++ )
-      if( sa->alloc_a[j].recording ) alloc_q++;
-  }
-  type = WRITE_LEAKS;
-  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,&alloc_q,sizeof(int),&written,NULL );
-  size_t alloc_mem_sum = 0;
-  size_t leakContents = rd->opt.leakContents;
-  int lDetails = rd->opt.leakDetails ?
-    ( (rd->opt.leakDetails&1) ? LT_COUNT : LT_REACHABLE ) : 0;
-  for( i=0; i<=SPLIT_MASK; i++ )
-  {
-    splitAllocation *sa = rd->splits + i;
-    alloc_q = sa->alloc_q;
-    if( !alloc_q ) continue;
-
-    int j;
-    for( j=0; j<alloc_q; j++ )
-    {
-      allocation *a = sa->alloc_a + j;
-      if( a->recording )
-        WriteFile( rd->master,a,sizeof(allocation),&written,NULL );
-    }
-
-    if( leakContents )
-    {
-      if( sa->alloc_a[alloc_q-1].at==AT_EXIT ) alloc_q--;
-      for( j=0; j<alloc_q; j++ )
-      {
-        allocation *a = sa->alloc_a + j;
-        if( !a->recording || a->lt>=lDetails ) continue;
-        size_t s = a->size;
-        alloc_mem_sum += s<leakContents ? s : leakContents;
-      }
-    }
-  }
-
-  WriteFile( rd->master,&alloc_mem_sum,sizeof(size_t),&written,NULL );
-  if( alloc_mem_sum )
-  {
-    for( i=0; i<=SPLIT_MASK; i++ )
-    {
-      splitAllocation *sa = rd->splits + i;
-      alloc_q = sa->alloc_q;
-      if( alloc_q>0 && sa->alloc_a[alloc_q-1].at==AT_EXIT ) alloc_q--;
-      int j;
-      for( j=0; j<alloc_q; j++ )
-      {
-        allocation *a = sa->alloc_a + j;
-        if( !a->recording || a->lt>=lDetails ) continue;
-        size_t s = a->size;
-        if( leakContents<s ) s = leakContents;
-        if( s )
-          WriteFile( rd->master,a->ptr,(DWORD)s,&written,NULL );
-      }
-    }
-  }
+  writeLeakData();
 
   type = WRITE_EXIT;
   int terminated = 0;
@@ -1492,9 +1511,9 @@ static VOID WINAPI new_ExitProcess( UINT c )
   WriteFile( rd->master,&c,sizeof(UINT),&written,NULL );
   WriteFile( rd->master,&terminated,sizeof(int),&written,NULL );
 
-  LeaveCriticalSection( &rd->csWrite );
   for( i=0; i<=SPLIT_MASK; i++ )
     LeaveCriticalSection( &rd->splits[i].cs );
+  LeaveCriticalSection( &rd->csWrite );
 
   exitWait( c,0 );
 }
