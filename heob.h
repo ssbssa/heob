@@ -275,6 +275,14 @@ enum
   WRITE_EXIT,
 };
 
+enum
+{
+  LEAK_RECORDING_STOP,
+  LEAK_RECORDING_START,
+  LEAK_RECORDING_CLEAR,
+  LEAK_RECORDING_SHOW,
+};
+
 typedef struct
 {
   size_t base;

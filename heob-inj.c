@@ -3213,7 +3213,58 @@ void inj( remoteData *rd,HMODULE app )
     int type;
     DWORD didread;
     while( ReadFile(controlPipe,&type,sizeof(int),&didread,NULL) )
-      ld->recording = type;
+    {
+      switch( type )
+      {
+        case LEAK_RECORDING_STOP:
+        case LEAK_RECORDING_START:
+          ld->recording = type;
+          break;
+
+        case LEAK_RECORDING_CLEAR:
+          {
+            int i;
+            for( i=0; i<=SPLIT_MASK; i++ )
+            {
+              int j;
+              splitAllocation *sa = ld->splits + i;
+              EnterCriticalSection( &sa->cs );
+              int alloc_q = sa->alloc_q;
+              allocation *alloc_a = sa->alloc_a;
+              for( j=0; j<alloc_q; j++ )
+                alloc_a[j].recording = 0;
+              LeaveCriticalSection( &sa->cs );
+            }
+          }
+          break;
+
+        case LEAK_RECORDING_SHOW:
+          {
+            int i;
+            EnterCriticalSection( &ld->csWrite );
+            for( i=0; i<=SPLIT_MASK; i++ )
+              EnterCriticalSection( &ld->splits[i].cs );
+
+            writeLeakMods();
+            writeLeakData();
+
+            for( i=0; i<=SPLIT_MASK; i++ )
+            {
+              int j;
+              splitAllocation *sa = ld->splits + i;
+              int alloc_q = sa->alloc_q;
+              allocation *alloc_a = sa->alloc_a;
+              for( j=0; j<alloc_q; j++ )
+                alloc_a[j].recording = 0;
+            }
+
+            for( i=0; i<=SPLIT_MASK; i++ )
+              LeaveCriticalSection( &ld->splits[i].cs );
+            LeaveCriticalSection( &ld->csWrite );
+          }
+          break;
+      }
+    }
   }
 
   while( 1 ) Sleep( INFINITE );

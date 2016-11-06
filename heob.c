@@ -1196,9 +1196,9 @@ static void showRecording( HANDLE err,int recording,
   *consoleCoord = csbi.dwCursorPosition;
   int errColor = *errColorP = csbi.wAttributes&0xff;
 
-  const char *recText = "leak recording:  on   off ";
+  const char *recText = "leak recording:  on   off   clear   show ";
   WriteFile( err,recText,16,&didwrite,NULL );
-  if( recording )
+  if( recording>0 )
   {
     SetConsoleTextAttribute( err,errColor^BACKGROUND_INTENSITY );
     WriteFile( err,recText+16,4,&didwrite,NULL );
@@ -1220,6 +1220,31 @@ static void showRecording( HANDLE err,int recording,
     WriteFile( err,recText+21,5,&didwrite,NULL );
     SetConsoleTextAttribute( err,errColor );
   }
+  WriteFile( err,recText+26,1,&didwrite,NULL );
+  if( recording>=0 )
+  {
+    WriteFile( err,recText+27,1,&didwrite,NULL );
+    SetConsoleTextAttribute( err,
+        errColor^(FOREGROUND_RED|FOREGROUND_BLUE|FOREGROUND_INTENSITY) );
+    WriteFile( err,recText+28,1,&didwrite,NULL );
+    SetConsoleTextAttribute( err,errColor );
+    WriteFile( err,recText+29,7,&didwrite,NULL );
+    SetConsoleTextAttribute( err,
+        errColor^(FOREGROUND_RED|FOREGROUND_BLUE|FOREGROUND_INTENSITY) );
+    WriteFile( err,recText+36,1,&didwrite,NULL );
+    SetConsoleTextAttribute( err,errColor );
+    WriteFile( err,recText+37,4,&didwrite,NULL );
+  }
+  else
+  {
+    SetConsoleTextAttribute( err,errColor^BACKGROUND_INTENSITY );
+    WriteFile( err,recText+27,7,&didwrite,NULL );
+    SetConsoleTextAttribute( err,errColor );
+    WriteFile( err,recText+34,1,&didwrite,NULL );
+    SetConsoleTextAttribute( err,errColor^BACKGROUND_INTENSITY );
+    WriteFile( err,recText+35,6,&didwrite,NULL );
+    SetConsoleTextAttribute( err,errColor );
+  }
 }
 
 static void clearRecording( HANDLE err,
@@ -1231,7 +1256,7 @@ static void clearRecording( HANDLE err,
   if( !clearAll ) return;
 
   DWORD didwrite;
-  int recTextLen = 26;
+  int recTextLen = 41;
   FillConsoleOutputAttribute( err,errColor,recTextLen,consoleCoord,&didwrite );
   FillConsoleOutputCharacter( err,' ',recTextLen,consoleCoord,&didwrite );
 }
@@ -1908,7 +1933,7 @@ void mainCRTStartup( void )
     threadNameInfo *threadName_a = NULL;
 #endif
     if( !opt.leakRecording ) in = NULL;
-    int recording = opt.leakRecording!=1;
+    int recording = opt.leakRecording!=1 ? 1 : -1;
     int needData = 1;
     OVERLAPPED ov;
     ov.Offset = ov.OffsetHigh = 0;
@@ -1940,18 +1965,32 @@ void mainCRTStartup( void )
         {
           int sendType = -1;
 
-          int oldRecording = recording;
           switch( ir.Event.KeyEvent.wVirtualKeyCode )
           {
             case 'N':
+              if( recording>0 ) break;
               recording = 1;
+              sendType = LEAK_RECORDING_START;
               break;
+
             case 'F':
+              if( recording<=0 ) break;
               recording = 0;
+              sendType = LEAK_RECORDING_STOP;
+              break;
+
+            case 'C':
+              if( recording<0 ) break;
+              if( !recording ) recording = -1;
+              sendType = LEAK_RECORDING_CLEAR;
+              break;
+
+            case 'S':
+              if( recording<0 ) break;
+              if( !recording ) recording = -1;
+              sendType = LEAK_RECORDING_SHOW;
               break;
           }
-          if( recording!=oldRecording )
-            sendType = recording;
 
           if( sendType>=0 )
           {
