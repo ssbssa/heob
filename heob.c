@@ -1744,9 +1744,9 @@ void mainCRTStartup( void )
     modInfo *mi_a = NULL;
     int mi_q = 0;
     allocation *alloc_a = NULL;
-    int alloc_q = -2;
+    int alloc_q = 0;
     int content_q = 0;
-    int terminated = 0;
+    int terminated = -2;
     unsigned char *contents = NULL;
     unsigned char **content_ptrs = NULL;
 #ifndef NO_THREADNAMES
@@ -1842,29 +1842,13 @@ void mainCRTStartup( void )
 #endif
 
         case WRITE_LEAKS:
-          if( !readFile(readPipe,&exitCode,sizeof(UINT),&ov) )
-          {
-            alloc_q = -2;
-            break;
-          }
-          if( !readFile(readPipe,&terminated,sizeof(int),&ov) )
-          {
-            alloc_q = -2;
-            break;
-          }
           if( !readFile(readPipe,&alloc_q,sizeof(int),&ov) )
-          {
-            alloc_q = -2;
             break;
-          }
           if( !alloc_q ) break;
           if( alloc_a ) HeapFree( heap,0,alloc_a );
           alloc_a = HeapAlloc( heap,0,alloc_q*sizeof(allocation) );
           if( !readFile(readPipe,alloc_a,alloc_q*sizeof(allocation),&ov) )
-          {
-            alloc_q = -2;
             break;
-          }
           break;
 
         case WRITE_MODS:
@@ -1966,7 +1950,7 @@ void mainCRTStartup( void )
               }
             }
 
-            alloc_q = -1;
+            terminated = -1;
           }
           break;
 
@@ -2038,7 +2022,7 @@ void mainCRTStartup( void )
 
         case WRITE_MAIN_ALLOC_FAIL:
           printf( "\n$Wnot enough memory to keep track of allocations\n" );
-          alloc_q = -1;
+          terminated = -1;
           break;
 
         case WRITE_WRONG_DEALLOC:
@@ -2124,6 +2108,19 @@ void mainCRTStartup( void )
           }
           break;
 #endif
+
+        case WRITE_EXIT:
+          if( !readFile(readPipe,&exitCode,sizeof(UINT),&ov) )
+          {
+            terminated = -2;
+            break;
+          }
+          if( !readFile(readPipe,&terminated,sizeof(int),&ov) )
+          {
+            terminated = -2;
+            break;
+          }
+          break;
       }
     }
     CloseHandle( ov.hEvent );
@@ -2144,7 +2141,12 @@ void mainCRTStartup( void )
       content_ptrs = NULL;
     }
 
-    if( !alloc_q )
+    if( terminated==-1 ); // exception
+    else if( terminated<-1 )
+    {
+      printf( "\n$Wunexpected end of application\n" );
+    }
+    else if( !alloc_q )
     {
       printf( "\n" );
 
@@ -2164,7 +2166,7 @@ void mainCRTStartup( void )
       printf( "$S%s code: %u (%x)\n",
           terminated?"termination":"exit",exitCode,exitCode );
     }
-    else if( alloc_q>0 )
+    else
     {
       // leaks {{{
       int i;
@@ -2305,10 +2307,6 @@ void mainCRTStartup( void )
       }
       printf( "$S%s code: %u (%x)\n",
           terminated?"termination":"exit",exitCode,exitCode );
-    }
-    else if( alloc_q<-1 )
-    {
-      printf( "\n$Wunexpected end of application\n" );
     }
 
     dbgsym_close( &ds,heap );

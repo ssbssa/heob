@@ -1432,10 +1432,7 @@ static VOID WINAPI new_ExitProcess( UINT c )
       if( sa->alloc_a[j].recording ) alloc_q++;
   }
   type = WRITE_LEAKS;
-  int terminated = 0;
   WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,&c,sizeof(UINT),&written,NULL );
-  WriteFile( rd->master,&terminated,sizeof(int),&written,NULL );
   WriteFile( rd->master,&alloc_q,sizeof(int),&written,NULL );
   int alloc_sum = 0;
   size_t alloc_mem_sum = 0;
@@ -1495,6 +1492,12 @@ static VOID WINAPI new_ExitProcess( UINT c )
     }
   }
 
+  type = WRITE_EXIT;
+  int terminated = 0;
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,&c,sizeof(UINT),&written,NULL );
+  WriteFile( rd->master,&terminated,sizeof(int),&written,NULL );
+
   LeaveCriticalSection( &rd->csWrite );
   for( i=0; i<=SPLIT_MASK; i++ )
     LeaveCriticalSection( &rd->splits[i].cs );
@@ -1511,13 +1514,11 @@ static BOOL WINAPI new_TerminateProcess( HANDLE p,UINT c )
     EnterCriticalSection( &rd->csWrite );
 
     DWORD written;
-    int type = WRITE_LEAKS;
+    int type = WRITE_EXIT;
     int terminated = 1;
-    int alloc_q = 0;
     WriteFile( rd->master,&type,sizeof(int),&written,NULL );
     WriteFile( rd->master,&c,sizeof(UINT),&written,NULL );
     WriteFile( rd->master,&terminated,sizeof(int),&written,NULL );
-    WriteFile( rd->master,&alloc_q,sizeof(int),&written,NULL );
 
     LeaveCriticalSection( &rd->csWrite );
 

@@ -273,6 +273,7 @@ enum
 #ifndef NO_THREADNAMES
   WRITE_THREAD_NAMES,
 #endif
+  WRITE_EXIT,
 };
 
 typedef struct
