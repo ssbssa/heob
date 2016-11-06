@@ -1745,7 +1745,6 @@ void mainCRTStartup( void )
     int mi_q = 0;
     allocation *alloc_a = NULL;
     int alloc_q = 0;
-    int content_q = 0;
     int terminated = -2;
     unsigned char *contents = NULL;
     unsigned char **content_ptrs = NULL;
@@ -1842,13 +1841,49 @@ void mainCRTStartup( void )
 #endif
 
         case WRITE_LEAKS:
-          if( !readFile(readPipe,&alloc_q,sizeof(int),&ov) )
-            break;
-          if( !alloc_q ) break;
-          if( alloc_a ) HeapFree( heap,0,alloc_a );
-          alloc_a = HeapAlloc( heap,0,alloc_q*sizeof(allocation) );
-          if( !readFile(readPipe,alloc_a,alloc_q*sizeof(allocation),&ov) )
-            break;
+          {
+            alloc_q = 0;
+            if( alloc_a ) HeapFree( heap,0,alloc_a );
+            alloc_a = NULL;
+            if( contents ) HeapFree( heap,0,contents );
+            contents = NULL;
+            if( content_ptrs ) HeapFree( heap,0,content_ptrs );
+            content_ptrs = NULL;
+
+            if( !readFile(readPipe,&alloc_q,sizeof(int),&ov) )
+              break;
+            if( alloc_q )
+            {
+              alloc_a = HeapAlloc( heap,0,alloc_q*sizeof(allocation) );
+              if( !readFile(readPipe,alloc_a,alloc_q*sizeof(allocation),&ov) )
+                break;
+            }
+
+            size_t content_size;
+            if( !readFile(readPipe,&content_size,sizeof(size_t),&ov) )
+              break;
+            if( content_size )
+            {
+              contents = HeapAlloc( heap,0,content_size );
+              if( !readFile(readPipe,contents,content_size,&ov) )
+                break;
+              content_ptrs =
+                HeapAlloc( heap,0,alloc_q*sizeof(unsigned char*) );
+              int lc;
+              size_t leakContents = opt.leakContents;
+              size_t content_pos = 0;
+              int lDetails = opt.leakDetails ?
+                ( (opt.leakDetails&1) ? LT_COUNT : LT_REACHABLE ) : 0;
+              for( lc=0; lc<alloc_q; lc++ )
+              {
+                content_ptrs[lc] = contents + content_pos;
+                allocation *a = alloc_a + lc;
+                if( a->lt>=lDetails ) continue;
+                size_t s = a->size;
+                content_pos += s<leakContents ? s : leakContents;
+              }
+            }
+          }
           break;
 
         case WRITE_MODS:
@@ -2042,35 +2077,6 @@ void mainCRTStartup( void )
           }
           break;
 
-        case WRITE_LEAK_CONTENTS:
-          {
-            if( !readFile(readPipe,&content_q,sizeof(int),&ov) ||
-                content_q>alloc_q  )
-              break;
-            size_t content_size;
-            if( !readFile(readPipe,&content_size,sizeof(size_t),&ov) )
-              break;
-            contents = HeapAlloc( heap,0,content_size );
-            if( !readFile(readPipe,contents,content_size,&ov) )
-              break;
-            content_ptrs =
-              HeapAlloc( heap,0,content_q*sizeof(unsigned char*) );
-            int lc;
-            size_t leakContents = opt.leakContents;
-            size_t content_pos = 0;
-            int lDetails = opt.leakDetails ?
-              ( (opt.leakDetails&1) ? LT_COUNT : LT_REACHABLE ) : 0;
-            for( lc=0; lc<content_q; lc++ )
-            {
-              content_ptrs[lc] = contents + content_pos;
-              allocation *a = alloc_a + lc;
-              if( a->lt>=lDetails ) continue;
-              size_t s = a->size;
-              content_pos += s<leakContents ? s : leakContents;
-            }
-          }
-          break;
-
         case WRITE_RAISE_ALLOCATION:
           {
             int id;
@@ -2132,13 +2138,6 @@ void mainCRTStartup( void )
     {
       alloc_q--;
       exitTrace = alloc_a[alloc_q];
-    }
-
-    if( content_ptrs && content_q!=alloc_q )
-    {
-      HeapFree( heap,0,content_ptrs );
-      content_q = 0;
-      content_ptrs = NULL;
     }
 
     if( terminated==-1 ); // exception

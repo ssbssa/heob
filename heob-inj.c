@@ -1434,7 +1434,6 @@ static VOID WINAPI new_ExitProcess( UINT c )
   type = WRITE_LEAKS;
   WriteFile( rd->master,&type,sizeof(int),&written,NULL );
   WriteFile( rd->master,&alloc_q,sizeof(int),&written,NULL );
-  int alloc_sum = 0;
   size_t alloc_mem_sum = 0;
   size_t leakContents = rd->opt.leakContents;
   int lDetails = rd->opt.leakDetails ?
@@ -1459,21 +1458,16 @@ static VOID WINAPI new_ExitProcess( UINT c )
       for( j=0; j<alloc_q; j++ )
       {
         allocation *a = sa->alloc_a + j;
-        if( !a->recording ) continue;
-        alloc_sum++;
-        if( a->lt>=lDetails ) continue;
+        if( !a->recording || a->lt>=lDetails ) continue;
         size_t s = a->size;
         alloc_mem_sum += s<leakContents ? s : leakContents;
       }
     }
   }
 
+  WriteFile( rd->master,&alloc_mem_sum,sizeof(size_t),&written,NULL );
   if( alloc_mem_sum )
   {
-    type = WRITE_LEAK_CONTENTS;
-    WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-    WriteFile( rd->master,&alloc_sum,sizeof(int),&written,NULL );
-    WriteFile( rd->master,&alloc_mem_sum,sizeof(size_t),&written,NULL );
     for( i=0; i<=SPLIT_MASK; i++ )
     {
       splitAllocation *sa = rd->splits + i;
