@@ -13,6 +13,10 @@
 #include <dbghelp.h>
 #endif
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
+
 // }}}
 // defines {{{
 
@@ -32,6 +36,7 @@
 #define ASSUME(c) ({ if( !(c) ) __builtin_unreachable(); })
 #define LIKELY(c) __builtin_expect(!!(c),1)
 #define UNLIKELY(c) __builtin_expect(!!(c),0)
+#define RETURN_ADDRESS() __builtin_return_address(0)
 #else
 #define NOINLINE __declspec(noinline)
 #define NORETURN __declspec(noreturn)
@@ -41,6 +46,7 @@
 #define ASSUME(c) __assume(c)
 #define LIKELY(c) (c)
 #define UNLIKELY(c) (c)
+#define RETURN_ADDRESS() _ReturnAddress()
 #endif
 
 #if defined(NO_DBGHELP) && USE_STACKWALK

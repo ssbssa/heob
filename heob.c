@@ -684,17 +684,20 @@ typedef struct dbgsym
   textColor *tc;
   options *opt;
   const char **funcnames;
+  uintptr_t threadInitAddr;
 }
 dbgsym;
 
 void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
-    const char **funcnames,HANDLE heap,const char *dbgPath,BOOL invade )
+    const char **funcnames,HANDLE heap,const char *dbgPath,BOOL invade,
+    void *threadInitAddr )
 {
   RtlZeroMemory( ds,sizeof(dbgsym) );
   ds->process = process;
   ds->tc = tc;
   ds->opt = opt;
   ds->funcnames = funcnames;
+  ds->threadInitAddr = (uintptr_t)threadInitAddr;
 
 #ifndef NO_DBGHELP
   ds->symMod = LoadLibrary( "dbghelp" BITS ".dll" );
@@ -1056,10 +1059,13 @@ static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbgsym *ds,
 {
   uint64_t frames[PTRS];
   int j;
+  uintptr_t threadInitAddr = ds->threadInitAddr;
   for( j=0; j<PTRS; j++ )
   {
     if( !framesV[j] ) break;
-    frames[j] = ((uintptr_t)framesV[j]) - 1;
+    uintptr_t frame = (uintptr_t)framesV[j];
+    if( frame==threadInitAddr ) break;
+    frames[j] = frame - 1;
   }
   printStackCount( frames,j,mi_a,mi_q,ds,ft );
 }
@@ -1734,7 +1740,7 @@ void mainCRTStartup( void )
     if( ptr_q )
     {
       dbgsym ds;
-      dbgsym_init( &ds,(HANDLE)0x1,tc,&opt,funcnames,heap,NULL,FALSE );
+      dbgsym_init( &ds,(HANDLE)0x1,tc,&opt,funcnames,heap,NULL,FALSE,NULL );
 
 #ifndef NO_DBGHELP
       if( ds.fSymLoadModule64 )
@@ -1892,7 +1898,8 @@ void mainCRTStartup( void )
     char *delim = strrchr( exePath,'\\' );
     if( delim ) delim[0] = 0;
     dbgsym ds;
-    dbgsym_init( &ds,pi.hProcess,tc,&opt,funcnames,heap,exePath,TRUE );
+    dbgsym_init( &ds,pi.hProcess,tc,&opt,funcnames,heap,exePath,TRUE,
+        RETURN_ADDRESS() );
 
     HANDLE err = GetStdHandle( STD_ERROR_HANDLE );
     if( opt.pid )

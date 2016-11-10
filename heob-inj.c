@@ -10,10 +10,6 @@
 
 #include <stdint.h>
 
-#ifdef _MSC_VER
-#include <intrin.h>
-#endif
-
 // }}}
 // defines {{{
 
@@ -731,11 +727,6 @@ static NOINLINE void trackAllocs(
       DebugBreak();
   }
 }
-#ifndef _MSC_VER
-#define RETURN_ADDRESS() __builtin_return_address(0)
-#else
-#define RETURN_ADDRESS() _ReturnAddress()
-#endif
 #define trackAllocs(f,a,s,at,ft) trackAllocs(f,a,s,at,ft,RETURN_ADDRESS())
 
 // }}}
