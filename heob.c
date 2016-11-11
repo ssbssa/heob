@@ -528,7 +528,7 @@ static CODE_SEG(".text$1") DWORD WINAPI remoteCall( remoteData *rd )
 
 static CODE_SEG(".text$2") HANDLE inject(
     HANDLE process,options *opt,char *exePath,textColor *tc,
-    int raise_alloc_q,int *raise_alloc_a,HANDLE *controlPipe )
+    int raise_alloc_q,size_t *raise_alloc_a,HANDLE *controlPipe )
 {
   size_t funcSize = (size_t)&inject - (size_t)&remoteCall;
   size_t fullSize = funcSize + sizeof(remoteData) + raise_alloc_q*sizeof(int);
@@ -604,7 +604,7 @@ static CODE_SEG(".text$2") HANDLE inject(
   data->raise_alloc_q = raise_alloc_q;
   if( raise_alloc_q )
     RtlMoveMemory( data->raise_alloc_a,
-        raise_alloc_a,raise_alloc_q*sizeof(int) );
+        raise_alloc_a,raise_alloc_q*sizeof(size_t) );
 
   WriteProcessMemory( process,fullDataRemote,fullData,fullSize,NULL );
 
@@ -1368,7 +1368,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
         printf( "$W  %U B ",a.size );
         if( a.count>1 )
           printf( "* %d = %U B ",a.count,combSize );
-        printf( "$N(#%d)",a.id );
+        printf( "$N(#%U)",a.id );
         printThreadName( a.threadNameIdx );
         printStack( a.frames,mi_a,mi_q,ds,a.ft );
 
@@ -1464,7 +1464,7 @@ void mainCRTStartup( void )
   options opt = defopt;
   HANDLE heap = GetProcessHeap();
   int raise_alloc_q = 0;
-  int *raise_alloc_a = NULL;
+  size_t *raise_alloc_a = NULL;
   HANDLE out = NULL;
   modInfo *a2l_mi_a = NULL;
   int a2l_mi_q = 0;
@@ -1578,20 +1578,20 @@ void mainCRTStartup( void )
 
       case 'R':
         {
-          int id = atoi( args+2 );
+          size_t id = atop( args+2 );
           if( !id ) break;
           int i;
           for( i=0; i<raise_alloc_q && raise_alloc_a[i]<id; i++ );
           if( i<raise_alloc_q && raise_alloc_a[i]==id ) break;
           raise_alloc_q++;
           if( !raise_alloc_a )
-            raise_alloc_a = HeapAlloc( heap,0,raise_alloc_q*sizeof(int) );
+            raise_alloc_a = HeapAlloc( heap,0,raise_alloc_q*sizeof(size_t) );
           else
             raise_alloc_a = HeapReAlloc(
-                heap,0,raise_alloc_a,raise_alloc_q*sizeof(int) );
+                heap,0,raise_alloc_a,raise_alloc_q*sizeof(size_t) );
           if( i<raise_alloc_q-1 )
             RtlMoveMemory( raise_alloc_a+i+1,raise_alloc_a+i,
-                (raise_alloc_q-1-i)*sizeof(int) );
+                (raise_alloc_q-1-i)*sizeof(size_t) );
           raise_alloc_a[i] = id;
         }
         break;
@@ -2179,7 +2179,7 @@ void mainCRTStartup( void )
                     ei.nearest?"near ":"",
                     ei.aq>2?"freed block":"protected area of",
                     ptr,size,addr>ptr?"+":"",addr-ptr );
-                printf( "$S  allocated on: $N(#%d)",ei.aa[1].id );
+                printf( "$S  allocated on: $N(#%U)",ei.aa[1].id );
                 printThreadName( ei.aa[1].threadNameIdx );
                 printStack( ei.aa[1].frames,mi_a,mi_q,&ds,ei.aa[1].ft );
 
@@ -2203,7 +2203,7 @@ void mainCRTStartup( void )
               break;
 
             printf( "\n$Wallocation failed of %U bytes\n",a.size );
-            printf( "$S  called on: $N(#%d)",a.id );
+            printf( "$S  called on: $N(#%U)",a.id );
             printThreadName( a.threadNameIdx );
             printStack( a.frames,mi_a,mi_q,&ds,a.ft );
           }
@@ -2233,7 +2233,7 @@ void mainCRTStartup( void )
             printThreadName( aa[0].threadNameIdx );
             printStack( aa[0].frames,mi_a,mi_q,&ds,aa[0].ft );
 
-            printf( "$S  allocated on: $N(#%d)",aa[1].id );
+            printf( "$S  allocated on: $N(#%U)",aa[1].id );
             printThreadName( aa[1].threadNameIdx );
             printStack( aa[1].frames,mi_a,mi_q,&ds,aa[1].ft );
 
@@ -2253,7 +2253,7 @@ void mainCRTStartup( void )
             printf( "$I  slack area of %p (size %U, offset %s%D)\n",
                 aa[0].ptr,aa[0].size,
                 aa[1].ptr>aa[0].ptr?"+":"",(char*)aa[1].ptr-(char*)aa[0].ptr );
-            printf( "$S  allocated on: $N(#%d)",aa[0].id );
+            printf( "$S  allocated on: $N(#%U)",aa[0].id );
             printThreadName( aa[0].threadNameIdx );
             printStack( aa[0].frames,mi_a,mi_q,&ds,aa[0].ft );
             printf( "$S  freed on:" );
@@ -2275,7 +2275,7 @@ void mainCRTStartup( void )
 
             printf( "\n$Wmismatching allocation/release method"
                 " of %p (size %U)\n",aa[0].ptr,aa[0].size );
-            printf( "$S  allocated on: $N(#%d)",aa[0].id );
+            printf( "$S  allocated on: $N(#%U)",aa[0].id );
             printThreadName( aa[0].threadNameIdx );
             printStack( aa[0].frames,mi_a,mi_q,&ds,aa[0].ft );
             printf( "$S  freed on:" );
@@ -2286,14 +2286,14 @@ void mainCRTStartup( void )
 
         case WRITE_RAISE_ALLOCATION:
           {
-            int id;
-            if( !readFile(readPipe,&id,sizeof(int),&ov) )
+            size_t id;
+            if( !readFile(readPipe,&id,sizeof(size_t),&ov) )
               break;
             funcType ft;
             if( !readFile(readPipe,&ft,sizeof(funcType),&ov) )
               break;
 
-            printf( "\n$Sreached allocation #%d $N[$I%s$N]\n",
+            printf( "\n$Sreached allocation #%U $N[$I%s$N]\n",
                 id,funcnames[ft] );
           }
           break;

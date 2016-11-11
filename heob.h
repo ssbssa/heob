@@ -183,7 +183,7 @@ typedef struct
   };
   size_t size;
   void *frames[PTRS];
-  int id;
+  size_t id;
   allocType at : 4;
   int recording : 4;
   leakType lt : 8;

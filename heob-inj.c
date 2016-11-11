@@ -155,10 +155,10 @@ typedef struct localData
   int mod_mem_q;
   int mod_mem_s;
 
-  int cur_id;
-  int raise_id;
+  size_t cur_id;
+  size_t raise_id;
   int raise_alloc_q;
-  int *raise_alloc_a;
+  size_t *raise_alloc_a;
 
 #ifndef NO_THREADNAMES
   threadNameInfo *threadName_a;
@@ -624,7 +624,7 @@ static NOINLINE void trackAllocs(
 
     EnterCriticalSection( &rd->csWrite );
 
-    int id = a.id = ++rd->cur_id;
+    size_t id = a.id = ++rd->cur_id;
 
     int raiseException = 0;
     if( UNLIKELY(id==rd->raise_id) && id )
@@ -632,7 +632,7 @@ static NOINLINE void trackAllocs(
       DWORD written;
       int type = WRITE_RAISE_ALLOCATION;
       WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-      WriteFile( rd->master,&id,sizeof(int),&written,NULL );
+      WriteFile( rd->master,&id,sizeof(size_t),&written,NULL );
       WriteFile( rd->master,&ft,sizeof(funcType),&written,NULL );
 
       rd->raise_id = rd->raise_alloc_q-- ? *(rd->raise_alloc_a++) : 0;
@@ -699,7 +699,7 @@ static NOINLINE void trackAllocs(
 
     EnterCriticalSection( &rd->csWrite );
 
-    int id = a.id = ++rd->cur_id;
+    size_t id = a.id = ++rd->cur_id;
 
     writeMods( &a,1 );
 
@@ -713,7 +713,7 @@ static NOINLINE void trackAllocs(
     {
       type = WRITE_RAISE_ALLOCATION;
       WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-      WriteFile( rd->master,&id,sizeof(int),&written,NULL );
+      WriteFile( rd->master,&id,sizeof(size_t),&written,NULL );
       WriteFile( rd->master,&ft,sizeof(funcType),&written,NULL );
 
       rd->raise_id = rd->raise_alloc_q-- ? *(rd->raise_alloc_a++) : 0;
@@ -3128,9 +3128,9 @@ void inj( remoteData *rd,HMODULE app )
   ld->raise_alloc_q = rd->raise_alloc_q;
   if( rd->raise_alloc_q )
   {
-    ld->raise_alloc_a = HeapAlloc( heap,0,rd->raise_alloc_q*sizeof(int) );
+    ld->raise_alloc_a = HeapAlloc( heap,0,rd->raise_alloc_q*sizeof(size_t) );
     RtlMoveMemory( ld->raise_alloc_a,
-        rd->raise_alloc_a,rd->raise_alloc_q*sizeof(int) );
+        rd->raise_alloc_a,rd->raise_alloc_q*sizeof(size_t) );
   }
   ld->raise_id = ld->raise_alloc_q-- ? *(ld->raise_alloc_a++) : 0;
 
