@@ -17,6 +17,16 @@
 
 #define REL_PTR( base,ofs ) ( ((PBYTE)base)+ofs )
 
+#define CAPTURE_STACK_TRACE( skip,capture,frames,caller ) \
+  do { \
+    void **frames_ = frames; \
+    int ptrs_ = CaptureStackBackTrace( \
+        skip,capture,frames_,NULL ); \
+    if( !ptrs_ ) frames[ptrs_++] = caller; \
+    if( ptrs_<capture ) RtlZeroMemory( \
+        frames_+ptrs_,(capture-ptrs_)*sizeof(void*) ); \
+  } while( 0 )
+
 // }}}
 // local data {{{
 
@@ -405,10 +415,7 @@ static NOINLINE void trackAllocs(
         f.threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
 #endif
 
-        void **frames = f.frames;
-        int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
-        if( ptrs<PTRS )
-          RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
+        CAPTURE_STACK_TRACE( 2,PTRS,f.frames,caller );
 
         splitFreed *sf = rd->freeds + splitIdx;
 
@@ -450,10 +457,7 @@ static NOINLINE void trackAllocs(
       {
         allocation aa[2];
         RtlMoveMemory( aa,&a,sizeof(allocation) );
-        void **frames = aa[1].frames;
-        int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
-        if( ptrs<PTRS )
-          RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
+        CAPTURE_STACK_TRACE( 2,PTRS,aa[1].frames,caller );
         aa[1].ptr = free_ptr;
         aa[1].size = 0;
         aa[1].at = at;
@@ -503,10 +507,7 @@ static NOINLINE void trackAllocs(
 
           allocation aa[3];
 
-          void **frames = aa[0].frames;
-          int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
-          if( ptrs<PTRS )
-            RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
+          CAPTURE_STACK_TRACE( 2,PTRS,aa[0].frames,caller );
           aa[0].ft = ft;
 #ifndef NO_THREADNAMES
           aa[0].threadNameIdx =
@@ -561,10 +562,7 @@ static NOINLINE void trackAllocs(
         a.threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
 #endif
 
-        void **frames = a.frames;
-        int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
-        if( ptrs<PTRS )
-          RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
+        CAPTURE_STACK_TRACE( 2,PTRS,a.frames,caller );
 
         EnterCriticalSection( &rd->csWrite );
 
@@ -616,11 +614,7 @@ static NOINLINE void trackAllocs(
     }
 #endif
 
-    void **frames = a.frames;
-    int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
-    if( !ptrs ) frames[ptrs++] = caller;
-    if( ptrs<PTRS )
-      RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
+    CAPTURE_STACK_TRACE( 2,PTRS,a.frames,caller );
 
     EnterCriticalSection( &rd->csWrite );
 
@@ -692,10 +686,7 @@ static NOINLINE void trackAllocs(
     a.threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
 #endif
 
-    void **frames = a.frames;
-    int ptrs = CaptureStackBackTrace( 2,PTRS,frames,NULL );
-    if( ptrs<PTRS )
-      RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
+    CAPTURE_STACK_TRACE( 2,PTRS,a.frames,caller );
 
     EnterCriticalSection( &rd->csWrite );
 
@@ -1885,10 +1876,7 @@ static NOINLINE void protect_free_m( void *b,funcType ft )
 
         LeaveCriticalSection( &sa->cs );
 
-        void **frames = aa[1].frames;
-        int ptrs = CaptureStackBackTrace( 3,PTRS,frames,NULL );
-        if( ptrs<PTRS )
-          RtlZeroMemory( frames+ptrs,(PTRS-ptrs)*sizeof(void*) );
+        CAPTURE_STACK_TRACE( 3,PTRS,aa[1].frames,NULL );
         aa[1].ptr = slackStart + i;
         aa[1].ft = ft;
 #ifndef NO_THREADNAMES
