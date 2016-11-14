@@ -1654,6 +1654,8 @@ void mainCRTStartup( void )
           localName[len] = 0;
           if( !SearchPath(NULL,localName,NULL,MAX_PATH,mi->path,NULL) )
             RtlMoveMemory( mi->path,localName,len+1 );
+
+          args = end;
         }
         break;
 
