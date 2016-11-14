@@ -685,6 +685,7 @@ typedef struct dbgsym
   options *opt;
   const char **funcnames;
   uintptr_t threadInitAddr;
+  HANDLE heap;
 }
 dbgsym;
 
@@ -698,6 +699,7 @@ void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
   ds->opt = opt;
   ds->funcnames = funcnames;
   ds->threadInitAddr = (uintptr_t)threadInitAddr;
+  ds->heap = heap;
 
 #ifndef NO_DBGHELP
   ds->symMod = LoadLibrary( "dbghelp" BITS ".dll" );
@@ -767,8 +769,10 @@ void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
   ds->absPath = HeapAlloc( heap,0,MAX_PATH );
 }
 
-void dbgsym_close( dbgsym *ds,HANDLE heap )
+void dbgsym_close( dbgsym *ds )
 {
+  HANDLE heap = ds->heap;
+
 #ifndef NO_DBGHELP
   if( ds->symMod )
   {
@@ -1740,7 +1744,7 @@ void mainCRTStartup( void )
     if( ptr_q )
     {
       dbgsym ds;
-      dbgsym_init( &ds,(HANDLE)0x1,tc,&opt,funcnames,heap,NULL,FALSE,NULL );
+      dbgsym_init( &ds,(HANDLE)0x1,tc,&opt,NULL,heap,NULL,FALSE,NULL );
 
 #ifndef NO_DBGHELP
       if( ds.fSymLoadModule64 )
@@ -1755,7 +1759,7 @@ void mainCRTStartup( void )
       printf( "\n$Strace:\n" );
       printStackCount( ptr_a,ptr_q,a2l_mi_a,a2l_mi_q,&ds,FT_COUNT );
 
-      dbgsym_close( &ds,heap );
+      dbgsym_close( &ds );
     }
 
     if( ptr_a ) HeapFree( heap,0,ptr_a );
@@ -2359,7 +2363,7 @@ void mainCRTStartup( void )
     if( terminated==-2 )
       printf( "\n$Wunexpected end of application\n" );
 
-    dbgsym_close( &ds,heap );
+    dbgsym_close( &ds );
     if( alloc_a ) HeapFree( heap,0,alloc_a );
     if( mi_a ) HeapFree( heap,0,mi_a );
     if( contents ) HeapFree( heap,0,contents );
