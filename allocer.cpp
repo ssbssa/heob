@@ -302,7 +302,7 @@ void choose( int arg )
         *(char****)indirectly_reachable = &reachable;
 
         char *indirectly_lost = (char*)malloc( 32 );
-        char *indirectly_lost2 = (char*)malloc( 32 );
+        char *indirectly_lost2 = (char*)malloc( 0 );
         char **lost = (char**)malloc( sizeof(char*) );
         *(char**)indirectly_lost = indirectly_lost2;
         *lost = indirectly_lost;

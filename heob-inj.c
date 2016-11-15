@@ -1265,14 +1265,16 @@ static void findLeakTypeWork( leakTypeInfo *lti )
       if( a->lt!=ltUse ) continue;
       int k;
       uintptr_t ptr = (uintptr_t)a->ptr;
-      uintptr_t ptrEnd = ptr + a->size;
+      size_t size = a->size;
+      int compareExactNow = compareExact || !size;
+      uintptr_t ptrEnd = ptr + size;
       for( k=0; k<mod_mem_q; k++ )
       {
         modMemType *mod_mem = mod_mem_a + k;
         const void **start = mod_mem->start;
         if( (uintptr_t)start==ptr ) continue;
         const void **end = mod_mem->end;
-        if( compareExact )
+        if( compareExactNow )
         {
           for( ; start<end; start++ )
           {

@@ -21,9 +21,9 @@ leaks (jointly lost):
 leaks (indirectly lost):
   32 B (#4)
     [malloc]
-  32 B (#5)
+  0 B (#5)
     [malloc]
-  sum: 64 B / 2
+  sum: 32 B / 2
 leaks (reachable):
   8 B (#3)
     [malloc]

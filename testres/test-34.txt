@@ -13,8 +13,6 @@ leaks:
     [malloc]
   32 B (#4)
     [malloc]
-  32 B (#5)
-    [malloc]
   16 B (#2)
     [malloc]
   16 B (#8)
@@ -23,5 +21,7 @@ leaks:
     [malloc]
   8 B (#6)
     [malloc]
-  sum: 400 B / 11
+  0 B (#5)
+    [malloc]
+  sum: 368 B / 11
 exit code: 15 (0xPTR)
