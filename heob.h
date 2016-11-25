@@ -184,11 +184,19 @@ typedef struct
   size_t size;
   void *frames[PTRS];
   size_t id;
-  allocType at : 4;
-  int recording : 4;
-  leakType lt : 8;
-  funcType ft : 8;
-  funcType ftFreed : 8;
+  union {
+    struct {
+      allocType at : 4;
+      int recording : 4;
+      leakType lt : 8;
+      funcType ft : 8;
+      funcType ftFreed : 8;
+    };
+    struct {
+      unsigned char spacing[3];
+      unsigned char frameCount;
+    };
+  };
 #ifndef NO_THREADNAMES
   int threadNameIdx;
 #endif

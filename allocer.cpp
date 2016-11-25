@@ -102,7 +102,7 @@ static DWORD WINAPI namedThread( LPVOID arg )
   if( arg )
     SetThreadName( -1,"self named thread" );
 
-  char *leak = (char*)malloc( 10 );
+  char *leak = (char*)malloc( 10+(arg?0:16) );
   return leak[0];
 }
 
@@ -520,9 +520,16 @@ extern "C" void mainCRTStartup( void )
     cmdLine = strchr( cmdLine,' ' );
   if( cmdLine ) while( *cmdLine==' ' ) cmdLine++;
 
-  int arg = cmdLine && *cmdLine ? atoi( cmdLine ) : 0;
-  choose( arg );
+  int ret = -1;
+  while( cmdLine && *cmdLine )
+  {
+    int arg = atoi( cmdLine );
+    while( *cmdLine && *cmdLine!=' ' ) cmdLine++;
+    while( *cmdLine==' ' ) cmdLine++;
+    choose( arg );
+    if( ret<0 ) ret = arg;
+  }
 
-  ExitProcess( arg );
+  ExitProcess( ret );
 }
 #endif

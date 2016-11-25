@@ -177,6 +177,15 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
             tc->fWriteText( tc,str,end-str );
           }
           break;
+
+        case 'i': // indent
+          {
+            int indent = va_arg( vl,int );
+            int i;
+            for( i=0; i<indent; i++ )
+              tc->fWriteText( tc,"| ",2 );
+          }
+          break;
       }
       ptr += 2;
       format = ptr;
@@ -686,6 +695,7 @@ typedef struct dbgsym
   const char **funcnames;
   uintptr_t threadInitAddr;
   HANDLE heap;
+  int indent;
 }
 dbgsym;
 
@@ -700,6 +710,7 @@ void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
   ds->funcnames = funcnames;
   ds->threadInitAddr = (uintptr_t)threadInitAddr;
   ds->heap = heap;
+  ds->indent = 0;
 
 #ifndef NO_DBGHELP
   ds->symMod = LoadLibrary( "dbghelp" BITS ".dll" );
@@ -908,10 +919,12 @@ static void locFunc(
       filename = ds->absPath;
   }
 
+  int indent = ds->indent;
+  printf( "  %i",indent );
   switch( lineno )
   {
     case DWST_BASE_ADDR:
-      printf( "    $B%X$N   $B%s\n",(uintptr_t)addr,filename );
+      printf( "  $B%X$N   $B%s\n",(uintptr_t)addr,filename );
       break;
 
     case DWST_NO_DBG_SYM:
@@ -919,7 +932,7 @@ static void locFunc(
     case DWST_NO_SRC_FILE:
     case DWST_NOT_FOUND:
 #endif
-      printf( "      %X",(uintptr_t)addr );
+      printf( "    %X",(uintptr_t)addr );
       if( funcname )
         printf( "   [$I%s$N]",funcname );
       printf( "\n" );
@@ -927,9 +940,9 @@ static void locFunc(
 
     default:
       if( printAddr )
-        printf( "      %X",(uintptr_t)printAddr );
+        printf( "    %X",(uintptr_t)printAddr );
       else
-        printf( "        " PTR_SPACES );
+        printf( "      " PTR_SPACES );
       printf( "   $O%s$N:%d",filename,lineno );
       if( columnno>0 )
         printf( ":$S%d$N",columnno );
@@ -960,7 +973,7 @@ static void locFunc(
                 if( firstLine<1 ) firstLine = 1;
                 int lastLine = lineno - 1 + ds->opt->sourceCode;
                 if( firstLine>1 )
-                  printf( "\t...\n" );
+                  printf( "  %i      ...\n",indent );
                 int i;
                 if( columnno>0 ) columnno--;
                 for( i=1; i<=lastLine; i++ )
@@ -973,7 +986,10 @@ static void locFunc(
                   {
                     if( i==lineno )
                     {
-                      printf( "$S>\t" );
+                      printf( "$S> " );
+                      if( indent )
+                        printf( "$N%i$S",indent );
+                      printf( "      " );
                       if( columnno>0 && columnno<eol-bol )
                       {
                         printf( "$N" );
@@ -986,7 +1002,7 @@ static void locFunc(
                     }
                     else
                     {
-                      printf( "\t" );
+                      printf( "  %i      ",indent );
                       tc->fWriteText( tc,bol,eol-bol );
                     }
                   }
@@ -997,9 +1013,8 @@ static void locFunc(
                 if( bol>map && bol[-1]!='\n' )
                   printf( "\n" );
                 if( bol!=eof )
-                  printf( "\t...\n\n" );
-                else
-                  printf( "\n" );
+                  printf( "  %i      ...\n",indent );
+                printf( "  %i\n",indent );
 
                 UnmapViewOfFile( map );
               }
@@ -1016,14 +1031,15 @@ static void locFunc(
 }
 
 static void printStackCount( uint64_t *frames,int fc,
-    modInfo *mi_a,int mi_q,dbgsym *ds,funcType ft )
+    modInfo *mi_a,int mi_q,dbgsym *ds,funcType ft,int indent )
 {
   if( ft<FT_COUNT )
   {
     textColor *tc = ds->tc;
-    printf( "        " PTR_SPACES "   [$I%s$N]\n",ds->funcnames[ft] );
+    printf( "  %i      " PTR_SPACES "   [$I%s$N]\n",indent,ds->funcnames[ft] );
   }
 
+  ds->indent = indent;
   int j;
   for( j=0; j<fc; j++ )
   {
@@ -1071,7 +1087,17 @@ static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbgsym *ds,
     if( frame==threadInitAddr ) break;
     frames[j] = frame - 1;
   }
-  printStackCount( frames,j,mi_a,mi_q,ds,ft );
+  printStackCount( frames,j,mi_a,mi_q,ds,ft,0 );
+}
+
+static void printStackPart( void **framesV,int fc,
+    modInfo *mi_a,int mi_q,dbgsym *ds,funcType ft,int indent )
+{
+  uint64_t frames[PTRS];
+  int j;
+  for( j=0; j<fc; j++ )
+    frames[j] = (uintptr_t)framesV[j] - 1;
+  printStackCount( frames,fc,mi_a,mi_q,ds,ft,indent );
 }
 
 // }}}
@@ -1127,20 +1153,27 @@ static inline void swap_idxs( int *a,int *b )
   *b = t;
 }
 
-static void sort_allocations( allocation *a,int *idxs,int num,
-    int (*compar)(const allocation*,const allocation*) )
+static int *sort_allocations( void *base,int *idxs,int num,int size,
+    HANDLE heap,int (*compar)(const void*,const void*) )
 {
-  int c,r;
-  int i = num/2 - 1;
+  int i,c,r;
+  char *b = base;
 
-  for( ; i>=0; i-- )
+  if( !idxs )
+  {
+    idxs = HeapAlloc( heap,0,num*sizeof(int) );
+    for( i=0; i<num; i++ )
+      idxs[i] = i;
+  }
+
+  for( i=num/2-1; i>=0; i-- )
   {
     for( r=i; r*2+1<num; r=c )
     {
       c = r*2 + 1;
-      if( c<num-1 && compar(a+idxs[c],a+idxs[c+1])<0 )
+      if( c<num-1 && compar(b+idxs[c]*size,b+idxs[c+1]*size)<0 )
         c++;
-      if( compar(a+idxs[r],a+idxs[c])>=0 )
+      if( compar(b+idxs[r]*size,b+idxs[c]*size)>=0 )
         break;
       swap_idxs( idxs+r,idxs+c );
     }
@@ -1152,17 +1185,22 @@ static void sort_allocations( allocation *a,int *idxs,int num,
     for( r=0; r*2+1<i; r=c )
     {
       c = r*2 + 1;
-      if( c<i-1 && compar(a+idxs[c],a+idxs[c+1])<0 )
+      if( c<i-1 && compar(b+idxs[c]*size,b+idxs[c+1]*size)<0 )
         c++;
-      if( compar(a+idxs[r],a+idxs[c])>=0 )
+      if( compar(b+idxs[r]*size,b+idxs[c]*size)>=0 )
         break;
       swap_idxs( idxs+r,idxs+c );
     }
   }
+
+  return( idxs );
 }
 
-static int cmp_merge_allocation( const allocation *a,const allocation *b )
+static int cmp_merge_allocation( const void *av,const void *bv )
 {
+  const allocation *a = av;
+  const allocation *b = bv;
+
   if( a->lt>b->lt ) return( 2 );
   if( a->lt<b->lt ) return( -2 );
 
@@ -1178,8 +1216,11 @@ static int cmp_merge_allocation( const allocation *a,const allocation *b )
   return( a->id>b->id ? 1 : -1 );
 }
 
-static int cmp_type_allocation( const allocation *a,const allocation *b )
+static int cmp_type_allocation( const void *av,const void *bv )
 {
+  const allocation *a = av;
+  const allocation *b = bv;
+
   if( a->lt>b->lt ) return( 2 );
   if( a->lt<b->lt ) return( -2 );
 
@@ -1188,6 +1229,32 @@ static int cmp_type_allocation( const allocation *a,const allocation *b )
 
   if( a->ft>b->ft ) return( 2 );
   if( a->ft<b->ft ) return( -2 );
+
+  return( a->id>b->id ? 1 : -1 );
+}
+
+static int cmp_frame_allocation( const void *av,const void *bv )
+{
+  const allocation *a = av;
+  const allocation *b = bv;
+
+  if( a->lt>b->lt ) return( 2 );
+  if( a->lt<b->lt ) return( -2 );
+
+  uintptr_t *frames1 = (uintptr_t*)a->frames;
+  uintptr_t *frames2 = (uintptr_t*)b->frames;
+  int c1 = a->frameCount;
+  int c2 = b->frameCount;
+  int c = c1<c2 ? c1 : c2;
+  frames1 += c1 - c;
+  frames2 += c2 - c;
+  int i;
+  for( i=c-1; i>=0 && frames1[i]==frames2[i]; i-- );
+  if( i>=0 ) return( frames1[i]>frames2[i] ? 1 : -1 );
+  if( c1!=c2 ) return( c1>c2 ? 1 : -1 );
+
+  if( a->size>b->size ) return( -2 );
+  if( a->size<b->size ) return( 2 );
 
   return( a->id>b->id ? 1 : -1 );
 }
@@ -1274,33 +1341,262 @@ static void clearRecording( HANDLE err,
 // }}}
 // leak data {{{
 
+typedef struct stackGroup
+{
+  unsigned char stackStart;
+  unsigned char stackCount;
+  unsigned char stackIndent;
+  int allocStart;
+  int allocCount;
+  int allocSum;
+  size_t allocSumSize;
+  struct stackGroup *child_a;
+  int *childSorted_a;
+  int child_q;
+  size_t id;
+}
+stackGroup;
+
+static void stackChildGrouping(
+    allocation *alloc_a,int *alloc_idxs,int alloc_q,
+    int alloc_s,HANDLE heap,stackGroup *sgParent,
+    int stackIdx,int stackIndent )
+{
+  sgParent->child_q++;
+  if( !sgParent->child_a )
+    sgParent->child_a = HeapAlloc( heap,0,
+        sgParent->child_q*sizeof(stackGroup) );
+  else
+    sgParent->child_a = HeapReAlloc( heap,0,
+        sgParent->child_a,sgParent->child_q*sizeof(stackGroup) );
+  stackGroup *sg = sgParent->child_a + ( sgParent->child_q - 1 );
+  sg->stackStart = stackIdx;
+  sg->stackIndent = stackIndent;
+  sg->allocStart = alloc_s;
+  sg->allocCount = alloc_q;
+  sg->allocSum = 0;
+  sg->allocSumSize = 0;
+  sg->child_a = NULL;
+  sg->childSorted_a = NULL;
+  sg->child_q = 0;
+
+  int i = 0;
+  int startStackIdx = stackIdx++;
+  while( i<alloc_q )
+  {
+    allocation *a = alloc_a + alloc_idxs[i];
+    int startIdx = i;
+    int fc = a->frameCount;
+    if( stackIdx>=fc ) break;
+    void *cmpFrame = a->frames[fc-1-stackIdx];
+
+    for( i++; i<alloc_q; i++ )
+    {
+      a = alloc_a + alloc_idxs[i];
+      fc = a->frameCount;
+      if( stackIdx>=fc || cmpFrame!=a->frames[fc-1-stackIdx] ) break;
+    }
+
+    if( i-startIdx==alloc_q )
+    {
+      stackIdx++;
+      i = 0;
+    }
+    else
+      stackChildGrouping( alloc_a,alloc_idxs+startIdx,i-startIdx,
+          alloc_s+startIdx,heap,sg,
+          stackIdx,stackIndent+1 );
+  }
+
+  allocation *a = alloc_a + alloc_idxs[0];
+  sg->stackCount = stackIdx - startStackIdx;
+  sg->id = a->id;
+
+  if( stackIdx==a->frameCount )
+  {
+    int curAllocSum = 0;
+    size_t curAllocSumSize = 0;
+    for( i=0; i<alloc_q; i++ )
+    {
+      a = alloc_a + alloc_idxs[i];
+      curAllocSum += a->count;
+      curAllocSumSize += a->size*a->count;
+    }
+    sg->allocSum += curAllocSum;
+    sg->allocSumSize += curAllocSumSize;
+  }
+
+  sgParent->allocSum += sg->allocSum;
+  sgParent->allocSumSize += sg->allocSumSize;
+}
+
+static int cmp_stack_group( const void *av,const void *bv )
+{
+  const stackGroup *a = av;
+  const stackGroup *b = bv;
+
+  if( a->allocSumSize>b->allocSumSize ) return( -1 );
+  if( a->allocSumSize<b->allocSumSize ) return( 1 );
+
+  return( a->id>b->id ? 1 : -1 );
+}
+
+static void sortStackGroup( stackGroup *sg,HANDLE heap )
+{
+  int i;
+  stackGroup *child_a = sg->child_a;
+  int child_q = sg->child_q;
+  for( i=0; i<child_q; i++ )
+    sortStackGroup( child_a+i,heap );
+
+  sg->childSorted_a = sort_allocations( child_a,NULL,child_q,
+      sizeof(stackGroup),heap,cmp_stack_group );
+}
+
+static void printStackGroup( stackGroup *sg,
+    allocation *alloc_a,int *alloc_idxs,
+#ifndef NO_THREADNAMES
+    threadNameInfo *threadName_a,int threadName_q,
+#endif
+    unsigned char **content_ptrs,modInfo *mi_a,int mi_q,dbgsym *ds )
+{
+  int i;
+  stackGroup *child_a = sg->child_a;
+  int *childSorted_a = sg->childSorted_a;
+  int child_q = sg->child_q;
+  for( i=0; i<child_q; i++ )
+  {
+    int idx = childSorted_a ? childSorted_a[i] : i;
+    printStackGroup( child_a+idx,alloc_a,alloc_idxs,
+#ifndef NO_THREADNAMES
+        threadName_a,threadName_q,
+#endif
+        content_ptrs,mi_a,mi_q,ds );
+  }
+
+  int allocStart = sg->allocStart;
+  int allocCount = sg->allocCount;
+  int stackIndent = sg->stackIndent;
+  allocation *a = alloc_a + alloc_idxs[allocStart];
+  textColor *tc = ds->tc;
+  options *opt = ds->opt;
+  int stackIsPrinted = 0;
+  if( sg->stackStart+sg->stackCount==a->frameCount )
+  {
+    for( i=0; i<allocCount; i++ )
+    {
+      int idx = alloc_idxs[allocStart+i];
+      a = alloc_a + idx;
+
+      size_t combSize = a->size*a->count;
+      if( combSize<opt->minLeakSize ) continue;
+
+      int indent = stackIndent + ( allocCount>1 );
+      printf( "  %i$W%U B ",indent,a->size );
+      if( a->count>1 )
+        printf( "* %d = %U B ",a->count,combSize );
+      printf( "$N(#%U)",a->id );
+      printThreadName( a->threadNameIdx );
+      if( allocCount>1 )
+        printStackCount( NULL,0,NULL,0,ds,a->ft,indent );
+      else
+      {
+        printStackPart(
+            a->frames+(a->frameCount-(sg->stackStart+sg->stackCount)),
+            sg->stackCount,mi_a,mi_q,ds,a->ft,stackIndent );
+        stackIsPrinted = 1;
+      }
+      if( content_ptrs && a->size )
+      {
+        int s = a->size<(size_t)opt->leakContents ?
+          (int)a->size : opt->leakContents;
+        char text[5] = { 0,0,0,0,0 };
+        unsigned char *content = content_ptrs[idx];
+        int lines = ( s+15 )/16;
+        int lc;
+        for( lc=0; lc<lines; lc++,s-=16 )
+        {
+          unsigned char *line = content + lc*16;
+          int line_size = s>16 ? 16 : s;
+          text[0] = num2hex( lc>>8 );
+          text[1] = num2hex( lc>>4 );
+          text[2] = num2hex( lc );
+          text[3] = '0';
+          printf( "  %i      $I%s$N ",indent,text );
+          int p;
+          text[2] = 0;
+          for( p=0; p<line_size; p++ )
+          {
+            unsigned char c = line[p];
+            text[0] = num2hex( c>>4 );
+            text[1] = num2hex( c );
+            printf( " %s",text );
+          }
+          for( ; p<16; p++ )
+            printf( "   " );
+          printf( "  $S" );
+          text[1] = 0;
+          for( p=0; p<line_size; p++ )
+          {
+            unsigned char c = line[p];
+            text[0] = c>=0x20 && c<=0x7e ? c : '.';
+            printf( "%s",text );
+          }
+          printf( "\n" );
+        }
+      }
+    }
+  }
+  if( allocCount>1 )
+  {
+    int indent = stackIndent + 1;
+    printf( "  %i$Wsum: %U B / %d\n",indent,sg->allocSumSize,sg->allocSum );
+  }
+  if( !stackIsPrinted )
+    printStackPart( a->frames+(a->frameCount-(sg->stackStart+sg->stackCount)),
+        sg->stackCount,mi_a,mi_q,ds,FT_COUNT,stackIndent );
+}
+
+static void freeStackGroup( stackGroup *sg,HANDLE heap )
+{
+  int i;
+  stackGroup *child_a = sg->child_a;
+  int child_q = sg->child_q;
+  for( i=0; i<child_q; i++ )
+    freeStackGroup( child_a+i,heap );
+  if( child_a )
+    HeapFree( heap,0,child_a );
+  if( sg->childSorted_a )
+    HeapFree( heap,0,sg->childSorted_a );
+}
+
 static void printLeaks( allocation *alloc_a,int alloc_q,
     unsigned char **content_ptrs,modInfo *mi_a,int mi_q,
 #ifndef NO_THREADNAMES
     threadNameInfo *threadName_a,int threadName_q,
 #endif
-    options *opt,textColor *tc,dbgsym *ds,HANDLE heap )
+    options *opt,textColor *tc,dbgsym *ds,HANDLE heap,
+    uintptr_t threadInitAddr )
 {
+  printf( "\n" );
   if( opt->handleException>=2 )
-  {
-    printf( "\n" );
     return;
-  }
 
   if( alloc_q>0 && alloc_a[alloc_q-1].at==AT_EXIT )
     alloc_q--;
 
   if( !alloc_q )
   {
-    printf( "\n$Ono leaks found\n" );
+    printf( "$Ono leaks found\n" );
     return;
   }
 
   int i;
+  int leakDetails = opt->leakDetails;
   size_t sumSize = 0;
   int combined_q = alloc_q;
   int *alloc_idxs =
-    opt->leakDetails ? HeapAlloc( heap,0,alloc_q*sizeof(int) ) : NULL;
+    leakDetails ? HeapAlloc( heap,0,alloc_q*sizeof(int) ) : NULL;
   for( i=0; i<alloc_q; i++ )
   {
     sumSize += alloc_a[i].size;
@@ -1308,9 +1604,10 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
     if( alloc_idxs )
       alloc_idxs[i] = i;
   }
-  if( opt->mergeLeaks && opt->leakDetails )
+  if( opt->mergeLeaks && leakDetails )
   {
-    sort_allocations( alloc_a,alloc_idxs,alloc_q,cmp_merge_allocation );
+    sort_allocations( alloc_a,alloc_idxs,alloc_q,sizeof(allocation),
+        heap,cmp_merge_allocation );
     combined_q = 0;
     for( i=0; i<alloc_q; )
     {
@@ -1331,99 +1628,139 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
       i = j;
     }
   }
-  if( opt->leakDetails<=1 )
-    printf( "\n$Sleaks:\n" );
-  else
-    printf( "\n" );
   int l;
-  int lMax = opt->leakDetails ? LT_COUNT : 0;
-  int lDetails = ( opt->leakDetails&1 ) ? LT_COUNT : LT_REACHABLE;
-  if( opt->leakDetails )
+  int lMax = leakDetails>1 ? LT_COUNT : 1;
+  int lDetails = leakDetails>1 ? ( leakDetails&1 ? LT_COUNT : LT_REACHABLE ) :
+    ( leakDetails ? 1 : 0 );
+  stackGroup *sg_a =
+    HeapAlloc( heap,HEAP_ZERO_MEMORY,lMax*sizeof(stackGroup) );
+  const char *leakTypeNames[LT_COUNT] = {
+    "lost",
+    "jointly lost",
+    "indirectly lost",
+    "reachable",
+    "indirectly reachable",
+  };
+  const char **leakTypeNamesRef = leakDetails>1 ? leakTypeNames : NULL;
+  if( leakDetails )
   {
     for( i=0; i<combined_q; i++ )
-      alloc_a[alloc_idxs[i]].size *= alloc_a[alloc_idxs[i]].count;
-    sort_allocations( alloc_a,alloc_idxs,combined_q,cmp_type_allocation );
+    {
+      allocation *a = alloc_a + alloc_idxs[i];
+      a->size *= a->count;
+
+      uintptr_t *frames = (uintptr_t*)a->frames;
+      int c;
+      for( c=0; c<PTRS && frames[c] && frames[c]!=threadInitAddr; c++ );
+      a->frameCount = c;
+    }
+    if( opt->mergeLeaks>1 )
+      sort_allocations( alloc_a,alloc_idxs,combined_q,sizeof(allocation),
+          heap,cmp_frame_allocation );
+    else
+      sort_allocations( alloc_a,alloc_idxs,combined_q,sizeof(allocation),
+          heap,cmp_type_allocation );
     for( i=0; i<combined_q; i++ )
       alloc_a[alloc_idxs[i]].size /= alloc_a[alloc_idxs[i]].count;
-  }
-  for( l=0,i=0; l<lMax; l++ )
-  {
-    int ltCount = 0;
-    size_t ltSumSize = 0;
-    for( ; i<combined_q; i++ )
+
+    if( opt->mergeLeaks>1 )
     {
-      allocation a;
-      a = alloc_a[alloc_idxs[i]];
-      if( a.lt<l ) continue;
-      if( a.lt>l ) break;
-
-      if( opt->leakDetails>1 && !ltCount )
-        printf( "$Sleaks (%s):\n",
-            l==LT_LOST?"lost":l==LT_JOINTLY_LOST?"jointly lost":
-            l==LT_INDIRECTLY_LOST?"indirectly lost":
-            l==LT_REACHABLE?"reachable":"indirectly reachable" );
-
-      ltCount += a.count;
-      size_t combSize = a.size*a.count;
-      ltSumSize += combSize;
-
-      if( l<lDetails && combSize>=opt->minLeakSize )
+      for( l=0,i=0; l<lDetails; l++ )
       {
-        printf( "$W  %U B ",a.size );
-        if( a.count>1 )
-          printf( "* %d = %U B ",a.count,combSize );
-        printf( "$N(#%U)",a.id );
-        printThreadName( a.threadNameIdx );
-        printStack( a.frames,mi_a,mi_q,ds,a.ft );
-
-        if( content_ptrs && a.size )
+        stackGroup *sg = sg_a + l;
+        while( i<combined_q )
         {
-          int s = a.size<(size_t)opt->leakContents ?
-            (int)a.size : opt->leakContents;
-          char text[5] = { 0,0,0,0,0 };
-          unsigned char *content = content_ptrs[alloc_idxs[i]];
-          int lines = ( s+15 )/16;
-          int lc;
-          for( lc=0; lc<lines; lc++,s-=16 )
+          allocation *a = alloc_a + alloc_idxs[i];
+          leakType lt = a->lt;
+          if( lt!=(leakType)l ) break;
+          int startIdx = i;
+          int fc = a->frameCount;
+          void *cmpFrame = fc ? a->frames[fc-1] : NULL;
+
+          for( i++; i<combined_q; i++ )
           {
-            unsigned char *line = content + lc*16;
-            int line_size = s>16 ? 16 : s;
-            text[0] = num2hex( lc>>8 );
-            text[1] = num2hex( lc>>4 );
-            text[2] = num2hex( lc );
-            text[3] = '0';
-            printf( "        $I%s$N ",text );
-            int p;
-            text[2] = 0;
-            for( p=0; p<line_size; p++ )
-            {
-              unsigned char c = line[p];
-              text[0] = num2hex( c>>4 );
-              text[1] = num2hex( c );
-              printf( " %s",text );
-            }
-            for( ; p<16; p++ )
-              printf( "   " );
-            printf( "  $S" );
-            text[1] = 0;
-            for( p=0; p<line_size; p++ )
-            {
-              unsigned char c = line[p];
-              text[0] = c>=0x20 && c<=0x7e ? c : '.';
-              printf( "%s",text );
-            }
-            printf( "\n" );
+            a = alloc_a + alloc_idxs[i];
+            if( lt!=a->lt ) break;
+            fc = a->frameCount;
+            void *frame = fc ? a->frames[fc-1] : NULL;
+            if( cmpFrame!=frame ) break;
           }
+          stackChildGrouping( alloc_a,alloc_idxs+startIdx,i-startIdx,
+              startIdx,heap,sg,
+              0,0 );
         }
+        sortStackGroup( sg,heap );
       }
     }
-    if( opt->leakDetails>1 && ltCount )
-      printf( "$W  sum: %U B / %d\n",ltSumSize,ltCount );
+    else
+    {
+      for( l=0,i=0; l<lDetails; l++ )
+      {
+        stackGroup *sg = sg_a + l;
+        int startI = i;
+        for( ; i<combined_q && alloc_a[alloc_idxs[i]].lt==l; i++ );
+        int countI = i - startI;
+        sg->child_q = countI;
+        sg->child_a = HeapAlloc(
+            heap,HEAP_ZERO_MEMORY,countI*sizeof(stackGroup) );
+        int curAllocSum = 0;
+        size_t curAllocSumSize = 0;
+        for( i=0; i<countI; i++ )
+        {
+          int idx = startI + i;
+          allocation *a = alloc_a + alloc_idxs[idx];
+          stackGroup *sgChild = sg->child_a + i;
+          sgChild->stackCount = a->frameCount;
+          sgChild->allocStart = idx;
+          sgChild->allocCount = 1;
+          sgChild->allocSum = a->count;
+          sgChild->allocSumSize = a->size*a->count;
+          sgChild->id = a->id;
+
+          curAllocSum += sgChild->allocSum;
+          curAllocSumSize += sgChild->allocSumSize;
+        }
+        sg->allocSum = curAllocSum;
+        sg->allocSumSize = curAllocSumSize;
+        i = startI + countI;
+      }
+    }
   }
-  if( opt->leakDetails<=1 )
-    printf( "$W  sum: %U B / %d\n",sumSize,alloc_q );
+  for( l=lDetails,i=0; l<lMax; l++ )
+  {
+    stackGroup *sg = sg_a + l;
+    for( ; i<combined_q; i++ )
+    {
+      int idx = alloc_idxs ? alloc_idxs[i] : i;
+      allocation *a = alloc_a + idx;
+      if( l>a->lt ) continue;
+      if( l<a->lt ) break;
+      sg->allocSum += a->count;
+      sg->allocSumSize += a->size*a->count;
+    }
+  }
+  for( l=0; l<lMax; l++ )
+  {
+    stackGroup *sg = sg_a + l;
+    if( sg->allocSum )
+    {
+      printf( "$Sleaks" );
+      if( leakTypeNamesRef )
+        printf( " (%s)",leakTypeNamesRef[l] );
+      printf( ":\n" );
+      if( l<lDetails )
+        printStackGroup( sg,alloc_a,alloc_idxs,
+#ifndef NO_THREADNAMES
+            threadName_a,threadName_q,
+#endif
+            content_ptrs,mi_a,mi_q,ds );
+      printf( "  $Wsum: %U B / %d\n",sg->allocSumSize,sg->allocSum );
+    }
+    freeStackGroup( sg,heap );
+  }
   if( alloc_idxs )
     HeapFree( heap,0,alloc_idxs );
+  HeapFree( heap,0,sg_a );
 }
 
 // }}}
@@ -1759,7 +2096,7 @@ void mainCRTStartup( void )
 #endif
 
       printf( "\n$Strace:\n" );
-      printStackCount( ptr_a,ptr_q,a2l_mi_a,a2l_mi_q,&ds,FT_COUNT );
+      printStackCount( ptr_a,ptr_q,a2l_mi_a,a2l_mi_q,&ds,FT_COUNT,0 );
 
       dbgsym_close( &ds );
     }
@@ -2096,7 +2433,7 @@ void mainCRTStartup( void )
 #ifndef NO_THREADNAMES
               threadName_a,threadName_q,
 #endif
-              &opt,tc,&ds,heap );
+              &opt,tc,&ds,heap,(uintptr_t)RETURN_ADDRESS() );
           break;
 
         case WRITE_MODS:
