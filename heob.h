@@ -20,7 +20,7 @@
 // }}}
 // defines {{{
 
-#define PTRS 48
+#define PTRS 128
 
 #define USE_STACKWALK       1
 #define WRITE_DEBUG_STRINGS 0

@@ -17,11 +17,11 @@
 
 #define REL_PTR( base,ofs ) ( ((PBYTE)base)+ofs )
 
-#define CAPTURE_STACK_TRACE( skip,capture,frames,caller ) \
+#define CAPTURE_STACK_TRACE( skip,capture,frames,caller,maxFrames ) \
   do { \
     void **frames_ = frames; \
     int ptrs_ = CaptureStackBackTrace( \
-        skip,capture,frames_,NULL ); \
+        skip,min((maxFrames)-(skip),capture),frames_,NULL ); \
     if( !ptrs_ ) frames[ptrs_++] = caller; \
     if( ptrs_<capture ) RtlZeroMemory( \
         frames_+ptrs_,(capture-ptrs_)*sizeof(void*) ); \
@@ -141,6 +141,7 @@ typedef struct localData
   HANDLE crtHeap;
   int processors;
   exceptionInfo *ei;
+  int maxStackFrames;
 
 #ifndef NO_THREADNAMES
   DWORD threadNameTls;
@@ -414,7 +415,7 @@ static NOINLINE void trackAllocs(
         f.threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
 #endif
 
-        CAPTURE_STACK_TRACE( 2,PTRS,f.frames,caller );
+        CAPTURE_STACK_TRACE( 2,PTRS,f.frames,caller,rd->maxStackFrames );
 
         splitFreed *sf = rd->freeds + splitIdx;
 
@@ -469,7 +470,7 @@ static NOINLINE void trackAllocs(
         }
 
         RtlMoveMemory( aa,&f.a,sizeof(allocation) );
-        CAPTURE_STACK_TRACE( 2,PTRS,aa[1].frames,caller );
+        CAPTURE_STACK_TRACE( 2,PTRS,aa[1].frames,caller,rd->maxStackFrames );
         aa[1].ptr = free_ptr;
         aa[1].size = 0;
         aa[1].at = at;
@@ -533,7 +534,7 @@ static NOINLINE void trackAllocs(
             exitWait( 1,0 );
           }
 
-          CAPTURE_STACK_TRACE( 2,PTRS,aa[0].frames,caller );
+          CAPTURE_STACK_TRACE( 2,PTRS,aa[0].frames,caller,rd->maxStackFrames );
           aa[0].ft = ft;
 #ifndef NO_THREADNAMES
           aa[0].threadNameIdx =
@@ -590,7 +591,7 @@ static NOINLINE void trackAllocs(
         a.threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
 #endif
 
-        CAPTURE_STACK_TRACE( 2,PTRS,a.frames,caller );
+        CAPTURE_STACK_TRACE( 2,PTRS,a.frames,caller,rd->maxStackFrames );
 
         EnterCriticalSection( &rd->csWrite );
 
@@ -642,7 +643,7 @@ static NOINLINE void trackAllocs(
     }
 #endif
 
-    CAPTURE_STACK_TRACE( 2,PTRS,a.frames,caller );
+    CAPTURE_STACK_TRACE( 2,PTRS,a.frames,caller,rd->maxStackFrames );
 
     EnterCriticalSection( &rd->csWrite );
 
@@ -714,7 +715,7 @@ static NOINLINE void trackAllocs(
     a.threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
 #endif
 
-    CAPTURE_STACK_TRACE( 2,PTRS,a.frames,caller );
+    CAPTURE_STACK_TRACE( 2,PTRS,a.frames,caller,rd->maxStackFrames );
 
     EnterCriticalSection( &rd->csWrite );
 
@@ -1906,7 +1907,7 @@ static NOINLINE void protect_free_m( void *b,funcType ft )
 
         LeaveCriticalSection( &sa->cs );
 
-        CAPTURE_STACK_TRACE( 3,PTRS,aa[1].frames,NULL );
+        CAPTURE_STACK_TRACE( 3,PTRS,aa[1].frames,NULL,rd->maxStackFrames );
         aa[1].ptr = slackStart + i;
         aa[1].ft = ft;
 #ifndef NO_THREADNAMES
@@ -3091,6 +3092,7 @@ void inj( remoteData *rd,HMODULE app )
   ld->pageAdd = ( rd->opt.minProtectSize+(ld->pageSize-1) )/ld->pageSize;
   ld->processors = si.dwNumberOfProcessors;
   ld->ei = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(exceptionInfo) );
+  ld->maxStackFrames = LOBYTE(LOWORD(GetVersion()))>=6 ? 1024 : 62;
 
   ld->splits = HeapAlloc( heap,HEAP_ZERO_MEMORY,
       (SPLIT_MASK+1)*sizeof(splitAllocation) );
