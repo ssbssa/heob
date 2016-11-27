@@ -1604,7 +1604,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
     if( alloc_idxs )
       alloc_idxs[i] = i;
   }
-  if( opt->mergeLeaks && leakDetails )
+  if( opt->groupLeaks && leakDetails )
   {
     sort_allocations( alloc_a,alloc_idxs,alloc_q,sizeof(allocation),
         heap,cmp_merge_allocation );
@@ -1654,7 +1654,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
       for( c=0; c<PTRS && frames[c] && frames[c]!=threadInitAddr; c++ );
       a->frameCount = c;
     }
-    if( opt->mergeLeaks>1 )
+    if( opt->groupLeaks>1 )
       sort_allocations( alloc_a,alloc_idxs,combined_q,sizeof(allocation),
           heap,cmp_frame_allocation );
     else
@@ -1663,7 +1663,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
     for( i=0; i<combined_q; i++ )
       alloc_a[alloc_idxs[i]].size /= alloc_a[alloc_idxs[i]].count;
 
-    if( opt->mergeLeaks>1 )
+    if( opt->groupLeaks>1 )
     {
       for( l=0,i=0; l<lDetails; l++ )
       {
@@ -1913,8 +1913,8 @@ void mainCRTStartup( void )
         opt.leakContents = atoi( args+2 );
         break;
 
-      case 'I':
-        opt.mergeLeaks = atoi( args+2 );
+      case 'g':
+        opt.groupLeaks = atoi( args+2 );
         break;
 
       case 'R':
@@ -2162,8 +2162,8 @@ void mainCRTStartup( void )
           defopt.allocMethod );
       printf( "    $I-n$BX$N    find nearest allocation [$I%d$N]\n",
           defopt.findNearest );
-      printf( "    $I-I$BX$N    merge identical leaks [$I%d$N]\n",
-          defopt.mergeLeaks );
+      printf( "    $I-g$BX$N    group identical leaks [$I%d$N]\n",
+          defopt.groupLeaks );
     }
     printf( "    $I-F$BX$N    show full path [$I%d$N]\n",
         defopt.fullPath );

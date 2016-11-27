@@ -224,7 +224,7 @@ typedef struct
   int minProtectSize;
   int findNearest;
   int leakContents;
-  int mergeLeaks;
+  int groupLeaks;
   size_t minLeakSize;
   int leakRecording;
 }
