@@ -140,6 +140,7 @@ typedef struct localData
   size_t pageAdd;
   HANDLE crtHeap;
   int processors;
+  exceptionInfo *ei;
 
 #ifndef NO_THREADNAMES
   DWORD threadNameTls;
@@ -399,8 +400,8 @@ static NOINLINE void trackAllocs(
     for( i=sa->alloc_q-1; i>=0 && sa->alloc_a[i].ptr!=free_ptr; i-- );
     if( LIKELY(i>=0) )
     {
-      allocation a;
-      RtlMoveMemory( &a,&sa->alloc_a[i],sizeof(allocation) );
+      freed f;
+      RtlMoveMemory( &f.a,&sa->alloc_a[i],sizeof(allocation) );
       sa->alloc_q--;
       if( i<sa->alloc_q ) sa->alloc_a[i] = sa->alloc_a[sa->alloc_q];
 
@@ -408,8 +409,6 @@ static NOINLINE void trackAllocs(
 
       if( rd->opt.protectFree )
       {
-        freed f;
-        RtlMoveMemory( &f.a,&a,sizeof(allocation) );
         f.a.ftFreed = ft;
 #ifndef NO_THREADNAMES
         f.threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
@@ -453,10 +452,23 @@ static NOINLINE void trackAllocs(
         LeaveCriticalSection( &sf->cs );
       }
 
-      if( UNLIKELY(rd->opt.allocMethod && a.at!=at) )
+      if( UNLIKELY(rd->opt.allocMethod && f.a.at!=at) )
       {
-        allocation aa[2];
-        RtlMoveMemory( aa,&a,sizeof(allocation) );
+        allocation *aa = HeapAlloc( rd->heap,0,2*sizeof(allocation) );
+        if( UNLIKELY(!aa) )
+        {
+          EnterCriticalSection( &rd->csWrite );
+
+          DWORD written;
+          int type = WRITE_MAIN_ALLOC_FAIL;
+          WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+
+          LeaveCriticalSection( &rd->csWrite );
+
+          exitWait( 1,0 );
+        }
+
+        RtlMoveMemory( aa,&f.a,sizeof(allocation) );
         CAPTURE_STACK_TRACE( 2,PTRS,aa[1].frames,caller );
         aa[1].ptr = free_ptr;
         aa[1].size = 0;
@@ -477,6 +489,8 @@ static NOINLINE void trackAllocs(
         WriteFile( rd->master,aa,2*sizeof(allocation),&written,NULL );
 
         LeaveCriticalSection( &rd->csWrite );
+
+        HeapFree( rd->heap,0,aa );
 
         if( rd->opt.raiseException>1 )
           DebugBreak();
@@ -505,7 +519,19 @@ static NOINLINE void trackAllocs(
 
           LeaveCriticalSection( &sf->cs );
 
-          allocation aa[3];
+          allocation *aa = HeapAlloc( rd->heap,0,3*sizeof(allocation) );
+          if( UNLIKELY(!aa) )
+          {
+            EnterCriticalSection( &rd->csWrite );
+
+            DWORD written;
+            int type = WRITE_MAIN_ALLOC_FAIL;
+            WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+
+            LeaveCriticalSection( &rd->csWrite );
+
+            exitWait( 1,0 );
+          }
 
           CAPTURE_STACK_TRACE( 2,PTRS,aa[0].frames,caller );
           aa[0].ft = ft;
@@ -532,6 +558,8 @@ static NOINLINE void trackAllocs(
           WriteFile( rd->master,aa,3*sizeof(allocation),&written,NULL );
 
           LeaveCriticalSection( &rd->csWrite );
+
+          HeapFree( rd->heap,0,aa );
 
           if( rd->opt.raiseException )
             DebugBreak();
@@ -2760,7 +2788,9 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   int type;
   DWORD written;
 
-  exceptionInfo ei;
+  exceptionInfo *eiPtr = rd->ei;
+#define ei (*eiPtr)
+
   ei.aq = 1;
   ei.nearest = 0;
 
@@ -2915,6 +2945,8 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   WriteFile( rd->master,&type,sizeof(int),&written,NULL );
   WriteFile( rd->master,&ei,sizeof(exceptionInfo),&written,NULL );
 
+#undef ei
+
   if( ep->ExceptionRecord->ExceptionCode==EXCEPTION_BREAKPOINT )
   {
 #ifndef _WIN64
@@ -3058,6 +3090,7 @@ void inj( remoteData *rd,HMODULE app )
   ld->pageSize = si.dwPageSize;
   ld->pageAdd = ( rd->opt.minProtectSize+(ld->pageSize-1) )/ld->pageSize;
   ld->processors = si.dwNumberOfProcessors;
+  ld->ei = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(exceptionInfo) );
 
   ld->splits = HeapAlloc( heap,HEAP_ZERO_MEMORY,
       (SPLIT_MASK+1)*sizeof(splitAllocation) );

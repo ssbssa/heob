@@ -2292,6 +2292,8 @@ void mainCRTStartup( void )
     int waitCount = in ? 2 : 1;
     int errColor = 0;
     COORD consoleCoord = { 0,0 };
+    allocation *aa = HeapAlloc( heap,0,3*sizeof(allocation) );
+    exceptionInfo *eiPtr = HeapAlloc( heap,0,sizeof(exceptionInfo) );
     while( 1 )
     {
       if( needData )
@@ -2465,7 +2467,7 @@ void mainCRTStartup( void )
 
         case WRITE_EXCEPTION:
           {
-            exceptionInfo ei;
+#define ei (*eiPtr)
             if( !readFile(readPipe,&ei,sizeof(exceptionInfo),&ov) )
               break;
 
@@ -2536,38 +2538,36 @@ void mainCRTStartup( void )
             }
 
             terminated = -1;
+#undef ei
           }
           break;
 
         case WRITE_ALLOC_FAIL:
           {
-            allocation a;
-            if( !readFile(readPipe,&a,sizeof(allocation),&ov) )
+            if( !readFile(readPipe,aa,sizeof(allocation),&ov) )
               break;
 
-            printf( "\n$Wallocation failed of %U bytes\n",a.size );
-            printf( "$S  called on: $N(#%U)",a.id );
-            printThreadName( a.threadNameIdx );
-            printStack( a.frames,mi_a,mi_q,&ds,a.ft );
+            printf( "\n$Wallocation failed of %U bytes\n",aa->size );
+            printf( "$S  called on: $N(#%U)",aa->id );
+            printThreadName( aa->threadNameIdx );
+            printStack( aa->frames,mi_a,mi_q,&ds,aa->ft );
           }
           break;
 
         case WRITE_FREE_FAIL:
           {
-            allocation a;
-            if( !readFile(readPipe,&a,sizeof(allocation),&ov) )
+            if( !readFile(readPipe,aa,sizeof(allocation),&ov) )
               break;
 
-            printf( "\n$Wdeallocation of invalid pointer %p\n",a.ptr );
+            printf( "\n$Wdeallocation of invalid pointer %p\n",aa->ptr );
             printf( "$S  called on:" );
-            printThreadName( a.threadNameIdx );
-            printStack( a.frames,mi_a,mi_q,&ds,a.ft );
+            printThreadName( aa->threadNameIdx );
+            printStack( aa->frames,mi_a,mi_q,&ds,aa->ft );
           }
           break;
 
         case WRITE_DOUBLE_FREE:
           {
-            allocation aa[3];
             if( !readFile(readPipe,aa,3*sizeof(allocation),&ov) )
               break;
 
@@ -2588,7 +2588,6 @@ void mainCRTStartup( void )
 
         case WRITE_SLACK:
           {
-            allocation aa[2];
             if( !readFile(readPipe,aa,2*sizeof(allocation),&ov) )
               break;
 
@@ -2612,7 +2611,6 @@ void mainCRTStartup( void )
 
         case WRITE_WRONG_DEALLOC:
           {
-            allocation aa[2];
             if( !readFile(readPipe,aa,2*sizeof(allocation),&ov) )
               break;
 
@@ -2697,6 +2695,8 @@ void mainCRTStartup( void )
       }
     }
     CloseHandle( ov.hEvent );
+    HeapFree( heap,0,aa );
+    HeapFree( heap,0,eiPtr );
     // }}}
 
     if( terminated==-2 )

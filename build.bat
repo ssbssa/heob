@@ -11,7 +11,7 @@ if not exist obj%bits% mkdir obj%bits%
 if not defined DWSTFLAGS set DWSTFLAGS=/D NO_DWARFSTACK
 if not defined HEOBVER set HEOBVER=/D "HEOB_VER=\"vc-dev\""
 
-set CFLAGS=/GS- /Gs8192 /W3 /Gy- /Zc:wchar_t %DWSTFLAGS% /Gm- /O2 /Ob0 /fp:precise /D "NDEBUG" /D "_CONSOLE" %HEOBVER% /D "_MBCS" /errorReport:prompt /GF- /WX- /Zc:forScope /GR- /Gd /Oy- /Oi /MD /openmp- /nologo /Fo"obj%bits%\\" /Ot
+set CFLAGS=/GS- /W3 /Gy- /Zc:wchar_t %DWSTFLAGS% /Gm- /O2 /Ob0 /fp:precise /D "NDEBUG" /D "_CONSOLE" %HEOBVER% /D "_MBCS" /errorReport:prompt /GF- /WX- /Zc:forScope /GR- /Gd /Oy- /Oi /MD /openmp- /nologo /Fo"obj%bits%\\" /Ot
 set LDFLAGS=/NXCOMPAT /DYNAMICBASE "kernel32.lib" /OPT:REF /INCREMENTAL:NO /SUBSYSTEM:CONSOLE /OPT:ICF /ERRORREPORT:PROMPT /NOLOGO /NODEFAULTLIB /TLBID:1
 
 cl /c %CFLAGS% heob.c
