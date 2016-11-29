@@ -35,6 +35,13 @@ extern "C" __declspec(dllexport) int *dll_arr( void )
   return( arr_int );
 }
 
+static DWORD thread_id;
+
+extern "C" __declspec(dllexport) DWORD dll_thread_id( void )
+{
+  return( thread_id );
+}
+
 extern "C" BOOL WINAPI DllMain(
     HINSTANCE hinstDLL,DWORD fdwReason,LPVOID lpvReserved )
 {
@@ -46,6 +53,7 @@ extern "C" BOOL WINAPI DllMain(
     memory = malloc( 101 );
     one_int = new int;
     arr_int = new int[50];
+    thread_id = GetCurrentThreadId();
   }
 
   if( fdwReason==DLL_PROCESS_DETACH )

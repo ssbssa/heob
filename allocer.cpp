@@ -21,6 +21,7 @@ extern "C" __declspec(dllimport) void *dll_alloc( size_t );
 extern "C" __declspec(dllimport) void *dll_memory( void );
 extern "C" __declspec(dllimport) int *dll_int( void );
 extern "C" __declspec(dllimport) int *dll_arr( void );
+extern "C" __declspec(dllimport) DWORD dll_thread_id( void );
 
 
 static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
@@ -490,6 +491,12 @@ void choose( int arg )
         b[0] = c;
         mem[1] += b[0];
       }
+      break;
+
+    case 29:
+      // compare thread id with dll
+      printf( "thread id: %s\n",
+          GetCurrentThreadId()==dll_thread_id()?"same":"different" );
       break;
   }
 

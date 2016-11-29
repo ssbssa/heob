@@ -2966,8 +2966,10 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 // }}}
 // injected main {{{
 
-void inj( remoteData *rd,HMODULE app )
+DWORD WINAPI heob( LPVOID arg )
 {
+  remoteData *rd = arg;
+  HMODULE app = rd->heobMod;
   PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)app;
   PIMAGE_NT_HEADERS inh = (PIMAGE_NT_HEADERS)REL_PTR( idh,idh->e_lfanew );
 
@@ -3283,7 +3285,7 @@ void inj( remoteData *rd,HMODULE app )
     }
   }
 
-  while( 1 ) Sleep( INFINITE );
+  return( 0 );
 }
 
 // }}}

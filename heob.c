@@ -522,24 +522,29 @@ static int isWrongArch( HANDLE process )
 // }}}
 // code injection {{{
 
-typedef void func_inj( remoteData*,HMODULE );
+typedef DWORD WINAPI func_heob( LPVOID );
+typedef VOID CALLBACK func_inj( remoteData* );
 
-static CODE_SEG(".text$1") DWORD WINAPI remoteCall( remoteData *rd )
+static CODE_SEG(".text$1") VOID CALLBACK remoteCall( remoteData *rd )
 {
   HMODULE app = rd->fLoadLibraryW( rd->exePath );
-  func_inj *finj = (func_inj*)( (size_t)app + rd->injOffset );
-  finj( rd,app );
+  rd->heobMod = app;
 
-  UNREACHABLE;
+  func_heob *fheob = (func_heob*)( (size_t)app + rd->injOffset );
+  HANDLE heobThread = rd->fCreateThread( NULL,0,fheob,rd,0,NULL );
+  rd->fCloseHandle( heobThread );
 
-  return( 0 );
+  rd->fWaitForSingleObject( rd->startMain,INFINITE );
+  rd->fCloseHandle( rd->startMain );
 }
 
 static CODE_SEG(".text$2") HANDLE inject(
-    HANDLE process,options *opt,char *exePath,textColor *tc,
-    int raise_alloc_q,size_t *raise_alloc_a,HANDLE *controlPipe )
+    HANDLE process,HANDLE thread,options *opt,char *exePath,textColor *tc,
+    int raise_alloc_q,size_t *raise_alloc_a,HANDLE *controlPipe,
+    HANDLE in,HANDLE err )
 {
-  size_t funcSize = (size_t)&inject - (size_t)&remoteCall;
+  func_inj *finj = &remoteCall;
+  size_t funcSize = (size_t)&inject - (size_t)finj;
   size_t fullSize = funcSize + sizeof(remoteData) + raise_alloc_q*sizeof(int);
 
   unsigned char *fullDataRemote =
@@ -547,15 +552,20 @@ static CODE_SEG(".text$2") HANDLE inject(
 
   HANDLE heap = GetProcessHeap();
   unsigned char *fullData = HeapAlloc( heap,0,fullSize );
-  RtlMoveMemory( fullData,&remoteCall,funcSize );
+  RtlMoveMemory( fullData,finj,funcSize );
   remoteData *data = (remoteData*)( fullData+funcSize );
   RtlZeroMemory( data,sizeof(remoteData) );
 
-  LPTHREAD_START_ROUTINE remoteFuncStart =
-    (LPTHREAD_START_ROUTINE)( fullDataRemote );
+  PAPCFUNC remoteFuncStart = (PAPCFUNC)( fullDataRemote );
 
   HMODULE kernel32 = GetModuleHandle( "kernel32.dll" );
   data->kernel32 = kernel32;
+  data->fCreateThread =
+    (func_CreateThread*)GetProcAddress( kernel32,"CreateThread" );
+  data->fWaitForSingleObject = (func_WaitForSingleObject*)GetProcAddress(
+      kernel32,"WaitForSingleObject" );
+  data->fCloseHandle =
+    (func_CloseHandle*)GetProcAddress( kernel32,"CloseHandle" );
   data->fVirtualProtect =
     (func_VirtualProtect*)GetProcAddress( kernel32,"VirtualProtect" );
   data->fGetCurrentProcess =
@@ -578,8 +588,8 @@ static CODE_SEG(".text$2") HANDLE inject(
     (func_ExitProcess*)GetProcAddress( kernel32,"ExitProcess" );
 
   GetModuleFileNameW( NULL,data->exePath,MAX_PATH );
-  func_inj *finj = &inj;
-  data->injOffset = (size_t)finj - (size_t)GetModuleHandle( NULL );
+  func_heob *fheob = &heob;
+  data->injOffset = (size_t)fheob - (size_t)GetModuleHandle( NULL );
 
   char pipeName[32] = "\\\\.\\Pipe\\heob.data.";
   char *end = num2hexstr( pipeName+lstrlen(pipeName),GetCurrentProcessId(),8 );
@@ -608,6 +618,11 @@ static CODE_SEG(".text$2") HANDLE inject(
       process,&data->initFinished,0,FALSE,
       DUPLICATE_SAME_ACCESS );
 
+  HANDLE startMain = CreateEvent( NULL,FALSE,FALSE,NULL );
+  DuplicateHandle( GetCurrentProcess(),startMain,
+      process,&data->startMain,0,FALSE,
+      DUPLICATE_SAME_ACCESS );
+
   RtlMoveMemory( &data->opt,opt,sizeof(options) );
 
   data->raise_alloc_q = raise_alloc_q;
@@ -617,25 +632,68 @@ static CODE_SEG(".text$2") HANDLE inject(
 
   WriteProcessMemory( process,fullDataRemote,fullData,fullSize,NULL );
 
-  HANDLE thread = CreateRemoteThread( process,NULL,0,
-      remoteFuncStart,
-      fullDataRemote+funcSize,0,NULL );
-  HANDLE h[2] = { thread,initFinished };
-  if( WaitForMultipleObjects(2,h,FALSE,INFINITE)==WAIT_OBJECT_0 )
+  QueueUserAPC( remoteFuncStart,thread,(ULONG_PTR)(fullDataRemote+funcSize) );
+  ResumeThread( thread );
+
+  COORD consoleCoord;
+  int errColor;
+  if( in )
   {
-    CloseHandle( initFinished );
-    CloseHandle( thread );
-    CloseHandle( readPipe );
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    GetConsoleScreenBufferInfo( err,&csbi );
+    consoleCoord = csbi.dwCursorPosition;
+    errColor = csbi.wAttributes&0xff;
+    const char *killText = " kill ";
+    DWORD didwrite;
+    WriteFile( err,killText,1,&didwrite,NULL );
+    SetConsoleTextAttribute( err,
+        errColor^(FOREGROUND_RED|FOREGROUND_BLUE|FOREGROUND_INTENSITY) );
+    WriteFile( err,killText+1,1,&didwrite,NULL );
+    SetConsoleTextAttribute( err,errColor );
+    WriteFile( err,killText+2,4,&didwrite,NULL );
+  }
+
+  HANDLE h[2] = { initFinished,in };
+  int waitCount = in ? 2 : 1;
+  while( 1 )
+  {
+    if( WaitForMultipleObjects(waitCount,h,FALSE,INFINITE)==WAIT_OBJECT_0 )
+      break;
+
+    INPUT_RECORD ir;
+    DWORD didread;
+    if( ReadConsoleInput(in,&ir,1,&didread) &&
+        ir.EventType==KEY_EVENT &&
+        ir.Event.KeyEvent.bKeyDown &&
+        ir.Event.KeyEvent.wVirtualKeyCode=='K' )
+    {
+      CloseHandle( readPipe );
+      readPipe = NULL;
+      break;
+    }
+  }
+
+  if( in )
+  {
+    SetConsoleCursorPosition( err,consoleCoord );
+
+    DWORD didwrite;
+    int textLen = 6;
+    FillConsoleOutputAttribute( err,errColor,textLen,consoleCoord,&didwrite );
+    FillConsoleOutputCharacter( err,' ',textLen,consoleCoord,&didwrite );
+  }
+
+  CloseHandle( initFinished );
+  if( !readPipe )
+  {
+    CloseHandle( startMain );
     HeapFree( heap,0,fullData );
-    printf( "$Wprocess failed to initialize\n" );
+    printf( "$Wprocess killed\n" );
     return( NULL );
   }
-  CloseHandle( initFinished );
-  CloseHandle( thread );
 
   ReadProcessMemory( process,fullDataRemote+funcSize,data,
       sizeof(remoteData),NULL );
-  VirtualFreeEx( process,fullDataRemote,0,MEM_RELEASE );
 
   if( !data->master )
   {
@@ -646,6 +704,10 @@ static CODE_SEG(".text$2") HANDLE inject(
   else
     RtlMoveMemory( exePath,data->exePathA,MAX_PATH );
   HeapFree( heap,0,fullData );
+
+  SuspendThread( thread );
+  SetEvent( startMain );
+  CloseHandle( startMain );
 
   return( readPipe );
 }
@@ -2191,13 +2253,9 @@ void mainCRTStartup( void )
   }
   // }}}
 
-  HANDLE in = NULL;
-  if( opt.pid || opt.leakRecording )
-  {
-    in = GetStdHandle( STD_INPUT_HANDLE );
-    if( !FlushConsoleInputBuffer(in) ) in = NULL;
-    if( !in ) opt.pid = opt.leakRecording = 0;
-  }
+  HANDLE in = GetStdHandle( STD_INPUT_HANDLE );
+  if( !FlushConsoleInputBuffer(in) ) in = NULL;
+  if( !in ) opt.pid = opt.leakRecording = 0;
 
   if( opt.leakRecording )
     opt.newConsole = 1;
@@ -2226,12 +2284,13 @@ void mainCRTStartup( void )
 
   HANDLE readPipe = NULL;
   HANDLE controlPipe = NULL;
+  HANDLE err = GetStdHandle( STD_ERROR_HANDLE );
   char exePath[MAX_PATH];
   if( isWrongArch(pi.hProcess) )
     printf( "$Wonly " BITS "bit applications possible\n" );
   else
-    readPipe = inject( pi.hProcess,&opt,exePath,tc,
-        raise_alloc_q,raise_alloc_a,&controlPipe );
+    readPipe = inject( pi.hProcess,pi.hThread,&opt,exePath,tc,
+        raise_alloc_q,raise_alloc_a,&controlPipe,in,err );
   if( !readPipe )
     TerminateProcess( pi.hProcess,1 );
 
@@ -2244,7 +2303,6 @@ void mainCRTStartup( void )
     dbgsym_init( &ds,pi.hProcess,tc,&opt,funcnames,heap,exePath,TRUE,
         RETURN_ADDRESS() );
 
-    HANDLE err = GetStdHandle( STD_ERROR_HANDLE );
     if( opt.pid )
     {
       tc->out = err;
