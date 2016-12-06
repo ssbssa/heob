@@ -38,6 +38,7 @@ typedef void func_TextColor( struct textColor*,textColorAtt );
 typedef struct textColor
 {
   func_WriteText *fWriteText;
+  func_WriteText *fWriteSubText;
   func_TextColor *fTextColor;
   HANDLE out;
   union {
@@ -85,7 +86,7 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
             {
               size_t l = 0;
               while( arg[l] ) l++;
-              tc->fWriteText( tc,arg,l );
+              tc->fWriteSubText( tc,arg,l );
             }
           }
           break;
@@ -184,6 +185,29 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
             int i;
             for( i=0; i<indent; i++ )
               tc->fWriteText( tc,"| ",2 );
+          }
+          break;
+
+        case 't': // time
+          {
+            DWORD ticks = va_arg( vl,DWORD );
+            unsigned milli = ticks%1000;
+            ticks /= 1000;
+            unsigned sec = ticks%60;
+            ticks /= 60;
+            unsigned min = ticks%60;
+            ticks /= 60;
+            unsigned hour = ticks%24;
+            ticks /= 24;
+            unsigned day = ticks;
+            char timestr[15] = {
+              day  /10 +'0',day       %10+'0',':',
+              hour /10 +'0',hour      %10+'0',':',
+              min  /10 +'0',min       %10+'0',':',
+              sec  /10 +'0',sec       %10+'0','.',
+              milli/100+'0',(milli/10)%10+'0',milli%10+'0',
+            };
+            tc->fWriteText( tc,timestr,15 );
           }
           break;
       }
@@ -381,6 +405,7 @@ static void checkOutputVariant( textColor *tc,const char *cmdLine,HANDLE out )
 {
   // default
   tc->fWriteText = &WriteText;
+  tc->fWriteSubText = &WriteText;
   tc->fTextColor = NULL;
   tc->out = out;
   tc->color = ATT_NORMAL;
@@ -494,6 +519,7 @@ static void checkOutputVariant( textColor *tc,const char *cmdLine,HANDLE out )
         WriteFile( tc->out,styleInit2,lstrlen(styleInit2),&written,NULL );
 
         tc->fWriteText = &WriteTextHtml;
+        tc->fWriteSubText = &WriteTextHtml;
         tc->fTextColor = &TextColorHtml;
 
         tc->styles[ATT_NORMAL]  = NULL;
@@ -752,6 +778,7 @@ typedef struct dbgsym
   func_dwstDemangle *fdwstDemangle;
 #endif
   char *absPath;
+  char *modPath;
   textColor *tc;
   options *opt;
   const char **funcnames;
@@ -840,6 +867,7 @@ void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
 #endif
 
   ds->absPath = HeapAlloc( heap,0,MAX_PATH );
+  ds->modPath = HeapAlloc( heap,0,MAX_PATH );
 }
 
 void dbgsym_close( dbgsym *ds )
@@ -864,6 +892,7 @@ void dbgsym_close( dbgsym *ds )
 #endif
 
   if( ds->absPath ) HeapFree( heap,0,ds->absPath );
+  if( ds->modPath ) HeapFree( heap,0,ds->modPath );
 }
 
 #ifndef _WIN64
@@ -962,7 +991,9 @@ static void locFunc(
   }
 #endif
 
-  if( ds->opt->fullPath || ds->opt->sourceCode )
+  int indent = ds->indent;
+
+  if( ds->opt->fullPath || ds->opt->sourceCode || indent<0 )
   {
     if( !GetFullPathNameA(filename,MAX_PATH,ds->absPath,NULL) )
       ds->absPath[0] = 0;
@@ -981,7 +1012,40 @@ static void locFunc(
       filename = ds->absPath;
   }
 
-  int indent = ds->indent;
+  if( indent<0 )
+  {
+    if( lineno==DWST_BASE_ADDR )
+    {
+      RtlMoveMemory( ds->modPath,ds->absPath,MAX_PATH );
+      return;
+    }
+
+    printf( "    <frame>\n" );
+    if( addr )
+      printf( "      <ip>%X</ip>\n",(uintptr_t)addr );
+    printf( "      <obj>%s</obj>\n",ds->modPath );
+    if( funcname )
+      printf( "      <fn>%s</fn>\n",funcname );
+    if( lineno>0 )
+    {
+      char *sep = strrchr( ds->absPath,'\\' );
+      const char *filepart;
+      if( sep )
+      {
+        *sep = 0;
+        printf( "      <dir>%s</dir>\n",ds->absPath );
+        *sep = '\\';
+        filepart = sep + 1;
+      }
+      else
+        filepart = filename;
+      printf( "      <file>%s</file>\n",filepart );
+      printf( "      <line>%d</line>\n",lineno );
+    }
+    printf( "    </frame>\n" );
+    return;
+  }
+
   printf( "  %i",indent );
   switch( lineno )
   {
@@ -1098,7 +1162,15 @@ static void printStackCount( uint64_t *frames,int fc,
   if( ft<FT_COUNT )
   {
     textColor *tc = ds->tc;
-    printf( "  %i      " PTR_SPACES "   [$I%s$N]\n",indent,ds->funcnames[ft] );
+    if( indent>=0 )
+      printf( "  %i      " PTR_SPACES "   [$I%s$N]\n",
+          indent,ds->funcnames[ft] );
+    else
+    {
+      printf( "    <frame>\n" );
+      printf( "      <fn>%s</fn>\n",ds->funcnames[ft] );
+      printf( "    </frame>\n" );
+    }
   }
 
   ds->indent = indent;
@@ -1619,6 +1691,83 @@ static void printStackGroup( stackGroup *sg,
         sg->stackCount,mi_a,mi_q,ds,FT_COUNT,stackIndent );
 }
 
+static int printStackGroupXml( stackGroup *sg,
+    allocation *alloc_a,int *alloc_idxs,int alloc_q,
+#ifndef NO_THREADNAMES
+    threadNameInfo *threadName_a,int threadName_q,
+#endif
+    modInfo *mi_a,int mi_q,dbgsym *ds,const char **leakTypeNames,
+    int xmlRecordNum )
+{
+  int i;
+  stackGroup *child_a = sg->child_a;
+  int *childSorted_a = sg->childSorted_a;
+  int child_q = sg->child_q;
+  for( i=0; i<child_q; i++ )
+  {
+    int idx = childSorted_a ? childSorted_a[i] : i;
+    xmlRecordNum = printStackGroupXml( child_a+idx,alloc_a,alloc_idxs,alloc_q,
+#ifndef NO_THREADNAMES
+        threadName_a,threadName_q,
+#endif
+        mi_a,mi_q,ds,leakTypeNames,xmlRecordNum );
+  }
+
+  int allocStart = sg->allocStart;
+  int allocCount = sg->allocCount;
+  allocation *a = alloc_a + alloc_idxs[allocStart];
+  const char *xmlLeakTypeNames[LT_COUNT] = {
+    "Leak_DefinitelyLost",
+    "Leak_DefinitelyLost",
+    "Leak_IndirectlyLost",
+    "Leak_StillReachable",
+    "Leak_StillReachable",
+  };
+  textColor *tc = ds->tc;
+  size_t minLeakSize = ds->opt->minLeakSize;
+  if( sg->stackStart+sg->stackCount==a->frameCount )
+  {
+    for( i=0; i<allocCount; i++ )
+    {
+      int idx = alloc_idxs[allocStart+i];
+      a = alloc_a + idx;
+
+      xmlRecordNum++;
+
+      size_t combSize = a->size*a->count;
+      if( combSize<minLeakSize ) continue;
+
+      printf( "<error>\n" );
+      printf( "  <unique>%X</unique>\n",a->id );
+#ifndef NO_THREADNAMES
+      int threadNameIdx = a->threadNameIdx;
+      if( threadNameIdx>0 && threadNameIdx<=threadName_q )
+        printf( "  <threadname>%s</threadname>\n",
+            threadName_a[threadNameIdx-1].name );
+      else if( threadNameIdx<0 )
+      {
+        unsigned unnamedIdx = -threadNameIdx;
+        printf( "  <tid>%u</tid>\n",unnamedIdx );
+      }
+#endif
+      printf( "  <kind>%s</kind>\n",xmlLeakTypeNames[a->lt] );
+      printf( "  <xwhat>\n" );
+      printf( "    <text>%U bytes in %d blocks are %s"
+          " in loss record %d of %d</text>\n",
+          combSize,a->count,leakTypeNames[a->lt],xmlRecordNum,alloc_q );
+      printf( "    <leakedbytes>%U</leakedbytes>\n",a->size );
+      printf( "    <leakedblocks>%d</leakedblocks>\n",a->count );
+      printf( "  </xwhat>\n" );
+      printf( "  <stack>\n" );
+      printStackPart( a->frames,a->frameCount,mi_a,mi_q,ds,a->ft,-1 );
+      printf( "  </stack>\n" );
+      printf( "</error>\n\n" );
+    }
+  }
+
+  return( xmlRecordNum );
+}
+
 static void freeStackGroup( stackGroup *sg,HANDLE heap )
 {
   int i;
@@ -1637,7 +1786,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
 #ifndef NO_THREADNAMES
     threadNameInfo *threadName_a,int threadName_q,
 #endif
-    options *opt,textColor *tc,dbgsym *ds,HANDLE heap,
+    options *opt,textColor *tc,dbgsym *ds,HANDLE heap,textColor *tcXml,
     uintptr_t threadInitAddr )
 {
   printf( "\n" );
@@ -1801,6 +1950,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
       sg->allocSumSize += a->size*a->count;
     }
   }
+  int xmlRecordNum = 0;
   for( l=0; l<lMax; l++ )
   {
     stackGroup *sg = sg_a + l;
@@ -1818,6 +1968,17 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
             content_ptrs,mi_a,mi_q,ds );
       printf( "  $Wsum: %U B / %d\n",sg->allocSumSize,sg->allocSum );
     }
+    if( tcXml && l<lDetails )
+    {
+      textColor *tcOrig = tc;
+      ds->tc = tcXml;
+      xmlRecordNum = printStackGroupXml( sg,alloc_a,alloc_idxs,combined_q,
+#ifndef NO_THREADNAMES
+          threadName_a,threadName_q,
+#endif
+          mi_a,mi_q,ds,leakTypeNames,xmlRecordNum );
+      ds->tc = tcOrig;
+    }
     freeStackGroup( sg,heap );
   }
   if( alloc_idxs )
@@ -1832,6 +1993,7 @@ void mainCRTStartup( void )
 {
   textColor tc_o;
   textColor *tc = &tc_o;
+  DWORD startTicks = GetTickCount();
 
   // command line arguments {{{
   char *cmdLine = GetCommandLineA();
@@ -1873,6 +2035,7 @@ void mainCRTStartup( void )
   int a2l_mi_q = 0;
   int fullhelp = 0;
   char badArg = 0;
+  textColor *tcXml = NULL;
   while( args )
   {
     while( args[0]==' ' ) args++;
@@ -2030,6 +2193,35 @@ void mainCRTStartup( void )
         opt.leakRecording = atoi( args+2 );
         break;
 
+      case 'x':
+        {
+          if( tcXml ) break;
+          char *start = args + 2;
+          char *end = start;
+          while( *end && *end!=' ' ) end++;
+          if( end>start )
+          {
+            size_t len = end - start;
+            char *name = HeapAlloc( heap,0,len+1 );
+            RtlMoveMemory( name,start,len );
+            name[len] = 0;
+            HANDLE xml = CreateFile( name,GENERIC_WRITE,FILE_SHARE_READ,
+                NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
+            HeapFree( heap,0,name );
+            if( xml==INVALID_HANDLE_VALUE ) xml = NULL;
+            if( xml )
+            {
+              tcXml = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(textColor) );
+              tcXml->fWriteText = &WriteText;
+              tcXml->fWriteSubText = &WriteTextHtml;
+              tcXml->fTextColor = NULL;
+              tcXml->out = xml;
+              tcXml->color = ATT_NORMAL;
+            }
+          }
+        }
+        break;
+
       case '"':
         {
           char *start = args + 2;
@@ -2083,6 +2275,11 @@ void mainCRTStartup( void )
 
     if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
     if( a2l_mi_a ) HeapFree( heap,0,a2l_mi_a );
+    if( tcXml )
+    {
+      CloseHandle( tcXml->out );
+      HeapFree( heap,0,tcXml );
+    }
     ExitProcess( -1 );
   }
 
@@ -2168,7 +2365,15 @@ void mainCRTStartup( void )
     raise_alloc_a = NULL;
     HeapFree( heap,0,a2l_mi_a );
 
-    if( ptr_q ) ExitProcess( 0 );
+    if( ptr_q )
+    {
+      if( tcXml )
+      {
+        CloseHandle( tcXml->out );
+        HeapFree( heap,0,tcXml );
+      }
+      ExitProcess( 0 );
+    }
     args = NULL;
   }
 
@@ -2187,6 +2392,8 @@ void mainCRTStartup( void )
     printf( "    $I-o$BX$N    heob output"
         " ($I0$N = stdout, $I1$N = stderr, $I...$N = file) [$I%d$N]\n",
         0 );
+    if( fullhelp )
+      printf( "    $I-x$BX$N    xml output\n" );
     printf( "    $I-P$BX$N    show process ID and wait [$I%d$N]\n",
         defopt.pid );
     printf( "    $I-c$BX$N    create new console [$I%d$N]\n",
@@ -2249,6 +2456,11 @@ void mainCRTStartup( void )
     printf( "    $I-H$N     show full help\n" );
     printf( "\n$Ohe$Nap-$Oob$Nserver " HEOB_VER " ($O" BITS "$Nbit)\n" );
     if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
+    if( tcXml )
+    {
+      CloseHandle( tcXml->out );
+      HeapFree( heap,0,tcXml );
+    }
     ExitProcess( -1 );
   }
   // }}}
@@ -2272,6 +2484,11 @@ void mainCRTStartup( void )
   {
     printf( "$Wcan't create process for '%s'\n",args );
     if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
+    if( tcXml )
+    {
+      CloseHandle( tcXml->out );
+      HeapFree( heap,0,tcXml );
+    }
     ExitProcess( -1 );
   }
 
@@ -2324,6 +2541,67 @@ void mainCRTStartup( void )
       printf( " done\n\n" );
       tc->out = out;
     }
+
+    // xml header {{{
+    if( tcXml )
+    {
+      tc = tcXml;
+
+      printf( "<?xml version=\"1.0\"?>\n\n" );
+      printf( "<valgrindoutput>\n\n" );
+      printf( "<protocolversion>4</protocolversion>\n" );
+      printf( "<protocoltool>memcheck</protocoltool>\n\n" );
+      printf( "<preamble>\n" );
+      printf( "  <line>heap-observer " HEOB_VER " (" BITS "bit)</line>\n" );
+      printf( "</preamble>\n\n" );
+      printf( "<pid>%u</pid>\n<ppid>%u</ppid>\n<tool>heob</tool>\n\n",
+          pi.dwProcessId,GetCurrentProcessId() );
+
+      const char *argva[2] = { cmdLine,args };
+      int l = (int)( args - cmdLine );
+      while( l>0 && cmdLine[l-1]==' ' ) l--;
+      int argvl[2] = { l,lstrlen(args) };
+      printf( "<args>\n" );
+      for( l=0; l<2; l++ )
+      {
+        const char *argvstr = l ? "argv" : "vargv";
+        const char *argv = argva[l];
+        int argl = argvl[l];
+        printf( "  <%s>\n",argvstr );
+        int i = 0;
+        while( i<argl )
+        {
+          int startI = i;
+          while( i<argl && argv[i]!=' ' )
+          {
+            char c = argv[i];
+            i++;
+            if( c=='"' )
+            {
+              while( i<argl && argv[i]!='"' ) i++;
+              if( i<argl && argv[i]=='"' ) i++;
+            }
+          }
+          if( i>startI )
+          {
+            const char *argstr = startI ? "arg" : "exe";
+            printf( "    <%s>",argstr );
+            tc->fWriteSubText( tc,argv+startI,i-startI );
+            printf( "</%s>\n",argstr );
+          }
+          while( i<argl && argv[i]==' ' ) i++;
+        }
+        printf( "  </%s>\n",argvstr );
+      }
+      printf( "</args>\n\n" );
+
+      printf( "<status>\n  <state>RUNNING</state>\n"
+          "  <time>%t</time>\n</status>\n\n",
+          GetTickCount()-startTicks );
+
+      tc = &tc_o;
+    }
+    // }}}
 
     ResumeThread( pi.hThread );
 
@@ -2493,7 +2771,7 @@ void mainCRTStartup( void )
 #ifndef NO_THREADNAMES
               threadName_a,threadName_q,
 #endif
-              &opt,tc,&ds,heap,(uintptr_t)RETURN_ADDRESS() );
+              &opt,tc,&ds,heap,tcXml,(uintptr_t)RETURN_ADDRESS() );
           break;
 
         case WRITE_MODS:
@@ -2760,6 +3038,21 @@ void mainCRTStartup( void )
     if( terminated==-2 )
       printf( "\n$Wunexpected end of application\n" );
 
+    // xml footer {{{
+    if( tcXml )
+    {
+      tc = tcXml;
+
+      printf( "<status>\n  <state>FINISHED</state>\n"
+          "  <time>%t</time>\n</status>\n\n",
+          GetTickCount()-startTicks );
+
+      printf( "</valgrindoutput>\n" );
+
+      tc = &tc_o;
+    }
+    // }}}
+
     dbgsym_close( &ds );
     if( alloc_a ) HeapFree( heap,0,alloc_a );
     if( mi_a ) HeapFree( heap,0,mi_a );
@@ -2775,6 +3068,11 @@ void mainCRTStartup( void )
   CloseHandle( pi.hProcess );
 
   if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
+  if( tcXml )
+  {
+    CloseHandle( tcXml->out );
+    HeapFree( heap,0,tcXml );
+  }
 
   ExitProcess( exitCode );
 }
