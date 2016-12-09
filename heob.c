@@ -1208,7 +1208,7 @@ static void printStackCount( uint64_t *frames,int fc,
   }
 }
 
-static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbgsym *ds,
+static int printStack( void **framesV,modInfo *mi_a,int mi_q,dbgsym *ds,
     funcType ft )
 {
   uint64_t frames[PTRS];
@@ -1222,6 +1222,7 @@ static void printStack( void **framesV,modInfo *mi_a,int mi_q,dbgsym *ds,
     frames[j] = frame - 1;
   }
   printStackCount( frames,j,mi_a,mi_q,ds,ft,0 );
+  return( j );
 }
 
 static void printStackPart( void **framesV,int fc,
@@ -2841,36 +2842,90 @@ void mainCRTStartup( void )
 
             printf( "$S  exception on:" );
             printThreadName( ei.aa[0].threadNameIdx );
-            printStack( ei.aa[0].frames,mi_a,mi_q,&ds,FT_COUNT );
+            ei.aa[0].frameCount =
+              printStack( ei.aa[0].frames,mi_a,mi_q,&ds,FT_COUNT );
 
+            char *addr = NULL;
+            const char *violationType = NULL;
+            const char *nearBlock = NULL;
+            const char *blockType = NULL;
             if( ei.er.ExceptionCode==EXCEPTION_ACCESS_VIOLATION &&
                 ei.er.NumberParameters==2 )
             {
               ULONG_PTR flag = ei.er.ExceptionInformation[0];
-              char *addr = (char*)ei.er.ExceptionInformation[1];
-              printf( "$W  %s violation at %p\n",
-                  flag==8?"data execution prevention":
-                  (flag?"write access":"read access"),addr );
+              addr = (char*)ei.er.ExceptionInformation[1];
+              violationType = flag==8 ? "data execution prevention" :
+                ( flag ? "write access" : "read access" );
+              printf( "$W  %s violation at %p\n",violationType,addr );
 
               if( ei.aq>1 )
               {
                 char *ptr = (char*)ei.aa[1].ptr;
                 size_t size = ei.aa[1].size;
+                nearBlock = ei.nearest ? "near " : "";
+                blockType = ei.aq>2 ? "freed block" : "protected area of";
                 printf( "$I  %s%s %p (size %U, offset %s%D)\n",
-                    ei.nearest?"near ":"",
-                    ei.aq>2?"freed block":"protected area of",
+                    nearBlock,blockType,
                     ptr,size,addr>ptr?"+":"",addr-ptr );
                 printf( "$S  allocated on: $N(#%U)",ei.aa[1].id );
                 printThreadName( ei.aa[1].threadNameIdx );
-                printStack( ei.aa[1].frames,mi_a,mi_q,&ds,ei.aa[1].ft );
+                ei.aa[1].frameCount =
+                  printStack( ei.aa[1].frames,mi_a,mi_q,&ds,ei.aa[1].ft );
 
                 if( ei.aq>2 )
                 {
                   printf( "$S  freed on:" );
                   printThreadName( ei.aa[2].threadNameIdx );
-                  printStack( ei.aa[2].frames,mi_a,mi_q,&ds,ei.aa[2].ft );
+                  ei.aa[2].frameCount =
+                    printStack( ei.aa[2].frames,mi_a,mi_q,&ds,ei.aa[2].ft );
                 }
               }
+            }
+
+            if( tcXml )
+            {
+              ds.tc = tc = tcXml;
+
+              printf( "<error>\n" );
+              printf( "  <kind>InvalidRead</kind>\n" );
+              printf( "  <what>unhandled exception code: %x%s</what>",
+                  ei.er.ExceptionCode,desc );
+              printf( "  <auxwhat>" );
+              if( violationType )
+                printf( "%s violation at %p</auxwhat>\n  <auxwhat>\n",
+                    violationType,addr );
+              printf( "exception on</auxwhat>\n" );
+              printf( "  <stack>\n" );
+              printStackPart( ei.aa[0].frames,ei.aa[0].frameCount,
+                  mi_a,mi_q,&ds,FT_COUNT,-1 );
+              printf( "  </stack>\n" );
+
+              if( ei.aq>1 )
+              {
+                char *ptr = (char*)ei.aa[1].ptr;
+                size_t size = ei.aa[1].size;
+                printf(
+                    "  <auxwhat>%s%s %p (size %U, offset %s%D)</auxwhat>\n",
+                    nearBlock,blockType,
+                    ptr,size,addr>ptr?"+":"",addr-ptr );
+                printf( "  <auxwhat>\nallocated on</auxwhat>\n" );
+                printf( "  <stack>\n" );
+                printStackPart( ei.aa[1].frames,ei.aa[1].frameCount,
+                    mi_a,mi_q,&ds,ei.aa[1].ft,-1 );
+                printf( "  </stack>\n" );
+
+                if( ei.aq>2 )
+                {
+                  printf( "  <auxwhat>freed on</auxwhat>\n" );
+                  printf( "  <stack>\n" );
+                  printStackPart( ei.aa[2].frames,ei.aa[2].frameCount,
+                      mi_a,mi_q,&ds,ei.aa[2].ft,-1 );
+                  printf( "  </stack>\n" );
+                }
+              }
+              printf( "</error>\n\n" );
+
+              ds.tc = tc = &tc_o;
             }
 
             terminated = -1;
@@ -2886,7 +2941,24 @@ void mainCRTStartup( void )
             printf( "\n$Wallocation failed of %U bytes\n",aa->size );
             printf( "$S  called on: $N(#%U)",aa->id );
             printThreadName( aa->threadNameIdx );
-            printStack( aa->frames,mi_a,mi_q,&ds,aa->ft );
+            aa->frameCount = printStack( aa->frames,mi_a,mi_q,&ds,aa->ft );
+
+            if( tcXml )
+            {
+              ds.tc = tc = tcXml;
+
+              printf( "<error>\n" );
+              printf( "  <kind>UninitValue</kind>\n" );
+              printf( "  <what>allocation failed of %U bytes</what>\n",
+                  aa->size );
+              printf( "  <stack>\n" );
+              printStackPart( aa->frames,aa->frameCount,
+                  mi_a,mi_q,&ds,aa->ft,-1 );
+              printf( "  </stack>\n" );
+              printf( "</error>\n\n" );
+
+              ds.tc = tc = &tc_o;
+            }
           }
           break;
 
@@ -2898,7 +2970,24 @@ void mainCRTStartup( void )
             printf( "\n$Wdeallocation of invalid pointer %p\n",aa->ptr );
             printf( "$S  called on:" );
             printThreadName( aa->threadNameIdx );
-            printStack( aa->frames,mi_a,mi_q,&ds,aa->ft );
+            aa->frameCount = printStack( aa->frames,mi_a,mi_q,&ds,aa->ft );
+
+            if( tcXml )
+            {
+              ds.tc = tc = tcXml;
+
+              printf( "<error>\n" );
+              printf( "  <kind>InvalidFree</kind>\n" );
+              printf( "  <what>deallocation of invalid pointer %p</what>\n",
+                  aa->ptr );
+              printf( "  <stack>\n" );
+              printStackPart( aa->frames,aa->frameCount,
+                  mi_a,mi_q,&ds,aa->ft,-1 );
+              printf( "  </stack>\n" );
+              printf( "</error>\n\n" );
+
+              ds.tc = tc = &tc_o;
+            }
           }
           break;
 
@@ -2910,15 +2999,46 @@ void mainCRTStartup( void )
             printf( "\n$Wdouble free of %p (size %U)\n",aa[1].ptr,aa[1].size );
             printf( "$S  called on:" );
             printThreadName( aa[0].threadNameIdx );
-            printStack( aa[0].frames,mi_a,mi_q,&ds,aa[0].ft );
+            aa[0].frameCount =
+              printStack( aa[0].frames,mi_a,mi_q,&ds,aa[0].ft );
 
             printf( "$S  allocated on: $N(#%U)",aa[1].id );
             printThreadName( aa[1].threadNameIdx );
-            printStack( aa[1].frames,mi_a,mi_q,&ds,aa[1].ft );
+            aa[1].frameCount =
+              printStack( aa[1].frames,mi_a,mi_q,&ds,aa[1].ft );
 
             printf( "$S  freed on:" );
             printThreadName( aa[2].threadNameIdx );
-            printStack( aa[2].frames,mi_a,mi_q,&ds,aa[2].ft );
+            aa[2].frameCount =
+              printStack( aa[2].frames,mi_a,mi_q,&ds,aa[2].ft );
+
+            if( tcXml )
+            {
+              ds.tc = tc = tcXml;
+
+              printf( "<error>\n" );
+              printf( "  <kind>InvalidFree</kind>\n" );
+              printf( "  <what>double free of %p (size %U)</what>\n",
+                  aa[1].ptr,aa[1].size );
+              printf( "  <auxwhat>called on</auxwhat>\n" );
+              printf( "  <stack>\n" );
+              printStackPart( aa[0].frames,aa[0].frameCount,
+                  mi_a,mi_q,&ds,aa[0].ft,-1 );
+              printf( "  </stack>\n" );
+              printf( "  <auxwhat>allocated on</auxwhat>\n" );
+              printf( "  <stack>\n" );
+              printStackPart( aa[1].frames,aa[1].frameCount,
+                  mi_a,mi_q,&ds,aa[1].ft,-1 );
+              printf( "  </stack>\n" );
+              printf( "  <auxwhat>freed on</auxwhat>\n" );
+              printf( "  <stack>\n" );
+              printStackPart( aa[2].frames,aa[2].frameCount,
+                  mi_a,mi_q,&ds,aa[2].ft,-1 );
+              printf( "  </stack>\n" );
+              printf( "</error>\n\n" );
+
+              ds.tc = tc = &tc_o;
+            }
           }
           break;
 
@@ -2933,10 +3053,40 @@ void mainCRTStartup( void )
                 aa[1].ptr>aa[0].ptr?"+":"",(char*)aa[1].ptr-(char*)aa[0].ptr );
             printf( "$S  allocated on: $N(#%U)",aa[0].id );
             printThreadName( aa[0].threadNameIdx );
-            printStack( aa[0].frames,mi_a,mi_q,&ds,aa[0].ft );
+            aa[0].frameCount =
+              printStack( aa[0].frames,mi_a,mi_q,&ds,aa[0].ft );
             printf( "$S  freed on:" );
             printThreadName( aa[1].threadNameIdx );
-            printStack( aa[1].frames,mi_a,mi_q,&ds,aa[1].ft );
+            aa[1].frameCount =
+              printStack( aa[1].frames,mi_a,mi_q,&ds,aa[1].ft );
+
+            if( tcXml )
+            {
+              ds.tc = tc = tcXml;
+
+              printf( "<error>\n" );
+              printf( "  <kind>InvalidWrite</kind>\n" );
+              printf( "  <what>write access violation at %p</what>\n",
+                  aa[1].ptr );
+              printf( "  <auxwhat>slack area of %p"
+                  " (size %U, offset %s%D)</auxwhat>\n",
+                  aa[0].ptr,aa[0].size,
+                  aa[1].ptr>aa[0].ptr?"+":"",
+                  (char*)aa[1].ptr-(char*)aa[0].ptr );
+              printf( "  <auxwhat>\nallocated on</auxwhat>\n" );
+              printf( "  <stack>\n" );
+              printStackPart( aa[0].frames,aa[0].frameCount,
+                  mi_a,mi_q,&ds,aa[0].ft,-1 );
+              printf( "  </stack>\n" );
+              printf( "  <auxwhat>freed on</auxwhat>\n" );
+              printf( "  <stack>\n" );
+              printStackPart( aa[1].frames,aa[1].frameCount,
+                  mi_a,mi_q,&ds,aa[1].ft,-1 );
+              printf( "  </stack>\n" );
+              printf( "</error>\n\n" );
+
+              ds.tc = tc = &tc_o;
+            }
           }
           break;
 
@@ -2954,10 +3104,35 @@ void mainCRTStartup( void )
                 " of %p (size %U)\n",aa[0].ptr,aa[0].size );
             printf( "$S  allocated on: $N(#%U)",aa[0].id );
             printThreadName( aa[0].threadNameIdx );
-            printStack( aa[0].frames,mi_a,mi_q,&ds,aa[0].ft );
+            aa[0].frameCount =
+              printStack( aa[0].frames,mi_a,mi_q,&ds,aa[0].ft );
             printf( "$S  freed on:" );
             printThreadName( aa[1].threadNameIdx );
-            printStack( aa[1].frames,mi_a,mi_q,&ds,aa[1].ft );
+            aa[1].frameCount =
+              printStack( aa[1].frames,mi_a,mi_q,&ds,aa[1].ft );
+
+            if( tcXml )
+            {
+              ds.tc = tc = tcXml;
+
+              printf( "<error>\n" );
+              printf( "  <kind>MismatchedFree</kind>\n" );
+              printf(
+                  "  <what>mismatching allocation/release method</what>\n" );
+              printf( "  <auxwhat>allocated on</auxwhat>\n" );
+              printf( "  <stack>\n" );
+              printStackPart( aa[0].frames,aa[0].frameCount,
+                  mi_a,mi_q,&ds,aa[0].ft,-1 );
+              printf( "  </stack>\n" );
+              printf( "  <auxwhat>freed on</auxwhat>\n" );
+              printf( "  <stack>\n" );
+              printStackPart( aa[1].frames,aa[1].frameCount,
+                  mi_a,mi_q,&ds,aa[1].ft,-1 );
+              printf( "  </stack>\n" );
+              printf( "</error>\n\n" );
+
+              ds.tc = tc = &tc_o;
+            }
           }
           break;
 
