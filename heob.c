@@ -68,6 +68,8 @@ static inline char *num2hexstr( char *str,uintptr_t arg,int count )
 
 static NOINLINE void mprintf( textColor *tc,const char *format,... )
 {
+  if( !tc->out ) return;
+
   va_list vl;
   va_start( vl,format );
   const char *ptr = format;
@@ -410,6 +412,8 @@ static void checkOutputVariant( textColor *tc,const char *cmdLine,HANDLE out )
   tc->out = out;
   tc->color = ATT_NORMAL;
 
+  if( !out ) return;
+
   DWORD flags;
   if( GetConsoleMode(tc->out,&flags) )
   {
@@ -476,6 +480,8 @@ static void checkOutputVariant( textColor *tc,const char *cmdLine,HANDLE out )
       size_t l2 = sizeof(toMaster)/2 - 1;
       wchar_t html[] = L".html";
       size_t hl = sizeof(html)/2 - 1;
+      wchar_t deviceNull[] = L"\\Device\\Null";
+      size_t dnl = sizeof(deviceNull)/2 - 1;
       if( (size_t)oni->Name.Length/2>l1+l2 &&
           !memcmp(oni->Name.Buffer,namedPipe,l1*2) &&
           !memcmp(oni->Name.Buffer+(oni->Name.Length/2-l2),toMaster,l2*2) )
@@ -491,6 +497,12 @@ static void checkOutputVariant( textColor *tc,const char *cmdLine,HANDLE out )
         tc->colors[ATT_BASE]    = 10030;
 
         TextColorTerminal( tc,ATT_NORMAL );
+      }
+      else if( oni->Name.Length/2==dnl &&
+          !memcmp(oni->Name.Buffer,deviceNull,dnl*2) )
+      {
+        // null device
+        tc->out = NULL;
       }
       else if( GetFileType(tc->out)==FILE_TYPE_DISK &&
           (size_t)oni->Name.Length/2>hl &&
@@ -1159,6 +1171,8 @@ static void locFunc(
 static void printStackCount( uint64_t *frames,int fc,
     modInfo *mi_a,int mi_q,dbgsym *ds,funcType ft,int indent )
 {
+  if( !ds->tc->out ) return;
+
   if( ft<FT_COUNT )
   {
     textColor *tc = ds->tc;
@@ -1790,6 +1804,8 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
     options *opt,textColor *tc,dbgsym *ds,HANDLE heap,textColor *tcXml,
     uintptr_t threadInitAddr )
 {
+  if( !tc->out && !tcXml ) return;
+
   printf( "\n" );
   if( opt->handleException>=2 )
     return;
@@ -1955,7 +1971,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
   for( l=0; l<lMax; l++ )
   {
     stackGroup *sg = sg_a + l;
-    if( sg->allocSum )
+    if( sg->allocSum && tc->out )
     {
       printf( "$Sleaks" );
       if( leakTypeNamesRef )
@@ -2031,7 +2047,7 @@ void mainCRTStartup( void )
   HANDLE heap = GetProcessHeap();
   int raise_alloc_q = 0;
   size_t *raise_alloc_a = NULL;
-  HANDLE out = NULL;
+  HANDLE out = INVALID_HANDLE_VALUE;
   modInfo *a2l_mi_a = NULL;
   int a2l_mi_q = 0;
   int fullhelp = 0;
@@ -2164,10 +2180,10 @@ void mainCRTStartup( void )
         break;
 
       case 'o':
-        if( out ) break;
-        if( (args[2]=='0' || args[2]=='1') && (args[3]==' ' || !args[3]) )
-          out = GetStdHandle(
-              args[2]=='0' ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE );
+        if( out!=INVALID_HANDLE_VALUE ) break;
+        if( (args[2]>='0' && args[2]<='2') && (args[3]==' ' || !args[3]) )
+          out = args[2]=='0' ? NULL : GetStdHandle(
+              args[2]=='1' ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE );
         else
         {
           char *start = args + 2;
@@ -2264,7 +2280,7 @@ void mainCRTStartup( void )
     while( args && args[0] && args[0]!=' ' ) args++;
   }
   if( opt.align<MEMORY_ALLOCATION_ALIGNMENT ) opt.init = 0;
-  if( !out || out==INVALID_HANDLE_VALUE )
+  if( out==INVALID_HANDLE_VALUE )
     out = GetStdHandle( STD_OUTPUT_HANDLE );
   if( opt.protect<1 ) opt.protectFree = 0;
   checkOutputVariant( tc,cmdLine,out );
@@ -2391,8 +2407,9 @@ void mainCRTStartup( void )
     printf( "Usage: $O%s $I[OPTION]... $SAPP [APP-OPTION]...\n",
         delim );
     printf( "    $I-o$BX$N    heob output"
-        " ($I0$N = stdout, $I1$N = stderr, $I...$N = file) [$I%d$N]\n",
-        0 );
+        " ($I0$N = none, $I1$N = stdout, $I2$N = stderr, $I...$N = file)"
+        " [$I%d$N]\n",
+        1 );
     if( fullhelp )
       printf( "    $I-x$BX$N    xml output\n" );
     printf( "    $I-P$BX$N    show process ID and wait [$I%d$N]\n",
