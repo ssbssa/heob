@@ -519,7 +519,7 @@ static void checkOutputVariant( textColor *tc,const char *cmdLine,HANDLE out )
           ".warn { color:red; }\n"
           ".base { color:black; background-color:grey; }\n"
           "</style>\n"
-          "<title>heob</title>\n"
+          "<title>heob " HEOB_VER "</title>\n"
           "</head><body>\n"
           "<h3>";
         const char *styleInit2 =
