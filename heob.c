@@ -766,6 +766,23 @@ typedef size_t func_dwstDemangle( const char*,char*,size_t );
 #define BITS "32"
 #endif
 
+typedef struct sourceLocation
+{
+  const char *filename;
+  const char *funcname;
+  int lineno;
+  int columnno;
+  struct sourceLocation *inlineLocation;
+}
+sourceLocation;
+
+typedef struct stackSourceLocation
+{
+  uintptr_t addr;
+  sourceLocation sl;
+}
+stackSourceLocation;
+
 typedef struct dbgsym
 {
   HANDLE process;
@@ -790,17 +807,68 @@ typedef struct dbgsym
   func_dwstDemangle *fdwstDemangle;
 #endif
   char *absPath;
-  char *modPath;
   textColor *tc;
   options *opt;
   const char **funcnames;
   uintptr_t threadInitAddr;
   HANDLE heap;
-  int indent;
+  stackSourceLocation *ssl;
+  int sslCount;
+  int sslIdx;
+  char **func_a;
+  int func_q;
+  char **file_a;
+  int file_q;
 }
 dbgsym;
 
-void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
+static const char *strings_add( const char *str,
+    char ***str_a,int *str_q,HANDLE heap )
+{
+  if( !str || !str[0] ) return( NULL );
+
+  char **a = *str_a;
+  int q = *str_q;
+
+  int s = 0;
+  int e = q;
+  int i = q/2;
+  while( e>s )
+  {
+    int cmp = lstrcmp( str,a[i] );
+    if( !cmp ) return( a[i] );
+    if( cmp<0 )
+      e = i;
+    else
+      s = i + 1;
+    i = ( s+e )/2;
+  }
+
+  if( !(q&63) )
+  {
+    int c = q + 64;
+    if( !q )
+      a = HeapAlloc( heap,0,c*sizeof(char*) );
+    else
+      a = HeapReAlloc( heap,0,a,c*sizeof(char*) );
+  }
+
+  if( i<q )
+    RtlMoveMemory( a+i+1,a+i,(q-i)*sizeof(char*) );
+
+  int l = lstrlen( str ) + 1;
+  char *copy = HeapAlloc( heap,0,l );
+  RtlMoveMemory( copy,str,l );
+  a[i] = copy;
+  q++;
+
+  *str_a = a;
+  *str_q = q;
+
+  return( copy );
+}
+
+static void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
     const char **funcnames,HANDLE heap,const char *dbgPath,BOOL invade,
     void *threadInitAddr )
 {
@@ -811,7 +879,6 @@ void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
   ds->funcnames = funcnames;
   ds->threadInitAddr = (uintptr_t)threadInitAddr;
   ds->heap = heap;
-  ds->indent = 0;
 
 #ifndef NO_DBGHELP
   ds->symMod = LoadLibrary( "dbghelp" BITS ".dll" );
@@ -879,10 +946,51 @@ void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
 #endif
 
   ds->absPath = HeapAlloc( heap,0,MAX_PATH );
-  ds->modPath = HeapAlloc( heap,0,MAX_PATH );
 }
 
-void dbgsym_close( dbgsym *ds )
+static void cacheClear( dbgsym *ds )
+{
+  if( !ds->ssl ) return;
+
+  HANDLE heap = ds->heap;
+  stackSourceLocation *ssl = ds->ssl;
+  int sslCount = ds->sslCount;
+  int i;
+  for( i=0; i<sslCount; i++ )
+  {
+    sourceLocation *sl = ssl[i].sl.inlineLocation;
+    while( sl )
+    {
+      sourceLocation *il = sl->inlineLocation;
+      HeapFree( heap,0,sl );
+      sl = il;
+    }
+  }
+  HeapFree( heap,0,ssl );
+
+  char **str_a = ds->func_a;
+  int str_q = ds->func_q;
+  for( i=0; i<str_q; i++ )
+    HeapFree( heap,0,str_a[i] );
+  if( str_a )
+    HeapFree( heap,0,str_a );
+
+  str_a = ds->file_a;
+  str_q = ds->file_q;
+  for( i=0; i<str_q; i++ )
+    HeapFree( heap,0,str_a[i] );
+  if( str_a )
+    HeapFree( heap,0,str_a );
+
+  ds->ssl = NULL;
+  ds->sslCount = 0;
+  ds->func_a = NULL;
+  ds->func_q = 0;
+  ds->file_a = NULL;
+  ds->file_q = 0;
+}
+
+static void dbgsym_close( dbgsym *ds )
 {
   HANDLE heap = ds->heap;
 
@@ -904,7 +1012,8 @@ void dbgsym_close( dbgsym *ds )
 #endif
 
   if( ds->absPath ) HeapFree( heap,0,ds->absPath );
-  if( ds->modPath ) HeapFree( heap,0,ds->modPath );
+
+  cacheClear( ds );
 }
 
 #ifndef _WIN64
@@ -913,14 +1022,25 @@ void dbgsym_close( dbgsym *ds )
 #define PTR_SPACES "                "
 #endif
 
-static void locFunc(
+static int *sort_allocations( void *base,int *idxs,int num,int size,
+    HANDLE heap,int (*compar)(const void*,const void*) );
+
+static int cmp_ptr( const void *av,const void *bv )
+{
+  const uintptr_t *a = av;
+  const uintptr_t *b = bv;
+  return( *a>*b ? 1 : ( *a<*b ? -1 : 0 ) );
+}
+
+static void locFuncCache(
     uint64_t addr,const char *filename,int lineno,const char *funcname,
     void *context,int columnno )
 {
-  dbgsym *ds = context;
-  textColor *tc = ds->tc;
+  if( lineno==DWST_BASE_ADDR ) return;
 
-  uint64_t printAddr = addr;
+  dbgsym *ds = context;
+  uintptr_t printAddr = (uintptr_t)addr;
+
 #ifndef NO_DBGHELP
   if( lineno==DWST_NO_DBG_SYM && ds->fSymGetLineFromAddr64 )
   {
@@ -950,7 +1070,8 @@ static void locFunc(
                   ds->process,addr,inlineContext,&dis64,si) )
             {
               si->Name[MAX_SYM_NAME] = 0;
-              locFunc( printAddr,il->FileName,il->LineNumber,si->Name,ds,0 );
+              locFuncCache(
+                  printAddr,il->FileName,il->LineNumber,si->Name,ds,0 );
               printAddr = 0;
             }
           }
@@ -1003,66 +1124,167 @@ static void locFunc(
   }
 #endif
 
-  int indent = ds->indent;
-
-  if( ds->opt->fullPath || ds->opt->sourceCode || indent<0 )
+  stackSourceLocation *ssl = ds->ssl;
+  int sslIdx = ds->sslIdx;
+  if( printAddr )
   {
-    if( !GetFullPathNameA(filename,MAX_PATH,ds->absPath,NULL) )
-      ds->absPath[0] = 0;
+    sslIdx++;
+    if( sslIdx>=ds->sslCount ) return;
+    ds->sslIdx = sslIdx;
+    ssl[sslIdx].addr = printAddr;
   }
 
-  if( !ds->opt->fullPath )
+  sourceLocation *sl = &ssl[sslIdx].sl;
+  while( sl->inlineLocation ) sl = sl->inlineLocation;
+  if( sl->lineno )
   {
-    const char *sep1 = strrchr( filename,'/' );
-    const char *sep2 = strrchr( filename,'\\' );
-    if( sep2>sep1 ) sep1 = sep2;
-    if( sep1 ) filename = sep1 + 1;
+    sl->inlineLocation = HeapAlloc(
+        ds->heap,HEAP_ZERO_MEMORY,sizeof(sourceLocation) );
+    sl = sl->inlineLocation;
   }
-  else
+  if( lineno>0 )
   {
-    if( ds->absPath[0] )
-      filename = ds->absPath;
+    const char *absPath = filename;
+    if( GetFullPathNameA(filename,MAX_PATH,ds->absPath,NULL) )
+      absPath = ds->absPath;
+    sl->filename = strings_add( absPath,&ds->file_a,&ds->file_q,ds->heap );
   }
+  sl->funcname = strings_add( funcname,&ds->func_a,&ds->func_q,ds->heap );
+  sl->lineno = lineno;
+  sl->columnno = columnno;
+}
 
-  if( indent<0 )
+static stackSourceLocation *findStackSourceLocation(
+    uintptr_t addr,stackSourceLocation *ssl_a,int ssl_q )
+{
+  int s = 0;
+  int e = ssl_q;
+  int i = ssl_q/2;
+  while( e>s )
   {
-    if( lineno==DWST_BASE_ADDR )
+    uintptr_t curAddr = ssl_a[i].addr;
+    if( addr==curAddr ) return( ssl_a+i );
+    if( addr<curAddr )
+      e = i;
+    else
+      s = i + 1;
+    i = ( s+e )/2;
+  }
+  return( NULL );
+}
+
+static void cacheSymbolData( allocation *alloc_a,int *alloc_idxs,int alloc_q,
+    modInfo *mi_a,int mi_q,dbgsym *ds,int initFrames )
+{
+  cacheClear( ds );
+
+  int i;
+  int fc = 0;
+  uintptr_t threadInitAddr = ds->threadInitAddr;
+  for( i=0; i<alloc_q; i++ )
+  {
+    int idx = alloc_idxs ? alloc_idxs[i] : i;
+    allocation *a = alloc_a + idx;
+
+    if( initFrames )
     {
-      RtlMoveMemory( ds->modPath,ds->absPath,MAX_PATH );
-      return;
+      uintptr_t *frames = (uintptr_t*)a->frames;
+      int c;
+      for( c=0; c<PTRS && frames[c] && frames[c]!=threadInitAddr; c++ )
+        frames[c]--;
+      a->frameCount = c;
     }
 
-    printf( "    <frame>\n" );
-    if( addr )
-      printf( "      <ip>%X</ip>\n",(uintptr_t)addr );
-    printf( "      <obj>%s</obj>\n",ds->modPath );
-    if( funcname )
-      printf( "      <fn>%s</fn>\n",funcname );
-    if( lineno>0 )
+    fc += a->frameCount;
+  }
+  if( !fc ) return;
+  uintptr_t *frame_a = HeapAlloc( ds->heap,0,fc*sizeof(uintptr_t) );
+  fc = 0;
+  for( i=0; i<alloc_q; i++ )
+  {
+    int idx = alloc_idxs ? alloc_idxs[i] : i;
+    allocation *a = alloc_a + idx;
+    RtlMoveMemory( frame_a+fc,a->frames,a->frameCount*sizeof(void*) );
+    fc += a->frameCount;
+  }
+
+  int *frame_idxs = sort_allocations(
+      frame_a,NULL,fc,sizeof(uintptr_t),ds->heap,cmp_ptr );
+  int unique_frames = 0;
+  uintptr_t prev_frame = 0;
+  for( i=0; i<fc; i++ )
+  {
+    uintptr_t cur_frame = frame_a[frame_idxs[i]];
+    if( cur_frame==prev_frame ) continue;
+    prev_frame = cur_frame;
+    unique_frames++;
+  }
+  uint64_t *frames = HeapAlloc( ds->heap,0,unique_frames*sizeof(uint64_t) );
+  unique_frames = 0;
+  prev_frame = 0;
+  for( i=0; i<fc; i++ )
+  {
+    uintptr_t cur_frame = frame_a[frame_idxs[i]];
+    if( cur_frame==prev_frame ) continue;
+    prev_frame = cur_frame;
+    frames[unique_frames++] = cur_frame;
+  }
+  HeapFree( ds->heap,0,frame_a );
+  HeapFree( ds->heap,0,frame_idxs );
+  fc = unique_frames;
+
+  ds->sslCount = fc;
+  ds->sslIdx = -1;
+  ds->ssl = HeapAlloc(
+      ds->heap,HEAP_ZERO_MEMORY,fc*sizeof(stackSourceLocation) );
+  int j;
+  for( j=0; j<fc; j++ )
+  {
+    int k;
+    uintptr_t frame = (uintptr_t)frames[j];
+    for( k=0; k<mi_q && (frame<mi_a[k].base ||
+          frame>=mi_a[k].base+mi_a[k].size); k++ );
+    if( k>=mi_q ) continue;
+    modInfo *mi = mi_a + k;
+
+    int l;
+    for( l=j+1; l<fc && frames[l]>=mi->base &&
+        frames[l]<mi->base+mi->size; l++ );
+
+#ifndef NO_DWARFSTACK
+    if( ds->fdwstOfFile )
+      ds->fdwstOfFile( mi->path,mi->base,frames+j,l-j,locFuncCache,ds );
+    else
+#endif
     {
-      char *sep = strrchr( ds->absPath,'\\' );
-      const char *filepart;
-      if( sep )
-      {
-        *sep = 0;
-        printf( "      <dir>%s</dir>\n",ds->absPath );
-        *sep = '\\';
-        filepart = sep + 1;
-      }
-      else
-        filepart = filename;
-      printf( "      <file>%s</file>\n",filepart );
-      printf( "      <line>%d</line>\n",lineno );
+      for( i=j; i<l; i++ )
+        locFuncCache( frames[i],mi->path,DWST_NO_DBG_SYM,NULL,ds,0 );
     }
-    printf( "    </frame>\n" );
-    return;
+
+    j = l - 1;
+  }
+  ds->sslCount = ds->sslIdx + 1;
+
+  HeapFree( ds->heap,0,frames );
+}
+
+static void locOut( textColor *tc,uintptr_t addr,
+    const char *filename,int lineno,int columnno,const char *funcname,
+    options *opt,int indent )
+{
+  const char *printFilename = NULL;
+  if( filename )
+  {
+    printFilename = opt->fullPath ? NULL : strrchr( filename,'\\' );
+    if( !printFilename ) printFilename = filename;
+    else printFilename++;
   }
 
   printf( "  %i",indent );
   switch( lineno )
   {
     case DWST_BASE_ADDR:
-      printf( "  $B%X$N   $B%s\n",(uintptr_t)addr,filename );
+      printf( "  $B%X$N   $B%s\n",addr,printFilename );
       break;
 
     case DWST_NO_DBG_SYM:
@@ -1070,27 +1292,27 @@ static void locFunc(
     case DWST_NO_SRC_FILE:
     case DWST_NOT_FOUND:
 #endif
-      printf( "    %X",(uintptr_t)addr );
+      printf( "    %X",addr );
       if( funcname )
         printf( "   [$I%s$N]",funcname );
       printf( "\n" );
       break;
 
     default:
-      if( printAddr )
-        printf( "    %X",(uintptr_t)printAddr );
+      if( addr )
+        printf( "    %X",addr );
       else
         printf( "      " PTR_SPACES );
-      printf( "   $O%s$N:%d",filename,lineno );
+      printf( "   $O%s$N:%d",printFilename,lineno );
       if( columnno>0 )
         printf( ":$S%d$N",columnno );
       if( funcname )
         printf( " [$I%s$N]",funcname );
       printf( "\n" );
 
-      if( ds->opt->sourceCode && ds->absPath[0] )
+      if( opt->sourceCode )
       {
-        HANDLE file = CreateFile( ds->absPath,GENERIC_READ,FILE_SHARE_READ,
+        HANDLE file = CreateFile( filename,GENERIC_READ,FILE_SHARE_READ,
             NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,0 );
         if( file!=INVALID_HANDLE_VALUE )
         {
@@ -1107,9 +1329,9 @@ static void locFunc(
               {
                 const char *bol = map;
                 const char *eof = map + fileInfo.nFileSizeLow;
-                int firstLine = lineno + 1 - ds->opt->sourceCode;
+                int firstLine = lineno + 1 - opt->sourceCode;
                 if( firstLine<1 ) firstLine = 1;
-                int lastLine = lineno - 1 + ds->opt->sourceCode;
+                int lastLine = lineno - 1 + opt->sourceCode;
                 if( firstLine>1 )
                   printf( "  %i      ...\n",indent );
                 int i;
@@ -1168,36 +1390,97 @@ static void locFunc(
   }
 }
 
-static void printStackCount( uint64_t *frames,int fc,
+static void sslOut( textColor *tc,
+    stackSourceLocation *ssl,options *opt,int indent )
+{
+  uintptr_t addr = ssl->addr;
+  sourceLocation *sl = &ssl->sl;
+  while( sl )
+  {
+    locOut( tc,addr,sl->filename,sl->lineno,sl->columnno,sl->funcname,
+        opt,indent );
+
+    addr = 0;
+    sl = sl->inlineLocation;
+  }
+}
+
+static void locXml( textColor *tc,uintptr_t addr,
+    const char *filename,int lineno,const char *funcname,
+    modInfo *mi )
+{
+  printf( "    <frame>\n" );
+  if( addr )
+    printf( "      <ip>%X</ip>\n",addr );
+  if( mi )
+    printf( "      <obj>%s</obj>\n",mi->path );
+  if( funcname )
+    printf( "      <fn>%s</fn>\n",funcname );
+  if( lineno>0 )
+  {
+    const char *sep = strrchr( filename,'\\' );
+    const char *filepart;
+    if( sep )
+    {
+      printf( "      <dir>" );
+      tc->fWriteSubText( tc,filename,sep-filename );
+      printf( "</dir>\n" );
+      filepart = sep + 1;
+    }
+    else
+      filepart = filename;
+    printf( "      <file>%s</file>\n",filepart );
+    printf( "      <line>%d</line>\n",lineno );
+  }
+  printf( "    </frame>\n" );
+}
+
+static void sslXml( textColor *tc,
+    stackSourceLocation *ssl,modInfo *mi )
+{
+  uintptr_t addr = ssl->addr;
+  sourceLocation *sl = &ssl->sl;
+  while( sl )
+  {
+    locXml( tc,addr,sl->filename,sl->lineno,sl->funcname,mi );
+
+    addr = 0;
+    sl = sl->inlineLocation;
+  }
+}
+
+static void printStackCount( void **framesV,int fc,
     modInfo *mi_a,int mi_q,dbgsym *ds,funcType ft,int indent )
 {
-  if( !ds->tc->out ) return;
+  textColor *tc = ds->tc;
+  if( !tc->out ) return;
 
   if( ft<FT_COUNT )
   {
-    textColor *tc = ds->tc;
     if( indent>=0 )
       printf( "  %i      " PTR_SPACES "   [$I%s$N]\n",
           indent,ds->funcnames[ft] );
     else
-    {
-      printf( "    <frame>\n" );
-      printf( "      <fn>%s</fn>\n",ds->funcnames[ft] );
-      printf( "    </frame>\n" );
-    }
+      locXml( tc,0,NULL,0,ds->funcnames[ft],NULL );
   }
 
-  ds->indent = indent;
+  uintptr_t *frames = (uintptr_t*)framesV;
+  stackSourceLocation *ssl = ds->ssl;
+  int sslCount = ds->sslCount;
   int j;
-  for( j=0; j<fc; j++ )
+  for( j=0; j<fc; )
   {
     int k;
-    uint64_t frame = frames[j];
+    uintptr_t frame = frames[j];
     for( k=0; k<mi_q && (frame<mi_a[k].base ||
           frame>=mi_a[k].base+mi_a[k].size); k++ );
     if( k>=mi_q )
     {
-      locFunc( frame,"?",DWST_BASE_ADDR,NULL,ds,0 );
+      if( indent>=0 )
+        locOut( tc,frame,"?",DWST_BASE_ADDR,0,NULL,ds->opt,indent );
+      else
+        locXml( tc,frame,NULL,0,NULL,NULL );
+      j++;
       continue;
     }
     modInfo *mi = mi_a + k;
@@ -1206,47 +1489,27 @@ static void printStackCount( uint64_t *frames,int fc,
     for( l=j+1; l<fc && frames[l]>=mi->base &&
         frames[l]<mi->base+mi->size; l++ );
 
-#ifndef NO_DWARFSTACK
-    if( ds->fdwstOfFile )
-      ds->fdwstOfFile( mi->path,mi->base,frames+j,l-j,locFunc,ds );
-    else
-#endif
+    if( indent>=0 )
+      locOut( tc,mi->base,mi->path,DWST_BASE_ADDR,0,NULL,ds->opt,indent );
+
+    for( ; j<l; j++ )
     {
-      locFunc( mi->base,mi->path,DWST_BASE_ADDR,NULL,ds,0 );
-      int i;
-      for( i=j; i<l; i++ )
-        locFunc( frames[i],mi->path,DWST_NO_DBG_SYM,NULL,ds,0 );
+      frame = frames[j];
+      stackSourceLocation *s = findStackSourceLocation( frame,ssl,sslCount );
+      if( !s )
+      {
+        if( indent>=0 )
+          locOut( tc,frame,mi->path,DWST_NO_DBG_SYM,0,NULL,ds->opt,indent );
+        else
+          locXml( tc,frame,NULL,0,NULL,mi );
+        continue;
+      }
+      if( indent>=0 )
+        sslOut( tc,s,ds->opt,indent );
+      else
+        sslXml( tc,s,mi );
     }
-
-    j = l - 1;
   }
-}
-
-static int printStack( void **framesV,modInfo *mi_a,int mi_q,dbgsym *ds,
-    funcType ft )
-{
-  uint64_t frames[PTRS];
-  int j;
-  uintptr_t threadInitAddr = ds->threadInitAddr;
-  for( j=0; j<PTRS; j++ )
-  {
-    if( !framesV[j] ) break;
-    uintptr_t frame = (uintptr_t)framesV[j];
-    if( frame==threadInitAddr ) break;
-    frames[j] = frame - 1;
-  }
-  printStackCount( frames,j,mi_a,mi_q,ds,ft,0 );
-  return( j );
-}
-
-static void printStackPart( void **framesV,int fc,
-    modInfo *mi_a,int mi_q,dbgsym *ds,funcType ft,int indent )
-{
-  uint64_t frames[PTRS];
-  int j;
-  for( j=0; j<fc; j++ )
-    frames[j] = (uintptr_t)framesV[j] - 1;
-  printStackCount( frames,fc,mi_a,mi_q,ds,ft,indent );
 }
 
 // }}}
@@ -1650,7 +1913,7 @@ static void printStackGroup( stackGroup *sg,
         printStackCount( NULL,0,NULL,0,ds,a->ft,indent );
       else
       {
-        printStackPart(
+        printStackCount(
             a->frames+(a->frameCount-(sg->stackStart+sg->stackCount)),
             sg->stackCount,mi_a,mi_q,ds,a->ft,stackIndent );
         stackIsPrinted = 1;
@@ -1702,7 +1965,7 @@ static void printStackGroup( stackGroup *sg,
     printf( "  %i$Wsum: %U B / %d\n",indent,sg->allocSumSize,sg->allocSum );
   }
   if( !stackIsPrinted )
-    printStackPart( a->frames+(a->frameCount-(sg->stackStart+sg->stackCount)),
+    printStackCount( a->frames+(a->frameCount-(sg->stackStart+sg->stackCount)),
         sg->stackCount,mi_a,mi_q,ds,FT_COUNT,stackIndent );
 }
 
@@ -1774,7 +2037,7 @@ static int printStackGroupXml( stackGroup *sg,
       printf( "    <leakedblocks>%d</leakedblocks>\n",a->count );
       printf( "  </xwhat>\n" );
       printf( "  <stack>\n" );
-      printStackPart( a->frames,a->frameCount,mi_a,mi_q,ds,a->ft,-1 );
+      printStackCount( a->frames,a->frameCount,mi_a,mi_q,ds,a->ft,-1 );
       printf( "  </stack>\n" );
       printf( "</error>\n\n" );
     }
@@ -1879,7 +2142,8 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
 
       uintptr_t *frames = (uintptr_t*)a->frames;
       int c;
-      for( c=0; c<PTRS && frames[c] && frames[c]!=threadInitAddr; c++ );
+      for( c=0; c<PTRS && frames[c] && frames[c]!=threadInitAddr; c++ )
+        frames[c]--;
       a->frameCount = c;
     }
     if( opt->groupLeaks>1 )
@@ -1954,6 +2218,19 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
       }
     }
   }
+
+  if( lDetails==lMax )
+    i = combined_q;
+  else
+  {
+    for( i=0; i<combined_q; i++ )
+    {
+      int idx = alloc_idxs ? alloc_idxs[i] : i;
+      if( alloc_a[idx].lt>=lDetails ) break;
+    }
+  }
+  cacheSymbolData( alloc_a,alloc_idxs,i,mi_a,mi_q,ds,0 );
+
   for( l=lDetails,i=0; l<lMax; l++ )
   {
     stackGroup *sg = sg_a + l;
@@ -2325,21 +2602,14 @@ void mainCRTStartup( void )
 
   if( a2l_mi_a )
   {
-    uint64_t *ptr_a = NULL;
-    int ptr_q = 0;
+    allocation *a = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(allocation) );
 
     while( args && args[0]>='0' && args[0]<='9' )
     {
       uintptr_t ptr = atop( args );
-      if( ptr )
+      if( ptr && a->frameCount<PTRS )
       {
-        ptr_q++;
-        if( !ptr_a )
-          ptr_a = HeapAlloc( heap,0,ptr_q*sizeof(uint64_t) );
-        else
-          ptr_a = HeapReAlloc(
-              heap,0,ptr_a,ptr_q*sizeof(uint64_t) );
-        ptr_a[ptr_q-1] = ptr;
+        a->frames[a->frameCount++] = (void*)ptr;
 
         int i;
         int idx = -1;
@@ -2356,7 +2626,7 @@ void mainCRTStartup( void )
       while( args[0]==' ' ) args++;
     }
 
-    if( ptr_q )
+    if( a->frameCount )
     {
       dbgsym ds;
       dbgsym_init( &ds,(HANDLE)0x1,tc,&opt,NULL,heap,NULL,FALSE,NULL );
@@ -2372,17 +2642,20 @@ void mainCRTStartup( void )
 #endif
 
       printf( "\n$Strace:\n" );
-      printStackCount( ptr_a,ptr_q,a2l_mi_a,a2l_mi_q,&ds,FT_COUNT,0 );
+      cacheSymbolData( a,NULL,1,a2l_mi_a,a2l_mi_q,&ds,0 );
+      printStackCount( a->frames,a->frameCount,
+          a2l_mi_a,a2l_mi_q,&ds,FT_COUNT,0 );
 
       dbgsym_close( &ds );
     }
 
-    if( ptr_a ) HeapFree( heap,0,ptr_a );
+    int fc = a->frameCount;
+    HeapFree( heap,0,a );
     if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
     raise_alloc_a = NULL;
     HeapFree( heap,0,a2l_mi_a );
 
-    if( ptr_q )
+    if( fc )
     {
       if( tcXml )
       {
@@ -2825,6 +3098,8 @@ void mainCRTStartup( void )
             if( !readFile(readPipe,&ei,sizeof(exceptionInfo),&ov) )
               break;
 
+            cacheSymbolData( ei.aa,NULL,ei.aq,mi_a,mi_q,&ds,1 );
+
             const char *desc = NULL;
             switch( ei.er.ExceptionCode )
             {
@@ -2859,8 +3134,8 @@ void mainCRTStartup( void )
 
             printf( "$S  exception on:" );
             printThreadName( ei.aa[0].threadNameIdx );
-            ei.aa[0].frameCount =
-              printStack( ei.aa[0].frames,mi_a,mi_q,&ds,FT_COUNT );
+            printStackCount( ei.aa[0].frames,ei.aa[0].frameCount,
+                mi_a,mi_q,&ds,FT_COUNT,0 );
 
             char *addr = NULL;
             const char *violationType = NULL;
@@ -2886,15 +3161,15 @@ void mainCRTStartup( void )
                     ptr,size,addr>ptr?"+":"",addr-ptr );
                 printf( "$S  allocated on: $N(#%U)",ei.aa[1].id );
                 printThreadName( ei.aa[1].threadNameIdx );
-                ei.aa[1].frameCount =
-                  printStack( ei.aa[1].frames,mi_a,mi_q,&ds,ei.aa[1].ft );
+                printStackCount( ei.aa[1].frames,ei.aa[1].frameCount,
+                    mi_a,mi_q,&ds,ei.aa[1].ft,0 );
 
                 if( ei.aq>2 )
                 {
                   printf( "$S  freed on:" );
                   printThreadName( ei.aa[2].threadNameIdx );
-                  ei.aa[2].frameCount =
-                    printStack( ei.aa[2].frames,mi_a,mi_q,&ds,ei.aa[2].ft );
+                  printStackCount( ei.aa[2].frames,ei.aa[2].frameCount,
+                      mi_a,mi_q,&ds,ei.aa[2].ft,0 );
                 }
               }
             }
@@ -2913,7 +3188,7 @@ void mainCRTStartup( void )
                     violationType,addr );
               printf( "exception on</auxwhat>\n" );
               printf( "  <stack>\n" );
-              printStackPart( ei.aa[0].frames,ei.aa[0].frameCount,
+              printStackCount( ei.aa[0].frames,ei.aa[0].frameCount,
                   mi_a,mi_q,&ds,FT_COUNT,-1 );
               printf( "  </stack>\n" );
 
@@ -2927,7 +3202,7 @@ void mainCRTStartup( void )
                     ptr,size,addr>ptr?"+":"",addr-ptr );
                 printf( "  <auxwhat>\nallocated on</auxwhat>\n" );
                 printf( "  <stack>\n" );
-                printStackPart( ei.aa[1].frames,ei.aa[1].frameCount,
+                printStackCount( ei.aa[1].frames,ei.aa[1].frameCount,
                     mi_a,mi_q,&ds,ei.aa[1].ft,-1 );
                 printf( "  </stack>\n" );
 
@@ -2935,7 +3210,7 @@ void mainCRTStartup( void )
                 {
                   printf( "  <auxwhat>freed on</auxwhat>\n" );
                   printf( "  <stack>\n" );
-                  printStackPart( ei.aa[2].frames,ei.aa[2].frameCount,
+                  printStackCount( ei.aa[2].frames,ei.aa[2].frameCount,
                       mi_a,mi_q,&ds,ei.aa[2].ft,-1 );
                   printf( "  </stack>\n" );
                 }
@@ -2955,10 +3230,13 @@ void mainCRTStartup( void )
             if( !readFile(readPipe,aa,sizeof(allocation),&ov) )
               break;
 
+            cacheSymbolData( aa,NULL,1,mi_a,mi_q,&ds,1 );
+
             printf( "\n$Wallocation failed of %U bytes\n",aa->size );
             printf( "$S  called on: $N(#%U)",aa->id );
             printThreadName( aa->threadNameIdx );
-            aa->frameCount = printStack( aa->frames,mi_a,mi_q,&ds,aa->ft );
+            printStackCount( aa->frames,aa->frameCount,
+                mi_a,mi_q,&ds,aa->ft,0 );
 
             if( tcXml )
             {
@@ -2969,7 +3247,7 @@ void mainCRTStartup( void )
               printf( "  <what>allocation failed of %U bytes</what>\n",
                   aa->size );
               printf( "  <stack>\n" );
-              printStackPart( aa->frames,aa->frameCount,
+              printStackCount( aa->frames,aa->frameCount,
                   mi_a,mi_q,&ds,aa->ft,-1 );
               printf( "  </stack>\n" );
               printf( "</error>\n\n" );
@@ -2984,10 +3262,13 @@ void mainCRTStartup( void )
             if( !readFile(readPipe,aa,sizeof(allocation),&ov) )
               break;
 
+            cacheSymbolData( aa,NULL,1,mi_a,mi_q,&ds,1 );
+
             printf( "\n$Wdeallocation of invalid pointer %p\n",aa->ptr );
             printf( "$S  called on:" );
             printThreadName( aa->threadNameIdx );
-            aa->frameCount = printStack( aa->frames,mi_a,mi_q,&ds,aa->ft );
+            printStackCount( aa->frames,aa->frameCount,
+                mi_a,mi_q,&ds,aa->ft,0 );
 
             if( tcXml )
             {
@@ -2998,7 +3279,7 @@ void mainCRTStartup( void )
               printf( "  <what>deallocation of invalid pointer %p</what>\n",
                   aa->ptr );
               printf( "  <stack>\n" );
-              printStackPart( aa->frames,aa->frameCount,
+              printStackCount( aa->frames,aa->frameCount,
                   mi_a,mi_q,&ds,aa->ft,-1 );
               printf( "  </stack>\n" );
               printf( "</error>\n\n" );
@@ -3013,21 +3294,23 @@ void mainCRTStartup( void )
             if( !readFile(readPipe,aa,3*sizeof(allocation),&ov) )
               break;
 
+            cacheSymbolData( aa,NULL,3,mi_a,mi_q,&ds,1 );
+
             printf( "\n$Wdouble free of %p (size %U)\n",aa[1].ptr,aa[1].size );
             printf( "$S  called on:" );
             printThreadName( aa[0].threadNameIdx );
-            aa[0].frameCount =
-              printStack( aa[0].frames,mi_a,mi_q,&ds,aa[0].ft );
+            printStackCount( aa[0].frames,aa[0].frameCount,
+                mi_a,mi_q,&ds,aa[0].ft,0 );
 
             printf( "$S  allocated on: $N(#%U)",aa[1].id );
             printThreadName( aa[1].threadNameIdx );
-            aa[1].frameCount =
-              printStack( aa[1].frames,mi_a,mi_q,&ds,aa[1].ft );
+            printStackCount( aa[1].frames,aa[1].frameCount,
+                mi_a,mi_q,&ds,aa[1].ft,0 );
 
             printf( "$S  freed on:" );
             printThreadName( aa[2].threadNameIdx );
-            aa[2].frameCount =
-              printStack( aa[2].frames,mi_a,mi_q,&ds,aa[2].ft );
+            printStackCount( aa[2].frames,aa[2].frameCount,
+                mi_a,mi_q,&ds,aa[2].ft,0 );
 
             if( tcXml )
             {
@@ -3039,17 +3322,17 @@ void mainCRTStartup( void )
                   aa[1].ptr,aa[1].size );
               printf( "  <auxwhat>called on</auxwhat>\n" );
               printf( "  <stack>\n" );
-              printStackPart( aa[0].frames,aa[0].frameCount,
+              printStackCount( aa[0].frames,aa[0].frameCount,
                   mi_a,mi_q,&ds,aa[0].ft,-1 );
               printf( "  </stack>\n" );
               printf( "  <auxwhat>allocated on</auxwhat>\n" );
               printf( "  <stack>\n" );
-              printStackPart( aa[1].frames,aa[1].frameCount,
+              printStackCount( aa[1].frames,aa[1].frameCount,
                   mi_a,mi_q,&ds,aa[1].ft,-1 );
               printf( "  </stack>\n" );
               printf( "  <auxwhat>freed on</auxwhat>\n" );
               printf( "  <stack>\n" );
-              printStackPart( aa[2].frames,aa[2].frameCount,
+              printStackCount( aa[2].frames,aa[2].frameCount,
                   mi_a,mi_q,&ds,aa[2].ft,-1 );
               printf( "  </stack>\n" );
               printf( "</error>\n\n" );
@@ -3064,18 +3347,20 @@ void mainCRTStartup( void )
             if( !readFile(readPipe,aa,2*sizeof(allocation),&ov) )
               break;
 
+            cacheSymbolData( aa,NULL,2,mi_a,mi_q,&ds,1 );
+
             printf( "\n$Wwrite access violation at %p\n",aa[1].ptr );
             printf( "$I  slack area of %p (size %U, offset %s%D)\n",
                 aa[0].ptr,aa[0].size,
                 aa[1].ptr>aa[0].ptr?"+":"",(char*)aa[1].ptr-(char*)aa[0].ptr );
             printf( "$S  allocated on: $N(#%U)",aa[0].id );
             printThreadName( aa[0].threadNameIdx );
-            aa[0].frameCount =
-              printStack( aa[0].frames,mi_a,mi_q,&ds,aa[0].ft );
+            printStackCount( aa[0].frames,aa[0].frameCount,
+                mi_a,mi_q,&ds,aa[0].ft,0 );
             printf( "$S  freed on:" );
             printThreadName( aa[1].threadNameIdx );
-            aa[1].frameCount =
-              printStack( aa[1].frames,mi_a,mi_q,&ds,aa[1].ft );
+            printStackCount( aa[1].frames,aa[1].frameCount,
+                mi_a,mi_q,&ds,aa[1].ft,0 );
 
             if( tcXml )
             {
@@ -3092,12 +3377,12 @@ void mainCRTStartup( void )
                   (char*)aa[1].ptr-(char*)aa[0].ptr );
               printf( "  <auxwhat>\nallocated on</auxwhat>\n" );
               printf( "  <stack>\n" );
-              printStackPart( aa[0].frames,aa[0].frameCount,
+              printStackCount( aa[0].frames,aa[0].frameCount,
                   mi_a,mi_q,&ds,aa[0].ft,-1 );
               printf( "  </stack>\n" );
               printf( "  <auxwhat>freed on</auxwhat>\n" );
               printf( "  <stack>\n" );
-              printStackPart( aa[1].frames,aa[1].frameCount,
+              printStackCount( aa[1].frames,aa[1].frameCount,
                   mi_a,mi_q,&ds,aa[1].ft,-1 );
               printf( "  </stack>\n" );
               printf( "</error>\n\n" );
@@ -3117,16 +3402,18 @@ void mainCRTStartup( void )
             if( !readFile(readPipe,aa,2*sizeof(allocation),&ov) )
               break;
 
+            cacheSymbolData( aa,NULL,2,mi_a,mi_q,&ds,1 );
+
             printf( "\n$Wmismatching allocation/release method"
                 " of %p (size %U)\n",aa[0].ptr,aa[0].size );
             printf( "$S  allocated on: $N(#%U)",aa[0].id );
             printThreadName( aa[0].threadNameIdx );
-            aa[0].frameCount =
-              printStack( aa[0].frames,mi_a,mi_q,&ds,aa[0].ft );
+            printStackCount( aa[0].frames,aa[0].frameCount,
+                mi_a,mi_q,&ds,aa[0].ft,0 );
             printf( "$S  freed on:" );
             printThreadName( aa[1].threadNameIdx );
-            aa[1].frameCount =
-              printStack( aa[1].frames,mi_a,mi_q,&ds,aa[1].ft );
+            printStackCount( aa[1].frames,aa[1].frameCount,
+                mi_a,mi_q,&ds,aa[1].ft,0 );
 
             if( tcXml )
             {
@@ -3138,12 +3425,12 @@ void mainCRTStartup( void )
                   "  <what>mismatching allocation/release method</what>\n" );
               printf( "  <auxwhat>allocated on</auxwhat>\n" );
               printf( "  <stack>\n" );
-              printStackPart( aa[0].frames,aa[0].frameCount,
+              printStackCount( aa[0].frames,aa[0].frameCount,
                   mi_a,mi_q,&ds,aa[0].ft,-1 );
               printf( "  </stack>\n" );
               printf( "  <auxwhat>freed on</auxwhat>\n" );
               printf( "  <stack>\n" );
-              printStackPart( aa[1].frames,aa[1].frameCount,
+              printStackCount( aa[1].frames,aa[1].frameCount,
                   mi_a,mi_q,&ds,aa[1].ft,-1 );
               printf( "  </stack>\n" );
               printf( "</error>\n\n" );
@@ -3208,9 +3495,11 @@ void mainCRTStartup( void )
             if( alloc_q>0 && alloc_a[alloc_q-1].at==AT_EXIT )
             {
               allocation *exitTrace = &alloc_a[alloc_q-1];
+              cacheSymbolData( exitTrace,NULL,1,mi_a,mi_q,&ds,1 );
               printf( "$Sexit on:" );
               printThreadName( exitTrace->threadNameIdx );
-              printStack( exitTrace->frames,mi_a,mi_q,&ds,FT_COUNT );
+              printStackCount( exitTrace->frames,exitTrace->frameCount,
+                  mi_a,mi_q,&ds,FT_COUNT,0 );
             }
 
             printf( "$Sexit code: %u (%x)\n",exitCode,exitCode );
