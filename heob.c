@@ -2297,28 +2297,28 @@ void mainCRTStartup( void )
   else
     args = strchr( cmdLine,' ' );
   options defopt = {
-    1,
-    MEMORY_ALLOCATION_ALIGNMENT,
-    0xffffffffffffffffULL,
-    0xcc,
-    0,
-    1,
-    0,
-    0,
-    1,
-    1,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1,
-    1,
-    0,
-    1,
-    0,
-    0,
+    1,                              // page protection
+    MEMORY_ALLOCATION_ALIGNMENT,    // alignment
+    0xffffffffffffffffULL,          // initial value
+    0xcc,                           // initial value for slack
+    0,                              // freed memory protection
+    1,                              // handle exceptions
+    0,                              // create new console
+    0,                              // show full path
+    1,                              // compare allocation/release method
+    1,                              // show leak details
+    0,                              // use stack pointer in exception
+    0,                              // monitor dlls
+    0,                              // show process ID and wait
+    0,                              // show exit trace
+    0,                              // show source code
+    0,                              // raise breakpoint exception on error
+    1,                              // minimum page protection size
+    1,                              // find nearest allocation
+    0,                              // show leak contents
+    1,                              // group identical leaks
+    0,                              // minimum leak size
+    0,                              // control leak recording
   };
   options opt = defopt;
   HANDLE heap = GetProcessHeap();
@@ -2559,6 +2559,8 @@ void mainCRTStartup( void )
   if( opt.align<MEMORY_ALLOCATION_ALIGNMENT ) opt.init = 0;
   if( out==INVALID_HANDLE_VALUE )
     out = GetStdHandle( STD_OUTPUT_HANDLE );
+  if( !out )
+    opt.sourceCode = opt.leakContents = 0;
   if( opt.protect<1 ) opt.protectFree = 0;
   checkOutputVariant( tc,cmdLine,out );
 
