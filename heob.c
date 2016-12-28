@@ -2305,7 +2305,7 @@ void mainCRTStartup( void )
     1,                              // handle exceptions
     0,                              // create new console
     0,                              // show full path
-    1,                              // compare allocation/release method
+    0,                              // compare allocation/release method
     1,                              // show leak details
     0,                              // use stack pointer in exception
     0,                              // monitor dlls
