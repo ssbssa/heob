@@ -2308,7 +2308,7 @@ void mainCRTStartup( void )
     0,                              // compare allocation/release method
     1,                              // show leak details
     0,                              // use stack pointer in exception
-    0,                              // monitor dlls
+    3,                              // monitor dlls
     0,                              // show process ID and wait
     0,                              // show exit trace
     0,                              // show source code
