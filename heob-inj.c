@@ -2985,11 +2985,12 @@ DWORD WINAPI heob( LPVOID arg )
 
       PIMAGE_DATA_DIRECTORY idd =
         &inh->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
-      if( idd->Size>0 )
+      DWORD iddSize = idd->Size;
+      if( iddSize>0 )
       {
         PIMAGE_BASE_RELOCATION ibr =
           (PIMAGE_BASE_RELOCATION)REL_PTR( idh,idd->VirtualAddress );
-        while( ibr->VirtualAddress>0 )
+        while( iddSize && iddSize>=ibr->SizeOfBlock && ibr->VirtualAddress>0 )
         {
           PBYTE dest = REL_PTR( app,ibr->VirtualAddress );
           UINT16 *relInfo =
@@ -3020,6 +3021,7 @@ DWORD WINAPI heob( LPVOID arg )
                 prot,&prot );
           }
 
+          iddSize -= ibr->SizeOfBlock;
           ibr = (PIMAGE_BASE_RELOCATION)REL_PTR( ibr,ibr->SizeOfBlock );
         }
       }
