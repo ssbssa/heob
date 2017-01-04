@@ -1,5 +1,5 @@
 
-//          Copyright Hannes Domani 2014 - 2016.
+//          Copyright Hannes Domani 2014 - 2017.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -443,30 +443,10 @@ static void checkOutputVariant( textColor *tc,const char *cmdLine,HANDLE out )
   HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
   if( !ntdll ) return;
 
-  typedef enum
-  {
-    ObjectNameInformation=1,
-  }
-  OBJECT_INFORMATION_CLASS;
-  typedef LONG NTAPI func_NtQueryObject(
-      HANDLE,OBJECT_INFORMATION_CLASS,PVOID,ULONG,PULONG );
   func_NtQueryObject *fNtQueryObject =
     (func_NtQueryObject*)GetProcAddress( ntdll,"NtQueryObject" );
   if( fNtQueryObject )
   {
-    typedef struct
-    {
-      USHORT Length;
-      USHORT MaximumLength;
-      PWSTR Buffer;
-    }
-    UNICODE_STRING;
-    typedef struct
-    {
-      UNICODE_STRING Name;
-      WCHAR NameBuffer[0xffff];
-    }
-    OBJECT_NAME_INFORMATION;
     HANDLE heap = GetProcessHeap();
     OBJECT_NAME_INFORMATION *oni =
       HeapAlloc( heap,0,sizeof(OBJECT_NAME_INFORMATION) );
@@ -579,7 +559,7 @@ static CODE_SEG(".text$1") VOID CALLBACK remoteCall( remoteData *rd )
 static CODE_SEG(".text$2") HANDLE inject(
     HANDLE process,HANDLE thread,options *opt,char *exePath,textColor *tc,
     int raise_alloc_q,size_t *raise_alloc_a,HANDLE *controlPipe,
-    HANDLE in,HANDLE err )
+    HANDLE in,HANDLE err,attachedProcessInfo **api )
 {
   func_inj *finj = &remoteCall;
   size_t funcSize = (size_t)&inject - (size_t)finj;
@@ -742,6 +722,14 @@ static CODE_SEG(".text$2") HANDLE inject(
   else
     RtlMoveMemory( exePath,data->exePathA,MAX_PATH );
   HeapFree( heap,0,fullData );
+
+  if( data->api )
+  {
+    *api = HeapAlloc( heap,0,sizeof(attachedProcessInfo) );
+    ReadProcessMemory( process,data->api,*api,
+        sizeof(attachedProcessInfo),NULL );
+    VirtualFreeEx( process,data->api,0,MEM_RELEASE );
+  }
 
   SuspendThread( thread );
   SetEvent( startMain );
@@ -2281,6 +2269,27 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
 }
 
 // }}}
+// information of attached process {{{
+
+static void printAttachedProcessInfo(
+    const char *exePath,attachedProcessInfo *api,textColor *tc,DWORD pid )
+{
+  if( !api ) return;
+  printf( "\n$Iapplication: $N%s\n",exePath );
+  if( api->commandLine[0] )
+    printf( "$Icommand line: $N%s\n",api->commandLine );
+  if( api->currentDirectory[0] )
+    printf( "$Idirectory: $N%s\n",api->currentDirectory );
+  printf( "$IPID: $N%u\n",pid );
+  if( api->stdinName[0] )
+    printf( "$Istdin: $N%s\n",api->stdinName );
+  if( api->stdoutName[0] )
+    printf( "$Istdout: $N%s\n",api->stdoutName );
+  if( api->stderrName[0] )
+    printf( "$Istderr: $N%s\n",api->stderrName );
+}
+
+// }}}
 // main {{{
 
 void mainCRTStartup( void )
@@ -2319,6 +2328,7 @@ void mainCRTStartup( void )
     1,                              // group identical leaks
     0,                              // minimum leak size
     0,                              // control leak recording
+    0,                              // attach to process & thread
   };
   options opt = defopt;
   HANDLE heap = GetProcessHeap();
@@ -2330,6 +2340,8 @@ void mainCRTStartup( void )
   int fullhelp = 0;
   char badArg = 0;
   textColor *tcXml = NULL;
+  PROCESS_INFORMATION pi;
+  RtlZeroMemory( &pi,sizeof(PROCESS_INFORMATION) );
   while( args )
   {
     while( args[0]==' ' ) args++;
@@ -2516,6 +2528,32 @@ void mainCRTStartup( void )
         }
         break;
 
+      case 'A':
+        {
+          if( pi.hProcess ) break;
+          char *start = args + 2;
+          pi.dwProcessId = (DWORD)atop( start );
+          while( *start && *start!=' ' && *start!=',' ) start++;
+          if( *start!=',' ) break;
+          pi.dwThreadId = (DWORD)atop( start+1 );
+
+          pi.hProcess = OpenProcess(
+              STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0xfff,
+              FALSE,pi.dwProcessId );
+          if( !pi.hProcess ) break;
+          pi.hThread = OpenThread(
+              STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0x3ff,
+              FALSE,pi.dwThreadId );
+          if( !pi.hThread )
+          {
+            CloseHandle( pi.hProcess );
+            pi.hProcess = NULL;
+            break;
+          }
+          opt.attached = 1;
+        }
+        break;
+
       case '"':
         {
           char *start = args + 2;
@@ -2575,6 +2613,11 @@ void mainCRTStartup( void )
     {
       CloseHandle( tcXml->out );
       HeapFree( heap,0,tcXml );
+    }
+    if( opt.attached )
+    {
+      CloseHandle( pi.hThread );
+      CloseHandle( pi.hProcess );
     }
     ExitProcess( -1 );
   }
@@ -2664,12 +2707,17 @@ void mainCRTStartup( void )
         CloseHandle( tcXml->out );
         HeapFree( heap,0,tcXml );
       }
+      if( opt.attached )
+      {
+        CloseHandle( pi.hThread );
+        CloseHandle( pi.hProcess );
+      }
       ExitProcess( 0 );
     }
     args = NULL;
   }
 
-  if( !args || !args[0] )
+  if( (!args || !args[0]) && !opt.attached )
   {
     char exePath[MAX_PATH];
     GetModuleFileName( NULL,exePath,MAX_PATH );
@@ -2681,6 +2729,8 @@ void mainCRTStartup( void )
 
     printf( "Usage: $O%s $I[OPTION]... $SAPP [APP-OPTION]...\n",
         delim );
+    if( fullhelp )
+      printf( "    $I-A$BP$I,$BT$N  attach to $Ip$Nrocess & $It$Nhread\n" );
     printf( "    $I-o$BX$N    heob output"
         " ($I0$N = none, $I1$N = stdout, $I2$N = stderr, $I...$N = file)"
         " [$I%d$N]\n",
@@ -2765,25 +2815,28 @@ void mainCRTStartup( void )
   if( opt.leakRecording )
     opt.newConsole = 1;
 
-  STARTUPINFO si;
-  PROCESS_INFORMATION pi;
-  RtlZeroMemory( &si,sizeof(STARTUPINFO) );
-  RtlZeroMemory( &pi,sizeof(PROCESS_INFORMATION) );
-  si.cb = sizeof(STARTUPINFO);
-  BOOL result = CreateProcess( NULL,args,NULL,NULL,FALSE,
-      CREATE_SUSPENDED|(opt.newConsole?CREATE_NEW_CONSOLE:0),
-      NULL,NULL,&si,&pi );
-  if( !result )
+  if( !opt.attached )
   {
-    printf( "$Wcan't create process for '%s'\n",args );
-    if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
-    if( tcXml )
+    STARTUPINFO si;
+    RtlZeroMemory( &si,sizeof(STARTUPINFO) );
+    si.cb = sizeof(STARTUPINFO);
+    BOOL result = CreateProcess( NULL,args,NULL,NULL,FALSE,
+        CREATE_SUSPENDED|(opt.newConsole?CREATE_NEW_CONSOLE:0),
+        NULL,NULL,&si,&pi );
+    if( !result )
     {
-      CloseHandle( tcXml->out );
-      HeapFree( heap,0,tcXml );
+      printf( "$Wcan't create process for '%s'\n",args );
+      if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
+      if( tcXml )
+      {
+        CloseHandle( tcXml->out );
+        HeapFree( heap,0,tcXml );
+      }
+      ExitProcess( -1 );
     }
-    ExitProcess( -1 );
   }
+  else
+    opt.newConsole = 0;
 
   if( opt.leakRecording )
   {
@@ -2795,12 +2848,13 @@ void mainCRTStartup( void )
   HANDLE readPipe = NULL;
   HANDLE controlPipe = NULL;
   HANDLE err = GetStdHandle( STD_ERROR_HANDLE );
+  attachedProcessInfo *api = NULL;
   char exePath[MAX_PATH];
   if( isWrongArch(pi.hProcess) )
     printf( "$Wonly " BITS "bit applications possible\n" );
   else
     readPipe = inject( pi.hProcess,pi.hThread,&opt,exePath,tc,
-        raise_alloc_q,raise_alloc_a,&controlPipe,in,err );
+        raise_alloc_q,raise_alloc_a,&controlPipe,in,err,&api );
   if( !readPipe )
     TerminateProcess( pi.hProcess,1 );
 
@@ -2812,6 +2866,9 @@ void mainCRTStartup( void )
     dbgsym ds;
     dbgsym_init( &ds,pi.hProcess,tc,&opt,funcnames,heap,exePath,TRUE,
         RETURN_ADDRESS() );
+    if( delim ) delim[0] = '\\';
+
+    printAttachedProcessInfo( exePath,api,tc,pi.dwProcessId );
 
     if( opt.pid )
     {
@@ -2846,14 +2903,29 @@ void mainCRTStartup( void )
       printf( "<protocoltool>memcheck</protocoltool>\n\n" );
       printf( "<preamble>\n" );
       printf( "  <line>heap-observer " HEOB_VER " (" BITS "bit)</line>\n" );
+      if( api )
+      {
+        printf( "  <line>application: %s</line>\n",exePath );
+        if( api->commandLine[0] )
+          printf( "  <line>command line: %s</line>\n",api->commandLine );
+        if( api->currentDirectory[0] )
+          printf( "  <line>directory: %s</line>\n",api->currentDirectory );
+        if( api->stdinName[0] )
+          printf( "  <line>stdin: %s</line>\n",api->stdinName );
+        if( api->stdoutName[0] )
+          printf( "  <line>stdout: %s</line>\n",api->stdoutName );
+        if( api->stderrName[0] )
+          printf( "  <line>stderr: %s</line>\n",api->stderrName );
+      }
       printf( "</preamble>\n\n" );
       printf( "<pid>%u</pid>\n<ppid>%u</ppid>\n<tool>heob</tool>\n\n",
           pi.dwProcessId,GetCurrentProcessId() );
 
       const char *argva[2] = { cmdLine,args };
+      if( api ) argva[1] = api->commandLine;
       int l = (int)( args - cmdLine );
       while( l>0 && cmdLine[l-1]==' ' ) l--;
-      int argvl[2] = { l,lstrlen(args) };
+      int argvl[2] = { l,lstrlen(argva[1]) };
       printf( "<args>\n" );
       for( l=0; l<2; l++ )
       {
@@ -3556,6 +3628,7 @@ void mainCRTStartup( void )
     CloseHandle( tcXml->out );
     HeapFree( heap,0,tcXml );
   }
+  if( api ) HeapFree( heap,0,api );
 
   ExitProcess( exitCode );
 }

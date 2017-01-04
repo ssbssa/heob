@@ -1,5 +1,5 @@
 
-//          Copyright Hannes Domani 2014 - 2016.
+//          Copyright Hannes Domani 2014 - 2017.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -231,8 +231,19 @@ typedef struct
   int groupLeaks;
   size_t minLeakSize;
   int leakRecording;
+  int attached;
 }
 options;
+
+typedef struct
+{
+  char commandLine[32768];
+  char currentDirectory[MAX_PATH];
+  char stdinName[32768];
+  char stdoutName[32768];
+  char stderrName[32768];
+}
+attachedProcessInfo;
 
 typedef struct remoteData
 {
@@ -266,6 +277,8 @@ typedef struct remoteData
   options opt;
 
   int recording;
+
+  attachedProcessInfo *api;
 
   int raise_alloc_q;
   int raise_alloc_a[1];
@@ -330,6 +343,33 @@ typedef struct
 }
 threadNameInfo;
 #endif
+
+// }}}
+// HANDLE type/path detection declarations {{{
+
+typedef enum
+{
+  ObjectNameInformation=1,
+}
+OBJECT_INFORMATION_CLASS;
+
+typedef struct
+{
+  USHORT Length;
+  USHORT MaximumLength;
+  PWSTR Buffer;
+}
+UNICODE_STRING;
+
+typedef struct
+{
+  UNICODE_STRING Name;
+  WCHAR NameBuffer[0xffff];
+}
+OBJECT_NAME_INFORMATION;
+
+typedef LONG NTAPI func_NtQueryObject(
+    HANDLE,OBJECT_INFORMATION_CLASS,PVOID,ULONG,PULONG );
 
 // }}}
 

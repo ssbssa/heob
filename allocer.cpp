@@ -498,6 +498,30 @@ void choose( int arg )
       printf( "thread id: %s\n",
           GetCurrentThreadId()==dll_thread_id()?"same":"different" );
       break;
+
+    case 30:
+      // suspended sub-process
+      {
+        STARTUPINFO si;
+        PROCESS_INFORMATION pi;
+        RtlZeroMemory( &si,sizeof(STARTUPINFO) );
+        RtlZeroMemory( &pi,sizeof(PROCESS_INFORMATION) );
+        si.cb = sizeof(STARTUPINFO);
+        char commandLine[20];
+        sprintf( commandLine,"allocer%d 28",8*(int)sizeof(void*) );
+        BOOL result = CreateProcess( NULL,commandLine,NULL,NULL,FALSE,
+            CREATE_SUSPENDED,NULL,NULL,&si,&pi );
+        if( !result ) break;
+
+        printf( "processId: %lu\n",pi.dwProcessId );
+        printf( "threadId: %lu\n",pi.dwThreadId );
+        fflush( stdout );
+        WaitForSingleObject( pi.hProcess,INFINITE );
+
+        CloseHandle( pi.hThread );
+        CloseHandle( pi.hProcess );
+      }
+      break;
   }
 
   mem = (char*)realloc( mem,30 );

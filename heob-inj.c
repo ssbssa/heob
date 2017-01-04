@@ -2964,6 +2964,62 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 }
 
 // }}}
+// get type/path of standard device {{{
+
+static int getHandleName( HANDLE h,char *buf,int buflen,HANDLE heap )
+{
+  if( !h || h==INVALID_HANDLE_VALUE ) return( 0 );
+
+  DWORD flags;
+  if( GetConsoleMode(h,&flags) )
+  {
+    lstrcpy( buf,"console" );
+    return( 1 );
+  }
+
+  GET_REMOTEDATA( rd );
+  typedef DWORD WINAPI func_GetFinalPathNameByHandleA(
+      HANDLE,LPSTR,DWORD,DWORD );
+  func_GetFinalPathNameByHandleA *fGetFinalPathNameByHandleA =
+    rd->fGetProcAddress( rd->kernel32,"GetFinalPathNameByHandleA" );
+  if( fGetFinalPathNameByHandleA &&
+      fGetFinalPathNameByHandleA(h,buf,buflen,VOLUME_NAME_DOS) )
+    return( 1 );
+
+  HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
+  if( !ntdll ) return( 0 );
+
+  func_NtQueryObject *fNtQueryObject =
+    rd->fGetProcAddress( ntdll,"NtQueryObject" );
+  if( !fNtQueryObject ) return( 0 );
+
+  OBJECT_NAME_INFORMATION *oni =
+    HeapAlloc( heap,0,sizeof(OBJECT_NAME_INFORMATION) );
+  if( !oni ) return( 0 );
+
+  ULONG len;
+  int ret = 0;
+  if( !fNtQueryObject(h,ObjectNameInformation,
+        oni,sizeof(OBJECT_NAME_INFORMATION),&len) )
+  {
+    int count = WideCharToMultiByte( CP_ACP,0,
+        oni->Name.Buffer,oni->Name.Length/2,buf,buflen,NULL,NULL );
+    if( count>0 && count<buflen && lstrcmp(buf,"\\Device\\Null") )
+    {
+      buf[count] = 0;
+      ret = 1;
+    }
+  }
+  else if( GetFileType(h)==FILE_TYPE_PIPE )
+  {
+    lstrcpy( buf,"pipe" );
+    ret = 1;
+  }
+  HeapFree( heap,0,oni );
+  return( ret );
+}
+
+// }}}
 // injected main {{{
 
 DWORD WINAPI heob( LPVOID arg )
@@ -3223,6 +3279,24 @@ DWORD WINAPI heob( LPVOID arg )
 
   GetModuleFileName( NULL,rd->exePathA,MAX_PATH );
   rd->master = ld->master;
+
+  if( ld->master && rd->opt.attached )
+  {
+    attachedProcessInfo *api = rd->api = VirtualAlloc(
+        NULL,sizeof(attachedProcessInfo),MEM_COMMIT,PAGE_READWRITE );
+    lstrcpy( api->commandLine,GetCommandLineA() );
+    if( !GetCurrentDirectory(MAX_PATH,api->currentDirectory) )
+      api->currentDirectory[0] = 0;
+    if( !getHandleName(GetStdHandle(STD_INPUT_HANDLE),
+          api->stdinName,32768,heap) )
+      api->stdinName[0] = 0;
+    if( !getHandleName(GetStdHandle(STD_OUTPUT_HANDLE),
+          api->stdoutName,32768,heap) )
+      api->stdoutName[0] = 0;
+    if( !getHandleName(GetStdHandle(STD_ERROR_HANDLE),
+          api->stderrName,32768,heap) )
+      api->stderrName[0] = 0;
+  }
 
   HANDLE initFinished = rd->initFinished;
   SetEvent( initFinished );
