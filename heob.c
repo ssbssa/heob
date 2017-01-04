@@ -609,6 +609,20 @@ static CODE_SEG(".text$2") HANDLE inject(
   func_heob *fheob = &heob;
   data->injOffset = (size_t)fheob - (size_t)GetModuleHandle( NULL );
 
+  // create 2 null device handles so GetStdHandle() won't return
+  // the wrong handles in applications without a console
+  HANDLE nullDevice = CreateFile( "NUL",GENERIC_READ|GENERIC_WRITE,
+      FILE_SHARE_READ|FILE_SHARE_WRITE,NULL,OPEN_EXISTING,0,NULL );
+  if( nullDevice!=INVALID_HANDLE_VALUE )
+  {
+    HANDLE nullDeviceOut;
+    DuplicateHandle( GetCurrentProcess(),nullDevice,
+        process,&nullDeviceOut,0,FALSE,DUPLICATE_SAME_ACCESS );
+    DuplicateHandle( GetCurrentProcess(),nullDevice,
+        process,&nullDeviceOut,0,FALSE,DUPLICATE_SAME_ACCESS );
+    CloseHandle( nullDevice );
+  }
+
   char pipeName[32] = "\\\\.\\Pipe\\heob.data.";
   char *end = num2hexstr( pipeName+lstrlen(pipeName),GetCurrentProcessId(),8 );
   end[0] = 0;
