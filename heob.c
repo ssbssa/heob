@@ -2308,8 +2308,6 @@ static void printAttachedProcessInfo(
 
 void mainCRTStartup( void )
 {
-  textColor tc_o;
-  textColor *tc = &tc_o;
   DWORD startTicks = GetTickCount();
 
   // command line arguments {{{
@@ -2348,12 +2346,12 @@ void mainCRTStartup( void )
   HANDLE heap = GetProcessHeap();
   int raise_alloc_q = 0;
   size_t *raise_alloc_a = NULL;
-  HANDLE out = INVALID_HANDLE_VALUE;
+  char *outName = NULL;
   modInfo *a2l_mi_a = NULL;
   int a2l_mi_q = 0;
   int fullhelp = 0;
   char badArg = 0;
-  textColor *tcXml = NULL;
+  char *xmlName = NULL;
   PROCESS_INFORMATION pi;
   RtlZeroMemory( &pi,sizeof(PROCESS_INFORMATION) );
   while( args )
@@ -2483,24 +2481,17 @@ void mainCRTStartup( void )
         break;
 
       case 'o':
-        if( out!=INVALID_HANDLE_VALUE ) break;
-        if( (args[2]>='0' && args[2]<='2') && (args[3]==' ' || !args[3]) )
-          out = args[2]=='0' ? NULL : GetStdHandle(
-              args[2]=='1' ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE );
-        else
         {
+          if( outName ) break;
           char *start = args + 2;
           char *end = start;
           while( *end && *end!=' ' ) end++;
           if( end>start )
           {
             size_t len = end - start;
-            char *name = HeapAlloc( heap,0,len+1 );
-            RtlMoveMemory( name,start,len );
-            name[len] = 0;
-            out = CreateFile( name,GENERIC_WRITE,FILE_SHARE_READ,
-                NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
-            HeapFree( heap,0,name );
+            outName = HeapAlloc( heap,0,len+1 );
+            RtlMoveMemory( outName,start,len );
+            outName[len] = 0;
           }
         }
         break;
@@ -2515,29 +2506,16 @@ void mainCRTStartup( void )
 
       case 'x':
         {
-          if( tcXml ) break;
+          if( xmlName ) break;
           char *start = args + 2;
           char *end = start;
           while( *end && *end!=' ' ) end++;
           if( end>start )
           {
             size_t len = end - start;
-            char *name = HeapAlloc( heap,0,len+1 );
-            RtlMoveMemory( name,start,len );
-            name[len] = 0;
-            HANDLE xml = CreateFile( name,GENERIC_WRITE,FILE_SHARE_READ,
-                NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
-            HeapFree( heap,0,name );
-            if( xml==INVALID_HANDLE_VALUE ) xml = NULL;
-            if( xml )
-            {
-              tcXml = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(textColor) );
-              tcXml->fWriteText = &WriteText;
-              tcXml->fWriteSubText = &WriteTextHtml;
-              tcXml->fTextColor = NULL;
-              tcXml->out = xml;
-              tcXml->color = ATT_NORMAL;
-            }
+            xmlName = HeapAlloc( heap,0,len+1 );
+            RtlMoveMemory( xmlName,start,len );
+            xmlName[len] = 0;
           }
         }
         break;
@@ -2609,11 +2587,10 @@ void mainCRTStartup( void )
     while( args && args[0] && args[0]!=' ' ) args++;
   }
   if( opt.align<MEMORY_ALLOCATION_ALIGNMENT ) opt.init = 0;
-  if( out==INVALID_HANDLE_VALUE )
-    out = GetStdHandle( STD_OUTPUT_HANDLE );
-  if( !out )
-    opt.sourceCode = opt.leakContents = 0;
+  HANDLE out = GetStdHandle( STD_OUTPUT_HANDLE );
   if( opt.protect<1 ) opt.protectFree = 0;
+  textColor *tcOut = HeapAlloc( heap,0,sizeof(textColor) );
+  textColor *tc = tcOut;
   checkOutputVariant( tc,cmdLine,out );
 
   if( badArg )
@@ -2621,13 +2598,11 @@ void mainCRTStartup( void )
     char arg0[2] = { badArg,0 };
     printf( "$Wunknown argument: $I-%s\n",arg0 );
 
+    HeapFree( heap,0,tcOut );
     if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
     if( a2l_mi_a ) HeapFree( heap,0,a2l_mi_a );
-    if( tcXml )
-    {
-      CloseHandle( tcXml->out );
-      HeapFree( heap,0,tcXml );
-    }
+    if( outName ) HeapFree( heap,0,outName );
+    if( xmlName ) HeapFree( heap,0,xmlName );
     if( opt.attached )
     {
       CloseHandle( pi.hThread );
@@ -2716,11 +2691,9 @@ void mainCRTStartup( void )
 
     if( fc )
     {
-      if( tcXml )
-      {
-        CloseHandle( tcXml->out );
-        HeapFree( heap,0,tcXml );
-      }
+      HeapFree( heap,0,tcOut );
+      if( outName ) HeapFree( heap,0,outName );
+      if( xmlName ) HeapFree( heap,0,xmlName );
       if( opt.attached )
       {
         CloseHandle( pi.hThread );
@@ -2812,12 +2785,10 @@ void mainCRTStartup( void )
     }
     printf( "    $I-H$N     show full help\n" );
     printf( "\n$Ohe$Nap-$Oob$Nserver " HEOB_VER " ($O" BITS "$Nbit)\n" );
+    HeapFree( heap,0,tcOut );
     if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
-    if( tcXml )
-    {
-      CloseHandle( tcXml->out );
-      HeapFree( heap,0,tcXml );
-    }
+    if( outName ) HeapFree( heap,0,outName );
+    if( xmlName ) HeapFree( heap,0,xmlName );
     ExitProcess( -1 );
   }
   // }}}
@@ -2840,17 +2811,47 @@ void mainCRTStartup( void )
     if( !result )
     {
       printf( "$Wcan't create process for '%s'\n",args );
+      HeapFree( heap,0,tcOut );
       if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
-      if( tcXml )
-      {
-        CloseHandle( tcXml->out );
-        HeapFree( heap,0,tcXml );
-      }
+      if( outName ) HeapFree( heap,0,outName );
+      if( xmlName ) HeapFree( heap,0,xmlName );
       ExitProcess( -1 );
     }
   }
   else
     opt.newConsole = 0;
+
+  textColor *tcOutOrig = NULL;
+  if( outName )
+  {
+    if( (outName[0]>='0' && outName[0]<='2') && !outName[1] )
+    {
+      out = outName[0]=='0' ? NULL : GetStdHandle(
+          outName[0]=='1' ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE );
+      checkOutputVariant( tc,cmdLine,out );
+    }
+    else
+    {
+      out = CreateFile( outName,GENERIC_WRITE,FILE_SHARE_READ,
+          NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
+      if( out==INVALID_HANDLE_VALUE ) out = tc->out;
+    }
+    if( out!=tc->out )
+    {
+      tcOutOrig = tcOut;
+      tc = tcOut = HeapAlloc( heap,0,sizeof(textColor) );
+      checkOutputVariant( tc,cmdLine,out );
+    }
+  }
+  else if( xmlName )
+    out = tc->out = NULL;
+  if( !tc->out && !tcOutOrig && opt.attached )
+  {
+    tcOutOrig = HeapAlloc( heap,0,sizeof(textColor) );
+    checkOutputVariant( tcOutOrig,cmdLine,GetStdHandle(STD_OUTPUT_HANDLE) );
+  }
+  if( !out )
+    opt.sourceCode = opt.leakContents = 0;
 
   if( opt.leakRecording )
   {
@@ -2883,11 +2884,13 @@ void mainCRTStartup( void )
     if( delim ) delim[0] = '\\';
 
     printAttachedProcessInfo( exePath,api,tc,pi.dwProcessId );
+    if( tcOutOrig )
+      printAttachedProcessInfo( exePath,api,tcOutOrig,pi.dwProcessId );
 
     if( opt.pid )
     {
       tc->out = err;
-      printf( "-------------------- PID %u --------------------\n",
+      printf( "\n-------------------- PID %u --------------------\n",
           pi.dwProcessId );
       printf( "press any key to continue..." );
 
@@ -2907,6 +2910,22 @@ void mainCRTStartup( void )
     }
 
     // xml header {{{
+    textColor *tcXml = NULL;
+    if( xmlName )
+    {
+      HANDLE xml = CreateFile( xmlName,GENERIC_WRITE,FILE_SHARE_READ,
+          NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
+      if( xml!=INVALID_HANDLE_VALUE )
+      {
+        tcXml = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(textColor) );
+        tcXml->fWriteText = &WriteText;
+        tcXml->fWriteSubText = &WriteTextHtml;
+        tcXml->fTextColor = NULL;
+        tcXml->out = xml;
+        tcXml->color = ATT_NORMAL;
+      }
+    }
+
     if( tcXml )
     {
       tc = tcXml;
@@ -2978,7 +2997,7 @@ void mainCRTStartup( void )
           "  <time>%t</time>\n</status>\n\n",
           GetTickCount()-startTicks );
 
-      tc = &tc_o;
+      tc = tcOut;
     }
     // }}}
 
@@ -3305,7 +3324,7 @@ void mainCRTStartup( void )
               }
               printf( "</error>\n\n" );
 
-              ds.tc = tc = &tc_o;
+              ds.tc = tc = tcOut;
             }
 
             terminated = -1;
@@ -3340,7 +3359,7 @@ void mainCRTStartup( void )
               printf( "  </stack>\n" );
               printf( "</error>\n\n" );
 
-              ds.tc = tc = &tc_o;
+              ds.tc = tc = tcOut;
             }
           }
           break;
@@ -3372,7 +3391,7 @@ void mainCRTStartup( void )
               printf( "  </stack>\n" );
               printf( "</error>\n\n" );
 
-              ds.tc = tc = &tc_o;
+              ds.tc = tc = tcOut;
             }
           }
           break;
@@ -3425,7 +3444,7 @@ void mainCRTStartup( void )
               printf( "  </stack>\n" );
               printf( "</error>\n\n" );
 
-              ds.tc = tc = &tc_o;
+              ds.tc = tc = tcOut;
             }
           }
           break;
@@ -3475,7 +3494,7 @@ void mainCRTStartup( void )
               printf( "  </stack>\n" );
               printf( "</error>\n\n" );
 
-              ds.tc = tc = &tc_o;
+              ds.tc = tc = tcOut;
             }
           }
           break;
@@ -3523,7 +3542,7 @@ void mainCRTStartup( void )
               printf( "  </stack>\n" );
               printf( "</error>\n\n" );
 
-              ds.tc = tc = &tc_o;
+              ds.tc = tc = tcOut;
             }
           }
           break;
@@ -3618,7 +3637,10 @@ void mainCRTStartup( void )
 
       printf( "</valgrindoutput>\n" );
 
-      tc = &tc_o;
+      tc = tcOut;
+
+      CloseHandle( tcXml->out );
+      HeapFree( heap,0,tcXml );
     }
     // }}}
 
@@ -3636,12 +3658,11 @@ void mainCRTStartup( void )
   CloseHandle( pi.hThread );
   CloseHandle( pi.hProcess );
 
+  HeapFree( heap,0,tcOut );
+  if( tcOutOrig ) HeapFree( heap,0,tcOutOrig );
   if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
-  if( tcXml )
-  {
-    CloseHandle( tcXml->out );
-    HeapFree( heap,0,tcXml );
-  }
+  if( outName ) HeapFree( heap,0,outName );
+  if( xmlName ) HeapFree( heap,0,xmlName );
   if( api ) HeapFree( heap,0,api );
 
   ExitProcess( exitCode );
