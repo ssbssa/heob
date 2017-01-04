@@ -563,7 +563,8 @@ static CODE_SEG(".text$2") HANDLE inject(
 {
   func_inj *finj = &remoteCall;
   size_t funcSize = (size_t)&inject - (size_t)finj;
-  size_t fullSize = funcSize + sizeof(remoteData) + raise_alloc_q*sizeof(int);
+  size_t fullSize = funcSize + sizeof(remoteData) +
+    raise_alloc_q*sizeof(size_t);
 
   unsigned char *fullDataRemote =
     VirtualAllocEx( process,NULL,fullSize,MEM_COMMIT,PAGE_EXECUTE_READWRITE );
