@@ -84,6 +84,8 @@ typedef struct localData
   func_ExitProcess *fExitProcess;
   func_TerminateProcess *fTerminateProcess;
   func_FreeLibraryAndExitThread *fFreeLibraryAET;
+  func_CreateProcessA *fCreateProcessA;
+  func_CreateProcessW *fCreateProcessW;
 
 #ifndef NO_THREADNAMES
   func_RaiseException *fRaiseException;
@@ -125,6 +127,7 @@ typedef struct localData
 
   HANDLE master;
   HANDLE controlPipe;
+  HMODULE heobMod;
   HMODULE kernel32;
   HMODULE msvcrt;
   HMODULE ucrtbase;
@@ -151,6 +154,10 @@ typedef struct localData
   options opt;
 
   int recording;
+
+  char subOutName[MAX_PATH];
+  char subXmlName[MAX_PATH];
+  char subCurDir[MAX_PATH];
 
   CRITICAL_SECTION csWrite;
   CRITICAL_SECTION csFreedMod;
@@ -1698,6 +1705,158 @@ static VOID WINAPI new_RaiseException(
 #endif
 
 // }}}
+// replacement for CreateProcess {{{
+
+static void addOption( char *cmdLine,const char *optionStr,
+    uintptr_t val,uintptr_t defaultVal,char *numEnd )
+{
+  if( val==defaultVal ) return;
+
+  lstrcat( cmdLine,optionStr );
+  lstrcat( cmdLine,num2str(numEnd,val,0) );
+}
+
+static int heobSubProcess(
+    DWORD creationFlags,LPPROCESS_INFORMATION processInformation,
+    HMODULE heobMod,HANDLE heap,options *opt,
+    func_CreateProcessA *fCreateProcessA,
+    const char *subOutName,const char *subXmlName,const char *subCurDir )
+{
+  if( creationFlags&CREATE_SUSPENDED )
+    SuspendThread( processInformation->hProcess );
+
+  char heobPath[MAX_PATH];
+  if( !GetModuleFileName(heobMod,heobPath,MAX_PATH) )
+    heobPath[0] = 0;
+  char *heobEnd = mstrrchr( heobPath,'\\' );
+  int withHeob = 0;
+  if( heobEnd )
+  {
+    heobEnd++;
+    if( isWrongArch(processInformation->hProcess) )
+    {
+#ifndef _WIN64
+#define OTHER_HEOB "heob64.exe"
+#else
+#define OTHER_HEOB "heob32.exe"
+#endif
+      lstrcpy( heobEnd,OTHER_HEOB );
+    }
+
+    char *heobCmd = HeapAlloc( heap,0,32768 );
+    if( heobCmd )
+    {
+      char num[32];
+      char *numEnd = num + sizeof(num);
+      *(--numEnd) = 0;
+      lstrcpy( heobCmd,heobEnd );
+#define ADD_OPTION( option,val,defVal ) \
+      addOption( heobCmd,option,opt->val,defVal,numEnd )
+      addOption( heobCmd," -A",processInformation->dwProcessId,0,numEnd );
+      addOption( heobCmd,",",processInformation->dwThreadId,0,numEnd );
+      if( subOutName && subOutName[0] )
+      {
+        lstrcat( heobCmd," -o" );
+        lstrcat( heobCmd,subOutName );
+      }
+      if( subXmlName && subXmlName[0] )
+      {
+        lstrcat( heobCmd," -x" );
+        lstrcat( heobCmd,subXmlName );
+      }
+      ADD_OPTION( " -p",protect,1 );
+      ADD_OPTION( " -a",align,MEMORY_ALLOCATION_ALIGNMENT );
+      ADD_OPTION( " -i",init&0xff,0xff );
+      ADD_OPTION( " -s",slackInit&0xff,0xcc );
+      ADD_OPTION( " -f",protectFree,0 );
+      ADD_OPTION( " -h",handleException,1 );
+      ADD_OPTION( " -F",fullPath,0 );
+      ADD_OPTION( " -m",allocMethod,0 );
+      ADD_OPTION( " -l",leakDetails,1 );
+      ADD_OPTION( " -S",useSp,0 );
+      ADD_OPTION( " -d",dlls,3 );
+      ADD_OPTION( " -P",pid,0 );
+      ADD_OPTION( " -e",exitTrace,0 );
+      ADD_OPTION( " -C",sourceCode,0 );
+      ADD_OPTION( " -r",raiseException,0 );
+      ADD_OPTION( " -M",minProtectSize,1 );
+      ADD_OPTION( " -n",findNearest,1 );
+      ADD_OPTION( " -L",leakContents,0 );
+      ADD_OPTION( " -g",groupLeaks,1 );
+      ADD_OPTION( " -z",minLeakSize,0 );
+      ADD_OPTION( " -k",leakRecording,0 );
+#undef ADD_OPTION
+
+      if( subCurDir && !subCurDir[0] ) subCurDir = NULL;
+
+      STARTUPINFO si;
+      RtlZeroMemory( &si,sizeof(STARTUPINFO) );
+      si.cb = sizeof(STARTUPINFO);
+      PROCESS_INFORMATION pi;
+      RtlZeroMemory( &pi,sizeof(PROCESS_INFORMATION) );
+      if( fCreateProcessA(heobPath,heobCmd,NULL,NULL,FALSE,
+            CREATE_NEW_CONSOLE,NULL,subCurDir,&si,&pi) )
+      {
+        withHeob = 1;
+        CloseHandle( pi.hThread );
+        CloseHandle( pi.hProcess );
+      }
+
+      HeapFree( heap,0,heobCmd );
+    }
+  }
+
+  if( !withHeob )
+    ResumeThread( processInformation->hProcess );
+
+  return( withHeob );
+}
+
+BOOL WINAPI new_CreateProcessA(
+    LPCSTR applicationName,LPSTR commandLine,
+    LPSECURITY_ATTRIBUTES processAttributes,
+    LPSECURITY_ATTRIBUTES threadAttributes,BOOL inheritHandles,
+    DWORD creationFlags,LPVOID environment,LPCSTR currentDirectory,
+    LPSTARTUPINFO startupInfo,LPPROCESS_INFORMATION processInformation )
+{
+  GET_REMOTEDATA( rd );
+
+  BOOL ret = rd->fCreateProcessA(
+      applicationName,commandLine,processAttributes,threadAttributes,
+      inheritHandles,creationFlags|CREATE_SUSPENDED,environment,
+      currentDirectory,startupInfo,processInformation );
+  if( !ret ) return( 0 );
+
+  heobSubProcess( creationFlags,processInformation,
+      rd->heobMod,rd->heap,&rd->opt,rd->fCreateProcessA,
+      rd->subOutName,rd->subXmlName,rd->subCurDir );
+
+  return( 1 );
+}
+
+BOOL WINAPI new_CreateProcessW(
+    LPCWSTR applicationName,LPWSTR commandLine,
+    LPSECURITY_ATTRIBUTES processAttributes,
+    LPSECURITY_ATTRIBUTES threadAttributes,BOOL inheritHandles,
+    DWORD creationFlags,LPVOID environment,LPCWSTR currentDirectory,
+    LPSTARTUPINFOW startupInfo,LPPROCESS_INFORMATION processInformation )
+{
+  GET_REMOTEDATA( rd );
+
+  BOOL ret = rd->fCreateProcessW(
+      applicationName,commandLine,processAttributes,threadAttributes,
+      inheritHandles,creationFlags|CREATE_SUSPENDED,environment,
+      currentDirectory,startupInfo,processInformation );
+  if( !ret ) return( 0 );
+
+  heobSubProcess( creationFlags,processInformation,
+      rd->heobMod,rd->heap,&rd->opt,rd->fCreateProcessA,
+      rd->subOutName,rd->subXmlName,rd->subCurDir );
+
+  return( 1 );
+}
+
+// }}}
 // replacements for LoadLibrary/FreeLibrary {{{
 
 static HMODULE WINAPI new_LoadLibraryA( LPCSTR name )
@@ -2530,14 +2689,20 @@ static void replaceModFuncs( void )
 #ifndef NO_THREADNAMES
   const char *fname_RaiseException = "RaiseException";
 #endif
+  const char *fname_CreateProcessA = "CreateProcessA";
+  const char *fname_CreateProcessW = "CreateProcessW";
   replaceData rep2[] = {
     { fname_ExitProcess      ,&rd->fExitProcess      ,&new_ExitProcess      },
     { fname_TerminateProcess ,&rd->fTerminateProcess ,&new_TerminateProcess },
 #ifndef NO_THREADNAMES
     { fname_RaiseException   ,&rd->fRaiseException   ,&new_RaiseException   },
 #endif
+    // only used with children hook
+    { fname_CreateProcessA   ,&rd->fCreateProcessA   ,&new_CreateProcessA   },
+    { fname_CreateProcessW   ,&rd->fCreateProcessW   ,&new_CreateProcessW   },
   };
   unsigned int rep2count = sizeof(rep2)/sizeof(replaceData);
+  if( !rd->opt.children ) rep2count -= 2;
 
   const char *fname_LoadLibraryA = "LoadLibraryA";
   const char *fname_LoadLibraryW = "LoadLibraryW";
@@ -2560,18 +2725,21 @@ static void replaceModFuncs( void )
       replaceFuncs( mod,rep,repcount,msvcrt,!rd->mod_d,ucrtbase );
     if( !rd->mod_d && rd->opt.handleException<2 )
     {
-      if( !dll_msvcrt )
+      if( !dll_msvcrt && !rd->opt.children )
       {
         rd->master = NULL;
         return;
       }
 
-      ucrtbase = rd->ucrtbase;
-      if( !ucrtbase )
-        msvcrt = dll_msvcrt;
-      addModule( dll_msvcrt );
+      if( dll_msvcrt )
+      {
+        ucrtbase = rd->ucrtbase;
+        if( !ucrtbase )
+          msvcrt = dll_msvcrt;
+        addModule( dll_msvcrt );
+      }
 
-      if( rd->opt.protect )
+      if( dll_msvcrt && rd->opt.protect )
       {
         rd->ofree = rd->fGetProcAddress( dll_msvcrt,fname_free );
         rd->oop_delete = rd->fGetProcAddress( dll_msvcrt,fname_op_delete );
@@ -3138,8 +3306,10 @@ DWORD WINAPI heob( LPVOID arg )
   ld->fFreeLibrary = rd->fFreeLibrary;
   ld->fGetProcAddress = rd->fGetProcAddress;
   ld->fExitProcess = rd->fExitProcess;
+  ld->fCreateProcessA = rd->fGetProcAddress( rd->kernel32,"CreateProcessA" );
   ld->master = rd->master;
   ld->controlPipe = rd->controlPipe;
+  ld->heobMod = rd->heobMod;
   ld->kernel32 = rd->kernel32;
   ld->recording = rd->recording;
   HANDLE controlPipe = rd->controlPipe;
@@ -3153,6 +3323,10 @@ DWORD WINAPI heob( LPVOID arg )
   ld->processors = si.dwNumberOfProcessors;
   ld->ei = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(exceptionInfo) );
   ld->maxStackFrames = LOBYTE(LOWORD(GetVersion()))>=6 ? 1024 : 62;
+
+  lstrcpy( ld->subOutName,rd->subOutName );
+  lstrcpy( ld->subXmlName,rd->subXmlName );
+  lstrcpy( ld->subCurDir,rd->subCurDir );
 
   ld->splits = HeapAlloc( heap,HEAP_ZERO_MEMORY,
       (SPLIT_MASK+1)*sizeof(splitAllocation) );

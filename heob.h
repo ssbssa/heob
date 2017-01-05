@@ -74,6 +74,12 @@ typedef VOID WINAPI func_ExitProcess( UINT );
 typedef BOOL WINAPI func_TerminateProcess( HANDLE,UINT );
 typedef VOID WINAPI func_RaiseException( DWORD,DWORD,DWORD,const ULONG_PTR* );
 typedef VOID WINAPI func_FreeLibraryAndExitThread( HMODULE,DWORD );
+typedef BOOL WINAPI func_CreateProcessA(
+    LPCSTR,LPSTR,LPSECURITY_ATTRIBUTES,LPSECURITY_ATTRIBUTES,BOOL,DWORD,
+    LPVOID,LPCSTR,LPSTARTUPINFO,LPPROCESS_INFORMATION );
+typedef BOOL WINAPI func_CreateProcessW(
+    LPCWSTR,LPWSTR,LPSECURITY_ATTRIBUTES,LPSECURITY_ATTRIBUTES,BOOL,DWORD,
+    LPVOID,LPCWSTR,LPSTARTUPINFOW,LPPROCESS_INFORMATION );
 
 typedef void *func_malloc( size_t );
 typedef void *func_calloc( size_t,size_t );
@@ -232,6 +238,7 @@ typedef struct
   size_t minLeakSize;
   int leakRecording;
   int attached;
+  int children;
 }
 options;
 
@@ -279,6 +286,10 @@ typedef struct remoteData
   int recording;
 
   attachedProcessInfo *api;
+
+  char subOutName[MAX_PATH];
+  char subXmlName[MAX_PATH];
+  char subCurDir[MAX_PATH];
 
   int raise_alloc_q;
   int raise_alloc_a[1];
@@ -370,6 +381,13 @@ OBJECT_NAME_INFORMATION;
 
 typedef LONG NTAPI func_NtQueryObject(
     HANDLE,OBJECT_INFORMATION_CLASS,PVOID,ULONG,PULONG );
+
+// }}}
+// common functions {{{
+
+char *num2str( char *start,uintptr_t arg,int minus );
+char *mstrrchr( const char *s,char c );
+int isWrongArch( HANDLE process );
 
 // }}}
 

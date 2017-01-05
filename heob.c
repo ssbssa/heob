@@ -66,6 +66,20 @@ static inline char *num2hexstr( char *str,uintptr_t arg,int count )
   return( str );
 }
 
+NOINLINE char *num2str( char *start,uintptr_t arg,int minus )
+{
+  if( !arg )
+    (--start)[0] = '0';
+  while( arg )
+  {
+    (--start)[0] = arg%10 + '0';
+    arg /= 10;
+  }
+  if( minus )
+    (--start)[0] = '-';
+  return( start );
+}
+
 static NOINLINE void mprintf( textColor *tc,const char *format,... )
 {
   if( !tc->out ) return;
@@ -98,7 +112,7 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
         case 'u': // unsigned int
         case 'U': // uintptr_t
           {
-            uintptr_t arg;
+            uintptr_t arg = 0;
             int minus = 0;
             switch( ptr[1] )
             {
@@ -135,16 +149,7 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
             }
             char str[32];
             char *end = str + sizeof(str);
-            char *start = end;
-            if( !arg )
-              (--start)[0] = '0';
-            while( arg )
-            {
-              (--start)[0] = arg%10 + '0';
-              arg /= 10;
-            }
-            if( minus )
-              (--start)[0] = '-';
+            char *start = num2str( end,arg,minus );
             tc->fWriteText( tc,start,end-start );
           }
           break;
@@ -266,7 +271,7 @@ static NOINLINE char *mstrchr( const char *s,char c )
 }
 #define strchr mstrchr
 
-static NOINLINE char *mstrrchr( const char *s,char c )
+NOINLINE char *mstrrchr( const char *s,char c )
 {
   char *ret = NULL;
   for( ; *s; s++ )
@@ -333,6 +338,53 @@ static const void *mmemchr( const void *p,int ch,size_t s )
   return( NULL );
 }
 #define memchr mmemchr
+
+static NOINLINE char *mstrstr( const char *s,const char *f )
+{
+  int ls = lstrlen( s );
+  int lf = lstrlen( f );
+  if( lf>ls ) return( NULL );
+  if( !lf ) return( (char*)s );
+  int ld = ls - lf + 1;
+  int i;
+  for( i=0; i<ld; i++ )
+    if( !mmemcmp(s+i,f,lf) ) return( (char*)s+i );
+  return( NULL );
+}
+#define strstr mstrstr
+
+static NOINLINE char *strreplacenum(
+    const char *str,const char *from,uintptr_t to,HANDLE heap )
+{
+  const char *pos = strstr( str,from );
+  if( !pos ) return( NULL );
+
+  char numStr[32];
+  char *numEnd = numStr + sizeof(numStr);
+  char *numStart = num2str( numEnd,to,0 );
+  int strLen = lstrlen( str );
+  int fromLen = lstrlen( from );
+  int numLen = (int)( numEnd - numStart );
+  char *replace = HeapAlloc( heap,0,strLen-fromLen+numLen+1 );
+  if( !replace ) return( NULL );
+
+  int replacePos = 0;
+  if( pos>str )
+  {
+    RtlMoveMemory( replace,str,pos-str );
+    replacePos += (int)( pos - str );
+  }
+  RtlMoveMemory( replace+replacePos,numStart,numLen );
+  replacePos += numLen;
+  if( str+strLen>pos+fromLen )
+  {
+    int endLen = (int)( (str+strLen) - (pos+fromLen) );
+    RtlMoveMemory( replace+replacePos,pos+fromLen,endLen );
+    replacePos += endLen;
+  }
+  replace[replacePos] = 0;
+  return( replace );
+}
 
 // }}}
 // output variants {{{
@@ -529,7 +581,7 @@ static void checkOutputVariant( textColor *tc,const char *cmdLine,HANDLE out )
 // }}}
 // compare process bitness {{{
 
-static int isWrongArch( HANDLE process )
+int isWrongArch( HANDLE process )
 {
   BOOL remoteWow64,meWow64;
   IsWow64Process( process,&remoteWow64 );
@@ -559,7 +611,8 @@ static CODE_SEG(".text$1") VOID CALLBACK remoteCall( remoteData *rd )
 static CODE_SEG(".text$2") HANDLE inject(
     HANDLE process,HANDLE thread,options *opt,char *exePath,textColor *tc,
     int raise_alloc_q,size_t *raise_alloc_a,HANDLE *controlPipe,
-    HANDLE in,HANDLE err,attachedProcessInfo **api )
+    HANDLE in,HANDLE err,attachedProcessInfo **api,
+    const char *subOutName,const char *subXmlName,const char *subCurDir )
 {
   func_inj *finj = &remoteCall;
   size_t funcSize = (size_t)&inject - (size_t)finj;
@@ -657,6 +710,10 @@ static CODE_SEG(".text$2") HANDLE inject(
       DUPLICATE_SAME_ACCESS );
 
   RtlMoveMemory( &data->opt,opt,sizeof(options) );
+
+  if( subOutName ) lstrcpy( data->subOutName,subOutName );
+  if( subXmlName ) lstrcpy( data->subXmlName,subXmlName );
+  if( subCurDir ) lstrcpy( data->subCurDir,subCurDir );
 
   data->raise_alloc_q = raise_alloc_q;
   if( raise_alloc_q )
@@ -2342,6 +2399,7 @@ void mainCRTStartup( void )
     0,                              // minimum leak size
     0,                              // control leak recording
     0,                              // attach to process & thread
+    0,                              // hook children
   };
   options opt = defopt;
   HANDLE heap = GetProcessHeap();
@@ -2822,6 +2880,7 @@ void mainCRTStartup( void )
   else
     opt.newConsole = 0;
 
+  const char *subOutName = NULL;
   textColor *tcOutOrig = NULL;
   if( outName )
   {
@@ -2833,9 +2892,22 @@ void mainCRTStartup( void )
     }
     else
     {
-      out = CreateFile( outName,GENERIC_WRITE,FILE_SHARE_READ,
+      char *fullName = strreplacenum( outName,"%p",pi.dwProcessId,heap );
+      char *usedName;
+      if( !fullName )
+        usedName = outName;
+      else
+      {
+        usedName = fullName;
+        subOutName = outName;
+        opt.children = 1;
+      }
+
+      out = CreateFile( usedName,GENERIC_WRITE,FILE_SHARE_READ,
           NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
       if( out==INVALID_HANDLE_VALUE ) out = tc->out;
+
+      if( fullName ) HeapFree( heap,0,fullName );
     }
     if( out!=tc->out )
     {
@@ -2854,6 +2926,21 @@ void mainCRTStartup( void )
   if( !out )
     opt.sourceCode = opt.leakContents = 0;
 
+  const char *subXmlName = NULL;
+  if( xmlName && strstr(xmlName,"%p") )
+  {
+    subXmlName = xmlName;
+    opt.children = 1;
+  }
+
+  char *subCurDir = NULL;
+  if( opt.children )
+  {
+    subCurDir = HeapAlloc( heap,0,MAX_PATH );
+    if( !GetCurrentDirectory(MAX_PATH,subCurDir) )
+      subCurDir[0] = 0;
+  }
+
   if( opt.leakRecording )
   {
     DWORD flags;
@@ -2870,7 +2957,8 @@ void mainCRTStartup( void )
     printf( "$Wonly " BITS "bit applications possible\n" );
   else
     readPipe = inject( pi.hProcess,pi.hThread,&opt,exePath,tc,
-        raise_alloc_q,raise_alloc_a,&controlPipe,in,err,&api );
+        raise_alloc_q,raise_alloc_a,&controlPipe,in,err,&api,
+        subOutName,subXmlName,subCurDir );
   if( !readPipe )
     TerminateProcess( pi.hProcess,1 );
 
@@ -2914,7 +3002,14 @@ void mainCRTStartup( void )
     textColor *tcXml = NULL;
     if( xmlName )
     {
-      HANDLE xml = CreateFile( xmlName,GENERIC_WRITE,FILE_SHARE_READ,
+      char *fullName = strreplacenum( xmlName,"%p",pi.dwProcessId,heap );
+      if( !fullName )
+      {
+        fullName = xmlName;
+        xmlName = NULL;
+      }
+
+      HANDLE xml = CreateFile( fullName,GENERIC_WRITE,FILE_SHARE_READ,
           NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
       if( xml!=INVALID_HANDLE_VALUE )
       {
@@ -2925,6 +3020,8 @@ void mainCRTStartup( void )
         tcXml->out = xml;
         tcXml->color = ATT_NORMAL;
       }
+
+      HeapFree( heap,0,fullName );
     }
 
     if( tcXml )
@@ -3664,6 +3761,7 @@ void mainCRTStartup( void )
   if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
   if( outName ) HeapFree( heap,0,outName );
   if( xmlName ) HeapFree( heap,0,xmlName );
+  if( subCurDir ) HeapFree( heap,0,subCurDir );
   if( api ) HeapFree( heap,0,api );
 
   ExitProcess( exitCode );
