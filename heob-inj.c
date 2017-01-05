@@ -79,6 +79,8 @@ typedef struct localData
 {
   func_LoadLibraryA *fLoadLibraryA;
   func_LoadLibraryW *fLoadLibraryW;
+  func_LoadLibraryExA *fLoadLibraryExA;
+  func_LoadLibraryExW *fLoadLibraryExW;
   func_FreeLibrary *fFreeLibrary;
   func_GetProcAddress *fGetProcAddress;
   func_ExitProcess *fExitProcess;
@@ -1859,6 +1861,16 @@ BOOL WINAPI new_CreateProcessW(
 // }}}
 // replacements for LoadLibrary/FreeLibrary {{{
 
+static void addLoadedModule( HMODULE mod )
+{
+  GET_REMOTEDATA( rd );
+
+  EnterCriticalSection( &rd->csWrite );
+  addModule( mod );
+  replaceModFuncs();
+  LeaveCriticalSection( &rd->csWrite );
+}
+
 static HMODULE WINAPI new_LoadLibraryA( LPCSTR name )
 {
   GET_REMOTEDATA( rd );
@@ -1874,10 +1886,7 @@ static HMODULE WINAPI new_LoadLibraryA( LPCSTR name )
 
   HMODULE mod = rd->fLoadLibraryA( name );
 
-  EnterCriticalSection( &rd->csWrite );
-  addModule( mod );
-  replaceModFuncs();
-  LeaveCriticalSection( &rd->csWrite );
+  if( mod ) addLoadedModule( mod );
 
   return( mod );
 }
@@ -1897,10 +1906,33 @@ static HMODULE WINAPI new_LoadLibraryW( LPCWSTR name )
 
   HMODULE mod = rd->fLoadLibraryW( name );
 
-  EnterCriticalSection( &rd->csWrite );
-  addModule( mod );
-  replaceModFuncs();
-  LeaveCriticalSection( &rd->csWrite );
+  if( mod ) addLoadedModule( mod );
+
+  return( mod );
+}
+
+static HMODULE WINAPI new_LoadLibraryExA( LPCSTR name,HANDLE h,DWORD flags )
+{
+  GET_REMOTEDATA( rd );
+
+  HMODULE mod = rd->fLoadLibraryExA( name,h,flags );
+
+  if( mod && !(flags&(DONT_RESOLVE_DLL_REFERENCES|LOAD_LIBRARY_AS_DATAFILE|
+          LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE|LOAD_LIBRARY_AS_IMAGE_RESOURCE)) )
+    addLoadedModule( mod );
+
+  return( mod );
+}
+
+static HMODULE WINAPI new_LoadLibraryExW( LPCWSTR name,HANDLE h,DWORD flags )
+{
+  GET_REMOTEDATA( rd );
+
+  HMODULE mod = rd->fLoadLibraryExW( name,h,flags );
+
+  if( mod && !(flags&(DONT_RESOLVE_DLL_REFERENCES|LOAD_LIBRARY_AS_DATAFILE|
+          LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE|LOAD_LIBRARY_AS_IMAGE_RESOURCE)) )
+    addLoadedModule( mod );
 
   return( mod );
 }
@@ -2706,11 +2738,15 @@ static void replaceModFuncs( void )
 
   const char *fname_LoadLibraryA = "LoadLibraryA";
   const char *fname_LoadLibraryW = "LoadLibraryW";
+  const char *fname_LoadLibraryExA = "LoadLibraryExA";
+  const char *fname_LoadLibraryExW = "LoadLibraryExW";
   const char *fname_FreeLibrary = "FreeLibrary";
   const char *fname_FreeLibraryAET = "FreeLibraryAndExitThread";
   replaceData repLL[] = {
     { fname_LoadLibraryA   ,&rd->fLoadLibraryA   ,&new_LoadLibraryA    },
     { fname_LoadLibraryW   ,&rd->fLoadLibraryW   ,&new_LoadLibraryW    },
+    { fname_LoadLibraryExA ,&rd->fLoadLibraryExA ,&new_LoadLibraryExA  },
+    { fname_LoadLibraryExW ,&rd->fLoadLibraryExW ,&new_LoadLibraryExW  },
     { fname_FreeLibrary    ,&rd->fFreeLibrary    ,&new_FreeLibrary     },
     { fname_FreeLibraryAET ,&rd->fFreeLibraryAET ,&new_FreeLibraryAET  },
   };

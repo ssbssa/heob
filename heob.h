@@ -66,6 +66,8 @@ typedef HANDLE WINAPI func_GetCurrentProcess( VOID );
 typedef BOOL WINAPI func_FlushInstructionCache( HANDLE,LPCVOID,SIZE_T );
 typedef HMODULE WINAPI func_LoadLibraryA( LPCSTR );
 typedef HMODULE WINAPI func_LoadLibraryW( LPCWSTR );
+typedef HMODULE WINAPI func_LoadLibraryExA( LPCSTR,HANDLE,DWORD );
+typedef HMODULE WINAPI func_LoadLibraryExW( LPCWSTR,HANDLE,DWORD );
 typedef BOOL WINAPI func_FreeLibrary( HMODULE );
 typedef LPVOID WINAPI func_GetProcAddress( HMODULE,LPCSTR );
 typedef LPTOP_LEVEL_EXCEPTION_FILTER WINAPI func_SetUnhandledExceptionFilter(
