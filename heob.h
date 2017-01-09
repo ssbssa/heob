@@ -390,6 +390,11 @@ typedef LONG NTAPI func_NtQueryObject(
 char *num2str( char *start,uintptr_t arg,int minus );
 char *mstrrchr( const char *s,char c );
 int isWrongArch( HANDLE process );
+int heobSubProcess(
+    DWORD creationFlags,LPPROCESS_INFORMATION processInformation,
+    HMODULE heobMod,HANDLE heap,options *opt,
+    func_CreateProcessA *fCreateProcessA,
+    const char *subOutName,const char *subXmlName,const char *subCurDir );
 
 // }}}
 

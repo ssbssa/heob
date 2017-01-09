@@ -1718,7 +1718,7 @@ static void addOption( char *cmdLine,const char *optionStr,
   lstrcat( cmdLine,num2str(numEnd,val,0) );
 }
 
-static int heobSubProcess(
+int heobSubProcess(
     DWORD creationFlags,LPPROCESS_INFORMATION processInformation,
     HMODULE heobMod,HANDLE heap,options *opt,
     func_CreateProcessA *fCreateProcessA,

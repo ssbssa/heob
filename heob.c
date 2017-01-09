@@ -2856,7 +2856,7 @@ void mainCRTStartup( void )
   if( !FlushConsoleInputBuffer(in) ) in = NULL;
   if( !in ) opt.pid = opt.leakRecording = 0;
 
-  if( opt.leakRecording )
+  if( opt.leakRecording && !opt.newConsole )
     opt.newConsole = 1;
 
   if( !opt.attached )
@@ -2865,7 +2865,7 @@ void mainCRTStartup( void )
     RtlZeroMemory( &si,sizeof(STARTUPINFO) );
     si.cb = sizeof(STARTUPINFO);
     BOOL result = CreateProcess( NULL,args,NULL,NULL,FALSE,
-        CREATE_SUSPENDED|(opt.newConsole?CREATE_NEW_CONSOLE:0),
+        CREATE_SUSPENDED|(opt.newConsole&1?CREATE_NEW_CONSOLE:0),
         NULL,NULL,&si,&pi );
     if( !result )
     {
@@ -2875,6 +2875,33 @@ void mainCRTStartup( void )
       if( outName ) HeapFree( heap,0,outName );
       if( xmlName ) HeapFree( heap,0,xmlName );
       ExitProcess( -1 );
+    }
+
+    if( opt.newConsole>1 )
+    {
+      HMODULE kernel32 = GetModuleHandle( "kernel32.dll" );
+      func_CreateProcessA *fCreateProcessA =
+        (func_CreateProcessA*)GetProcAddress( kernel32,"CreateProcessA" );
+      DWORD exitCode = 0;
+      if( !heobSubProcess(0,&pi,NULL,heap,&opt,fCreateProcessA,
+            outName,xmlName,NULL) )
+      {
+        printf( "$Wcan't create process for 'heob'\n" );
+        TerminateProcess( pi.hProcess,1 );
+      }
+      else if( !(opt.newConsole&1) )
+      {
+        WaitForSingleObject( pi.hProcess,INFINITE );
+        GetExitCodeProcess( pi.hProcess,&exitCode );
+      }
+
+      CloseHandle( pi.hThread );
+      CloseHandle( pi.hProcess );
+      HeapFree( heap,0,tcOut );
+      if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
+      if( outName ) HeapFree( heap,0,outName );
+      if( xmlName ) HeapFree( heap,0,xmlName );
+      ExitProcess( exitCode );
     }
   }
   else
