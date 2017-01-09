@@ -387,6 +387,7 @@ typedef LONG NTAPI func_NtQueryObject(
 // }}}
 // common functions {{{
 
+char *num2hexstr( char *str,uintptr_t arg,int count );
 char *num2str( char *start,uintptr_t arg,int minus );
 char *mstrrchr( const char *s,char c );
 int isWrongArch( HANDLE process );

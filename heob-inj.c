@@ -1797,8 +1797,18 @@ int heobSubProcess(
       PROCESS_INFORMATION pi;
       RtlZeroMemory( &pi,sizeof(PROCESS_INFORMATION) );
       if( fCreateProcessA(heobPath,heobCmd,NULL,NULL,FALSE,
-            CREATE_NEW_CONSOLE,NULL,subCurDir,&si,&pi) )
+            CREATE_SUSPENDED|CREATE_NEW_CONSOLE,NULL,subCurDir,&si,&pi) )
       {
+        char eventName[32] = "heob.attach.";
+        char *end = num2hexstr(
+            eventName+lstrlen(eventName),pi.dwProcessId,8 );
+        end[0] = 0;
+        HANDLE attachEvent = CreateEvent( NULL,FALSE,FALSE,eventName );
+
+        ResumeThread( pi.hThread );
+        WaitForSingleObject( attachEvent,INFINITE );
+        CloseHandle( attachEvent );
+
         withHeob = 1;
         CloseHandle( pi.hThread );
         CloseHandle( pi.hProcess );

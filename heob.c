@@ -58,7 +58,7 @@ static inline char num2hex( unsigned int bits )
   return( bits>=10 ? bits - 10 + 'A' : bits + '0' );
 }
 
-static inline char *num2hexstr( char *str,uintptr_t arg,int count )
+char *num2hexstr( char *str,uintptr_t arg,int count )
 {
   int b;
   for( b=count-1; b>=0; b-- )
@@ -2413,6 +2413,7 @@ void mainCRTStartup( void )
   char *xmlName = NULL;
   PROCESS_INFORMATION pi;
   RtlZeroMemory( &pi,sizeof(PROCESS_INFORMATION) );
+  HANDLE attachEvent = NULL;
   while( args )
   {
     while( args[0]==' ' ) args++;
@@ -2601,6 +2602,13 @@ void mainCRTStartup( void )
             pi.hProcess = NULL;
             break;
           }
+
+          char eventName[32] = "heob.attach.";
+          char *end = num2hexstr(
+              eventName+lstrlen(eventName),GetCurrentProcessId(),8 );
+          end[0] = 0;
+          attachEvent = OpenEvent( EVENT_ALL_ACCESS,FALSE,eventName );
+
           opt.attached = 1;
         }
         break;
@@ -2662,6 +2670,11 @@ void mainCRTStartup( void )
     if( a2l_mi_a ) HeapFree( heap,0,a2l_mi_a );
     if( outName ) HeapFree( heap,0,outName );
     if( xmlName ) HeapFree( heap,0,xmlName );
+    if( attachEvent )
+    {
+      SetEvent( attachEvent );
+      CloseHandle( attachEvent );
+    }
     if( opt.attached )
     {
       CloseHandle( pi.hThread );
@@ -2753,6 +2766,11 @@ void mainCRTStartup( void )
       HeapFree( heap,0,tcOut );
       if( outName ) HeapFree( heap,0,outName );
       if( xmlName ) HeapFree( heap,0,xmlName );
+      if( attachEvent )
+      {
+        SetEvent( attachEvent );
+        CloseHandle( attachEvent );
+      }
       if( opt.attached )
       {
         CloseHandle( pi.hThread );
@@ -3127,6 +3145,13 @@ void mainCRTStartup( void )
     // }}}
 
     ResumeThread( pi.hThread );
+
+    if( attachEvent )
+    {
+      SetEvent( attachEvent );
+      CloseHandle( attachEvent );
+      attachEvent = NULL;
+    }
 
     // main loop {{{
     int type;
@@ -3780,6 +3805,11 @@ void mainCRTStartup( void )
     CloseHandle( readPipe );
   }
   if( controlPipe ) CloseHandle( controlPipe );
+  if( attachEvent )
+  {
+    SetEvent( attachEvent );
+    CloseHandle( attachEvent );
+  }
   CloseHandle( pi.hThread );
   CloseHandle( pi.hProcess );
 
