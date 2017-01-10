@@ -1,0 +1,5 @@
+Makefile*
+heob.json
+*.user
+debug
+release

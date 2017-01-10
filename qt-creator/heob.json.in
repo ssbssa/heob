@@ -1,0 +1,11 @@
+{
+    \"Name\" : \"heob\",
+    \"Version\" : \"$$QTCREATOR_VERSION\",
+    \"CompatVersion\" : \"$$QTCREATOR_VERSION\",
+    \"Vendor\" : \"ssbssa\",
+    \"Copyright\" : \"(C) 2017 Hannes Domani\",
+    \"License\" : \"Boost Software License\",
+    \"Description\" : \"heob Plugin.\",
+    \"Url\" : \"https://github.com/ssbssa/heob\",
+    $$dependencyList
+}
