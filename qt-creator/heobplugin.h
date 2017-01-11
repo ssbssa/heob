@@ -9,10 +9,16 @@
 
 #include <extensionsystem/iplugin.h>
 
+#include <QDialog>
+
 #include <windows.h>
 
 
 class QWinEventNotifier;
+class QLineEdit;
+class QCheckBox;
+class QComboBox;
+class QSpinBox;
 
 
 namespace heob {
@@ -52,6 +58,27 @@ private slots:
 private:
     HANDLE processHandle;
     QWinEventNotifier *processFinishedNotifier;
+};
+
+
+class HeobDialog : public QDialog
+{
+    Q_OBJECT
+
+public:
+    HeobDialog(QWidget *parent);
+
+    QString getArguments();
+
+private:
+    QLineEdit *xmlEdit;
+    QCheckBox *pidWaitCheck;
+    QComboBox *pageProtectionCombo;
+    QCheckBox *freedProtectionCheck;
+    QComboBox *leakDetailCombo;
+    QSpinBox *leakSizeSpin;
+    QComboBox *leakRecordingCombo;
+    QLineEdit *extraArgsEdit;
 };
 
 

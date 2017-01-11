@@ -31,6 +31,12 @@
 #include <QMainWindow>
 #include <QMenu>
 #include <QStandardPaths>
+#include <QLabel>
+#include <QLineEdit>
+#include <QCheckBox>
+#include <QComboBox>
+#include <QSpinBox>
+#include <QPushButton>
 
 #include <QtPlugin>
 
@@ -145,13 +151,18 @@ void heobPlugin::triggerAction()
     if (executable.startsWith(wdSlashed, Qt::CaseInsensitive))
         executable.remove(0, wdSlashed.size());
 
+    // heob arguments
+    HeobDialog dialog(Core::ICore::mainWindow());
+    if (!dialog.exec()) return;
+    QString heobArguments = dialog.getArguments();
+
     // quote executable if it contains spaces
     QString exeQuote;
     if (executable.contains(QLatin1Char(' ')))
         exeQuote = QLatin1Char('\"');
 
     // full command line
-    QString arguments = heob + QLatin1String(" -xleaks.xml -p0 -k2 ") +
+    QString arguments = heob + heobArguments + QLatin1Char(' ') +
             exeQuote + executable + exeQuote + QLatin1Char(' ') + localRc->commandLineArguments();
     QByteArray argumentsCopy((const char *)arguments.utf16(), arguments.size()*2+2);
 
@@ -234,4 +245,127 @@ bool HeobData::processFinished()
                              exitMsg);
     deleteLater();
     return true;
+}
+
+
+HeobDialog::HeobDialog(QWidget *parent) :
+    QDialog(parent)
+{
+    QVBoxLayout *layout = new QVBoxLayout;
+    // disable resizing
+    layout->setSizeConstraint(QLayout::SetFixedSize);
+
+    QHBoxLayout *xmlLayout = new QHBoxLayout;
+    QLabel *xmlLabel = new QLabel(tr("xml output file:"));
+    xmlLayout->addWidget(xmlLabel);
+    xmlEdit = new QLineEdit;
+    xmlEdit->setText(QLatin1String("leaks.xml"));
+    xmlLayout->addWidget(xmlEdit);
+    layout->addLayout(xmlLayout);
+
+    pidWaitCheck = new QCheckBox(tr("show process ID and wait"));
+    layout->addWidget(pidWaitCheck);
+
+    QHBoxLayout *pageProtectionLayout = new QHBoxLayout;
+    QLabel *pageProtectionLabel = new QLabel(tr("page protection:"));
+    pageProtectionLayout->addWidget(pageProtectionLabel);
+    pageProtectionCombo = new QComboBox;
+    pageProtectionCombo->addItem(tr("off"));
+    pageProtectionCombo->addItem(tr("after"));
+    pageProtectionCombo->addItem(tr("before"));
+    pageProtectionLayout->addWidget(pageProtectionCombo);
+    layout->addLayout(pageProtectionLayout);
+
+    freedProtectionCheck = new QCheckBox(tr("freed memory protection"));
+    layout->addWidget(freedProtectionCheck);
+
+    QHBoxLayout *leakDetailLayout = new QHBoxLayout;
+    QLabel *leakDetailLabel = new QLabel(tr("leak details:"));
+    leakDetailLayout->addWidget(leakDetailLabel);
+    leakDetailCombo = new QComboBox;
+    leakDetailCombo->addItem(tr("none"));
+    leakDetailCombo->addItem(tr("simple"));
+    leakDetailCombo->addItem(tr("detect leak types"));
+    leakDetailCombo->addItem(tr("detect leak types (show reachable)"));
+    leakDetailCombo->addItem(tr("fuzzy detect leak types"));
+    leakDetailCombo->addItem(tr("fuzzy detect leak types (show reachable)"));
+    leakDetailCombo->setCurrentIndex(1);
+    leakDetailLayout->addWidget(leakDetailCombo);
+    layout->addLayout(leakDetailLayout);
+
+    QHBoxLayout *leakSizeLayout = new QHBoxLayout;
+    QLabel *leakSizeLabel = new QLabel(tr("minimum leak size:"));
+    leakSizeLayout->addWidget(leakSizeLabel);
+    leakSizeSpin = new QSpinBox;
+    leakSizeSpin->setMinimum(0);
+    leakSizeSpin->setMaximum(INT_MAX);
+    leakSizeSpin->setSingleStep(1000);
+    leakSizeSpin->setValue(0);
+    leakSizeLayout->addWidget(leakSizeSpin);
+    layout->addLayout(leakSizeLayout);
+
+    QHBoxLayout *leakRecordingLayout = new QHBoxLayout;
+    QLabel *leakRecordingLabel = new QLabel(tr("control leak recording:"));
+    leakRecordingLayout->addWidget(leakRecordingLabel);
+    leakRecordingCombo = new QComboBox;
+    leakRecordingCombo->addItem(tr("off"));
+    leakRecordingCombo->addItem(tr("on (start disabled)"));
+    leakRecordingCombo->addItem(tr("on (start enabled)"));
+    leakRecordingCombo->setCurrentIndex(2);
+    leakRecordingLayout->addWidget(leakRecordingCombo);
+    layout->addLayout(leakRecordingLayout);
+
+    QHBoxLayout *extraArgsLayout = new QHBoxLayout;
+    QLabel *extraArgsLabel = new QLabel(tr("extra arguments:"));
+    extraArgsLayout->addWidget(extraArgsLabel);
+    extraArgsEdit = new QLineEdit;
+    extraArgsLayout->addWidget(extraArgsEdit);
+    layout->addLayout(extraArgsLayout);
+
+    QHBoxLayout *okLayout = new QHBoxLayout;
+    okLayout->addStretch(1);
+    QPushButton *okButton = new QPushButton(tr("OK"));
+    connect(okButton, &QAbstractButton::clicked, this, &QDialog::accept);
+    okLayout->addWidget(okButton);
+    okLayout->addStretch(1);
+    layout->addLayout(okLayout);
+
+    setLayout(layout);
+
+    setWindowTitle(tr("heob"));
+
+    // disable context help button
+    setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+}
+
+QString HeobDialog::getArguments()
+{
+    QString args;
+
+    QString xml = xmlEdit->text();
+    if (!xml.isEmpty()) args += QLatin1String(" -x") +
+            xml.replace(QLatin1Char(' '), QLatin1Char('_'));
+
+    int pidWait = pidWaitCheck->isChecked() ? 1 : 0;
+    args += QString::fromLatin1(" -P%1").arg(pidWait);
+
+    int pageProtection = pageProtectionCombo->currentIndex();
+    args += QString::fromLatin1(" -p%1").arg(pageProtection);
+
+    int freedProtection = freedProtectionCheck->isChecked() ? 1 : 0;
+    args += QString::fromLatin1(" -f%1").arg(freedProtection);
+
+    int leakDetail = leakDetailCombo->currentIndex();
+    args += QString::fromLatin1(" -l%1").arg(leakDetail);
+
+    int leakSize = leakSizeSpin->value();
+    args += QString::fromLatin1(" -z%1").arg(leakSize);
+
+    int leakRecording = leakRecordingCombo->currentIndex();
+    args += QString::fromLatin1(" -k%1").arg(leakRecording);
+
+    QString extraArgs = extraArgsEdit->text();
+    if (!extraArgs.isEmpty()) args += QLatin1Char(' ') + extraArgs;
+
+    return args;
 }
