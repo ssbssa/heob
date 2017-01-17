@@ -50,13 +50,16 @@ public:
     HeobData();
     ~HeobData();
 
-    void setHandle(HANDLE h);
+    bool createErrorPipe(DWORD heobPid);
+    void readExitData();
 
 private slots:
     bool processFinished();
 
 private:
-    HANDLE processHandle;
+    HANDLE errorPipe;
+    OVERLAPPED ov;
+    unsigned exitData[2];
     QWinEventNotifier *processFinishedNotifier;
 };
 

@@ -196,7 +196,7 @@ void heobPlugin::triggerAction()
     memset(&si, 0, sizeof(STARTUPINFO));
     si.cb = sizeof(STARTUPINFO);
     if (!CreateProcess((LPCWSTR)heobPath.utf16(), (LPWSTR)argumentsCopy.data(), 0, 0, FALSE,
-                       CREATE_UNICODE_ENVIRONMENT, envPtr,
+                       CREATE_UNICODE_ENVIRONMENT|CREATE_SUSPENDED, envPtr,
                        (LPCWSTR)workingDirectory.utf16(), &si, &pi))
     {
         QMessageBox::warning(Core::ICore::mainWindow(),
@@ -207,42 +207,174 @@ void heobPlugin::triggerAction()
 
     // heob finished signal handler
     HeobData *hd = new HeobData;
-    hd->setHandle(pi.hProcess);
+    if (!hd->createErrorPipe(pi.dwProcessId))
+    {
+        delete hd;
+        hd = 0;
+    }
 
+    ResumeThread (pi.hThread);
     CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+
+    if (hd) hd->readExitData();
 }
 
 
 HeobData::HeobData()
 {
-    processHandle = 0;
     processFinishedNotifier = 0;
+    errorPipe = INVALID_HANDLE_VALUE;
+    ov.hEvent = NULL;
 }
 
 HeobData::~HeobData()
 {
-    if (processHandle) CloseHandle(processHandle);
     delete processFinishedNotifier;
+    if (errorPipe != INVALID_HANDLE_VALUE) CloseHandle(errorPipe);
+    if (ov.hEvent) CloseHandle(ov.hEvent);
 }
 
-void HeobData::setHandle(HANDLE h)
+bool HeobData::createErrorPipe(DWORD heobPid)
 {
-    processHandle = h;
-    processFinishedNotifier = new QWinEventNotifier(h);
-    connect(processFinishedNotifier, SIGNAL(activated(HANDLE)), this, SLOT(processFinished()));
-    processFinishedNotifier->setEnabled(true);
+    char errorPipeName[32];
+    sprintf (errorPipeName, "\\\\.\\Pipe\\heob.error.%08X", heobPid);
+    errorPipe = CreateNamedPipeA(errorPipeName,
+                                 PIPE_ACCESS_INBOUND|FILE_FLAG_OVERLAPPED,
+                                 PIPE_TYPE_BYTE, 1, 1024, 1024, 0, NULL);
+    return errorPipe != INVALID_HANDLE_VALUE;
+}
+
+void HeobData::readExitData()
+{
+    ov.Offset = ov.OffsetHigh = 0;
+    ov.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    bool pipeConnected = ConnectNamedPipe(errorPipe, &ov);
+    if (!pipeConnected)
+    {
+        DWORD error = GetLastError();
+        if (error == ERROR_PIPE_CONNECTED)
+            pipeConnected = true;
+        else if (error == ERROR_IO_PENDING)
+        {
+            if (WaitForSingleObject(ov.hEvent, 1000) == WAIT_OBJECT_0)
+                pipeConnected = true;
+            else
+                CancelIo(errorPipe);
+        }
+    }
+    if (pipeConnected)
+    {
+        if (ReadFile(errorPipe, exitData, sizeof(exitData), NULL, &ov) ||
+                GetLastError() == ERROR_IO_PENDING)
+        {
+            processFinishedNotifier = new QWinEventNotifier(ov.hEvent);
+            connect(processFinishedNotifier, SIGNAL(activated(HANDLE)), this, SLOT(processFinished()));
+            processFinishedNotifier->setEnabled(true);
+            return;
+        }
+    }
+
+    delete this;
+}
+
+enum
+{
+    HEOB_OK,
+    HEOB_HELP,
+    HEOB_BAD_ARG,
+    HEOB_PROCESS_FAIL,
+    HEOB_WRONG_BITNESS,
+    HEOB_PROCESS_KILLED,
+    HEOB_NO_CRT,
+    HEOB_EXCEPTION,
+    HEOB_OUT_OF_MEMORY,
+    HEOB_UNEXPECTED_END,
+    HEOB_TRACE,
+    HEOB_CONSOLE,
+};
+
+static QString upperHexNum(unsigned num)
+{
+    return QString::fromLatin1("0x") + QString::fromLatin1("%1").arg(num, 8, 16, QLatin1Char('0')).toUpper();
 }
 
 bool HeobData::processFinished()
 {
     processFinishedNotifier->setEnabled(false);
-    QString exitMsg = tr("heob process finished");
-    DWORD exitCode;
-    if (GetExitCodeProcess(processHandle, &exitCode))
-        exitMsg += QString::fromLatin1(" (exit code: %1)").arg(exitCode);
-    QMessageBox::information(Core::ICore::mainWindow(),
+
+    QString exitMsg;
+    bool needsWarning = true;
+    DWORD didread;
+    if (GetOverlappedResult(errorPipe, &ov, &didread, TRUE) &&
+            didread == sizeof(exitData))
+    {
+        switch (exitData[0])
+        {
+        case HEOB_OK:
+            exitMsg = tr("heob process finished (exit code: %1, %2)").arg(exitData[1]).arg(upperHexNum(exitData[1]));
+            needsWarning = false;
+            break;
+
+        case HEOB_HELP:
+            exitMsg = tr("heob help screen was shown");
+            break;
+
+        case HEOB_BAD_ARG:
+            exitMsg = tr("unknown argument: -%1").arg((char)exitData[1]);
+            break;
+
+        case HEOB_PROCESS_FAIL:
+            exitMsg = tr("can't create process");
+            break;
+
+        case HEOB_WRONG_BITNESS:
+            exitMsg = tr("wrong bitness");
+            break;
+
+        case HEOB_PROCESS_KILLED:
+            exitMsg = tr("process killed");
+            break;
+
+        case HEOB_NO_CRT:
+            exitMsg = tr("only works with dynamically linked CRT");
+            break;
+
+        case HEOB_EXCEPTION:
+            exitMsg = tr("unhandled exception code: %1").arg(upperHexNum(exitData[1]));
+            break;
+
+        case HEOB_OUT_OF_MEMORY:
+            exitMsg = tr("not enough memory to keep track of allocations");
+            break;
+
+        case HEOB_UNEXPECTED_END:
+            exitMsg = tr("unexpected end of application");
+            break;
+
+        case HEOB_TRACE:
+            exitMsg = tr("trace mode");
+            break;
+
+        case HEOB_CONSOLE:
+            exitMsg = tr("extra console");
+            break;
+        }
+    }
+    else
+    {
+        exitMsg = tr("unexpected end of heob");
+    }
+
+    if (needsWarning)
+        QMessageBox::warning(Core::ICore::mainWindow(),
                              tr("heob"),
                              exitMsg);
+    else
+        QMessageBox::information(Core::ICore::mainWindow(),
+                                 tr("heob"),
+                                 exitMsg);
+
     deleteLater();
     return true;
 }

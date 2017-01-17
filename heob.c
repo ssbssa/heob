@@ -590,6 +590,51 @@ int isWrongArch( HANDLE process )
 }
 
 // }}}
+// error pipe {{{
+
+static HANDLE openErrorPipe( void )
+{
+  char errorPipeName[32] = "\\\\.\\Pipe\\heob.error.";
+  char *end = num2hexstr( errorPipeName+lstrlen(errorPipeName),
+      GetCurrentProcessId(),8 );
+  end[0] = 0;
+
+  HANDLE errorPipe = CreateFile( errorPipeName,
+      GENERIC_WRITE,0,NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL );
+  if( errorPipe==INVALID_HANDLE_VALUE ) errorPipe = NULL;
+
+  return( errorPipe );
+}
+
+static void writeCloseErrorPipe( HANDLE errorPipe,
+    unsigned exitStatus,unsigned extraArg )
+{
+  if( !errorPipe ) return;
+
+  unsigned data[2] = { exitStatus,extraArg };
+  DWORD didwrite;
+  WriteFile( errorPipe,data,sizeof(data),&didwrite,NULL );
+
+  CloseHandle( errorPipe );
+}
+
+enum
+{
+  HEOB_OK,
+  HEOB_HELP,
+  HEOB_BAD_ARG,
+  HEOB_PROCESS_FAIL,
+  HEOB_WRONG_BITNESS,
+  HEOB_PROCESS_KILLED,
+  HEOB_NO_CRT,
+  HEOB_EXCEPTION,
+  HEOB_OUT_OF_MEMORY,
+  HEOB_UNEXPECTED_END,
+  HEOB_TRACE,
+  HEOB_CONSOLE,
+};
+
+// }}}
 // code injection {{{
 
 typedef DWORD WINAPI func_heob( LPVOID );
@@ -612,7 +657,8 @@ static CODE_SEG(".text$2") HANDLE inject(
     HANDLE process,HANDLE thread,options *opt,char *exePath,textColor *tc,
     int raise_alloc_q,size_t *raise_alloc_a,HANDLE *controlPipe,
     HANDLE in,HANDLE err,attachedProcessInfo **api,
-    const char *subOutName,const char *subXmlName,const char *subCurDir )
+    const char *subOutName,const char *subXmlName,const char *subCurDir,
+    unsigned *heobExit )
 {
   func_inj *finj = &remoteCall;
   size_t funcSize = (size_t)&inject - (size_t)finj;
@@ -779,6 +825,7 @@ static CODE_SEG(".text$2") HANDLE inject(
     CloseHandle( startMain );
     HeapFree( heap,0,fullData );
     printf( "$Wprocess killed\n" );
+    *heobExit = HEOB_PROCESS_KILLED;
     return( NULL );
   }
 
@@ -790,6 +837,7 @@ static CODE_SEG(".text$2") HANDLE inject(
     CloseHandle( readPipe );
     readPipe = NULL;
     printf( "$Wonly works with dynamically linked CRT\n" );
+    *heobExit = HEOB_NO_CRT;
   }
   else
     RtlMoveMemory( exePath,data->exePathA,MAX_PATH );
@@ -2367,6 +2415,7 @@ static void printAttachedProcessInfo(
 void mainCRTStartup( void )
 {
   DWORD startTicks = GetTickCount();
+  HANDLE errorPipe = openErrorPipe();
 
   // command line arguments {{{
   char *cmdLine = GetCommandLineA();
@@ -2680,6 +2729,7 @@ void mainCRTStartup( void )
       CloseHandle( pi.hThread );
       CloseHandle( pi.hProcess );
     }
+    writeCloseErrorPipe( errorPipe,HEOB_BAD_ARG,badArg );
     ExitProcess( -1 );
   }
 
@@ -2776,6 +2826,7 @@ void mainCRTStartup( void )
         CloseHandle( pi.hThread );
         CloseHandle( pi.hProcess );
       }
+      writeCloseErrorPipe( errorPipe,HEOB_TRACE,0 );
       ExitProcess( 0 );
     }
     args = NULL;
@@ -2866,6 +2917,7 @@ void mainCRTStartup( void )
     if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
     if( outName ) HeapFree( heap,0,outName );
     if( xmlName ) HeapFree( heap,0,xmlName );
+    writeCloseErrorPipe( errorPipe,HEOB_HELP,0 );
     ExitProcess( -1 );
   }
   // }}}
@@ -2892,6 +2944,7 @@ void mainCRTStartup( void )
       if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
       if( outName ) HeapFree( heap,0,outName );
       if( xmlName ) HeapFree( heap,0,xmlName );
+      writeCloseErrorPipe( errorPipe,HEOB_PROCESS_FAIL,0 );
       ExitProcess( -1 );
     }
 
@@ -2919,6 +2972,7 @@ void mainCRTStartup( void )
       if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
       if( outName ) HeapFree( heap,0,outName );
       if( xmlName ) HeapFree( heap,0,xmlName );
+      writeCloseErrorPipe( errorPipe,HEOB_CONSOLE,0 );
       ExitProcess( exitCode );
     }
   }
@@ -2998,12 +3052,17 @@ void mainCRTStartup( void )
   HANDLE err = GetStdHandle( STD_ERROR_HANDLE );
   attachedProcessInfo *api = NULL;
   char exePath[MAX_PATH];
+  unsigned heobExit = HEOB_OK;
+  unsigned heobExitData = 0;
   if( isWrongArch(pi.hProcess) )
+  {
     printf( "$Wonly " BITS "bit applications possible\n" );
+    heobExit = HEOB_WRONG_BITNESS;
+  }
   else
     readPipe = inject( pi.hProcess,pi.hThread,&opt,exePath,tc,
         raise_alloc_q,raise_alloc_a,&controlPipe,in,err,&api,
-        subOutName,subXmlName,subCurDir );
+        subOutName,subXmlName,subCurDir,&heobExit );
   if( !readPipe )
     TerminateProcess( pi.hProcess,1 );
 
@@ -3478,6 +3537,8 @@ void mainCRTStartup( void )
             }
 
             terminated = -1;
+            heobExit = HEOB_EXCEPTION;
+            heobExitData = ei.er.ExceptionCode;
 #undef ei
           }
           break;
@@ -3652,6 +3713,7 @@ void mainCRTStartup( void )
         case WRITE_MAIN_ALLOC_FAIL:
           printf( "\n$Wnot enough memory to keep track of allocations\n" );
           terminated = -1;
+          heobExit = HEOB_OUT_OF_MEMORY;
           break;
 
         case WRITE_WRONG_DEALLOC:
@@ -3765,6 +3827,7 @@ void mainCRTStartup( void )
           {
             printf( "\n$Stermination code: %u (%x)\n",exitCode,exitCode );
           }
+          heobExitData = exitCode;
           break;
       }
     }
@@ -3774,7 +3837,10 @@ void mainCRTStartup( void )
     // }}}
 
     if( terminated==-2 )
+    {
       printf( "\n$Wunexpected end of application\n" );
+      heobExit = HEOB_UNEXPECTED_END;
+    }
 
     // xml footer {{{
     if( tcXml )
@@ -3821,6 +3887,7 @@ void mainCRTStartup( void )
   if( subCurDir ) HeapFree( heap,0,subCurDir );
   if( api ) HeapFree( heap,0,api );
 
+  writeCloseErrorPipe( errorPipe,heobExit,heobExitData );
   ExitProcess( exitCode );
 }
 
