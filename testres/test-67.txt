@@ -1,0 +1,41 @@
+allocer: main()
+
+deallocation of invalid pointer 0xPTR
+  called on:
+    [free]
+  pointing to block 0xPTR (size 16, offset +1)
+  allocated on: (#3)
+    [malloc]
+  referenced by block 0xPTR (size 32, offset +0)
+  allocated on: (#2)
+    [malloc]
+
+deallocation of invalid pointer 0xPTR
+  called on:
+    [free]
+  pointing to freed block 0xPTR (size 32, offset -2)
+  allocated on: (#4)
+    [malloc]
+  freed on:
+    [free]
+  referenced by block 0xPTR (size 32, offset +8)
+  allocated on: (#2)
+    [malloc]
+
+deallocation of invalid pointer 0xPTR
+  called on:
+    [free]
+  pointing to block 0xPTR (size 32, offset -1)
+  allocated on: (#5)
+    [malloc]
+
+deallocation of invalid pointer 0xPTR
+  called on:
+    [free]
+  referenced by block 0xPTR (size 32, offset +16)
+  allocated on: (#2)
+    [malloc]
+
+leaks:
+  sum: 48 B / 2
+exit code: 31 (0xPTR)

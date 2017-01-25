@@ -1,5 +1,5 @@
 
-//          Copyright Hannes Domani 2014 - 2016.
+//          Copyright Hannes Domani 2014 - 2017.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -22,6 +22,7 @@ extern "C" __declspec(dllimport) void *dll_memory( void );
 extern "C" __declspec(dllimport) int *dll_int( void );
 extern "C" __declspec(dllimport) int *dll_arr( void );
 extern "C" __declspec(dllimport) DWORD dll_thread_id( void );
+extern "C" __declspec(dllimport) void do_nothing( void* );
 
 
 static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
@@ -520,6 +521,28 @@ void choose( int arg )
 
         CloseHandle( pi.hThread );
         CloseHandle( pi.hProcess );
+      }
+      break;
+
+    case 31:
+      // free of invalid pointer
+      {
+        int d = 8/sizeof(void*);
+        unsigned char **ref = (unsigned char**)malloc(
+            d*4*sizeof(void*) );
+        ref[0*d] = (unsigned char*)malloc( 10 ) + 1;
+        ref[1*d] = (unsigned char*)malloc( 20 ) - 2;
+        unsigned char *noref = (unsigned char*)malloc( 30 );
+        ref[2*d] = (unsigned char*)(size_t)0xabcdef01;
+        do_nothing( ref );
+        mem[1] = ref[3*d]!=NULL;
+        mem[2] = noref[0];
+        free( ref[1*d]+2 );
+        free( ref[0*d] );
+        free( ref[1*d] );
+        free( noref-1 );
+        free( ref[2*d] );
+        free( ref );
       }
       break;
   }

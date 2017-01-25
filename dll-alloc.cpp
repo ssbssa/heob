@@ -1,5 +1,5 @@
 
-//          Copyright Hannes Domani 2014 - 2016.
+//          Copyright Hannes Domani 2014 - 2017.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -40,6 +40,10 @@ static DWORD thread_id;
 extern "C" __declspec(dllexport) DWORD dll_thread_id( void )
 {
   return( thread_id );
+}
+
+extern "C" __declspec(dllexport) void do_nothing( void* )
+{
 }
 
 extern "C" BOOL WINAPI DllMain(

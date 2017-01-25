@@ -590,28 +590,174 @@ static NOINLINE void trackAllocs(
       }
       else if( !inExit )
       {
-        allocation a;
-        a.ptr = free_ptr;
-        a.size = 0;
-        a.at = at;
-        a.lt = LT_LOST;
-        a.ft = ft;
+        allocation *aa = HeapAlloc(
+            rd->heap,HEAP_ZERO_MEMORY,4*sizeof(allocation) );
+        if( UNLIKELY(!aa) )
+        {
+          EnterCriticalSection( &rd->csWrite );
+
+          DWORD written;
+          int type = WRITE_MAIN_ALLOC_FAIL;
+          WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+
+          LeaveCriticalSection( &rd->csWrite );
+
+          exitWait( 1,0 );
+        }
+
+        aa->ptr = free_ptr;
+        aa->size = 0;
+        aa->at = at;
+        aa->lt = LT_LOST;
+        aa->ft = ft;
 #ifndef NO_THREADNAMES
-        a.threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
+        aa->threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
 #endif
 
-        CAPTURE_STACK_TRACE( 2,PTRS,a.frames,caller,rd->maxStackFrames );
+        CAPTURE_STACK_TRACE( 2,PTRS,aa->frames,caller,rd->maxStackFrames );
+
+        int protect = rd->opt.protect;
+        if( protect )
+        {
+          uintptr_t ptr = (uintptr_t)free_ptr;
+          size_t pageAdd = rd->pageAdd;
+          DWORD pageSize = rd->pageSize;
+          int j;
+          int foundAlloc = 0;
+          int foundRef = 0;
+          for( j=0; j<=SPLIT_MASK; j++ )
+          {
+            sa = rd->splits + j;
+
+            EnterCriticalSection( &sa->cs );
+
+            allocation *alloc_a = sa->alloc_a;
+            int alloc_q = sa->alloc_q;
+            for( i=0; i<alloc_q; i++ )
+            {
+              allocation *a = alloc_a + i;
+              uintptr_t p = (uintptr_t)a->ptr;
+              size_t s = a->size;
+
+              if( !foundAlloc )
+              {
+                uintptr_t realStart;
+                uintptr_t realEnd;
+                size_t slackSize;
+                if( protect==1 )
+                {
+                  slackSize = p%pageSize;
+                  realStart = p - slackSize;
+                  realEnd = p + s + pageSize*pageAdd;
+                }
+                else
+                {
+                  slackSize = ( pageSize - (s%pageSize) )%pageSize;
+                  realStart = p - pageSize*pageAdd;
+                  realEnd = p + s + slackSize;
+                }
+
+                if( ptr>=realStart && ptr<realEnd )
+                {
+                  RtlMoveMemory( &aa[1],a,sizeof(allocation) );
+                  foundAlloc = 1;
+                  if( foundRef ) break;
+                }
+              }
+
+              if( !foundRef )
+              {
+                uintptr_t *refP = a->ptr;
+                size_t refS = s/sizeof(void*);
+                size_t k;
+                for( k=0; k<refS; k++ )
+                {
+                  if( refP[k]!=ptr ) continue;
+
+                  RtlMoveMemory( &aa[3],a,sizeof(allocation) );
+                  // in [2], because it's the only big enough unused field
+                  aa[2].size = k*sizeof(void*);
+                  foundRef = 1;
+                  break;
+                }
+                if( foundAlloc && foundRef ) break;
+              }
+            }
+
+            LeaveCriticalSection( &sa->cs );
+
+            if( foundAlloc && foundRef ) break;
+          }
+
+          if( rd->opt.protectFree && !foundAlloc )
+          {
+            for( j=0; j<=SPLIT_MASK; j++ )
+            {
+              splitFreed *sf = rd->freeds + j;
+
+              EnterCriticalSection( &sf->cs );
+
+              freed *freed_a = sf->freed_a;
+              int freed_q = sf->freed_q;
+              for( i=0; i<freed_q; i++ )
+              {
+                freed *f = freed_a + i;
+                allocation *a = &f->a;
+                uintptr_t p = (uintptr_t)a->ptr;
+                size_t s = a->size;
+
+                if( !foundAlloc )
+                {
+                  uintptr_t realStart;
+                  uintptr_t realEnd;
+                  size_t slackSize;
+                  if( protect==1 )
+                  {
+                    slackSize = p%pageSize;
+                    realStart = p - slackSize;
+                    realEnd = p + s + pageSize*pageAdd;
+                  }
+                  else
+                  {
+                    slackSize = ( pageSize - (s%pageSize) )%pageSize;
+                    realStart = p - pageSize*pageAdd;
+                    realEnd = p + s + slackSize;
+                  }
+
+                  if( ptr>=realStart && ptr<realEnd )
+                  {
+                    RtlMoveMemory( &aa[1],a,sizeof(allocation) );
+                    aa[2].ptr = aa[1].ptr;
+                    RtlMoveMemory( aa[2].frames,f->frames,PTRS*sizeof(void*) );
+                    aa[2].ft = f->a.ftFreed;
+#ifndef NO_THREADNAMES
+                    aa[2].threadNameIdx = f->threadNameIdx;
+#endif
+                    foundAlloc = 1;
+                    break;
+                  }
+                }
+              }
+
+              LeaveCriticalSection( &sf->cs );
+
+              if( foundAlloc ) break;
+            }
+          }
+        }
 
         EnterCriticalSection( &rd->csWrite );
 
-        writeMods( &a,1 );
+        writeMods( aa,4 );
 
         DWORD written;
         int type = WRITE_FREE_FAIL;
         WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-        WriteFile( rd->master,&a,sizeof(allocation),&written,NULL );
+        WriteFile( rd->master,aa,4*sizeof(allocation),&written,NULL );
 
         LeaveCriticalSection( &rd->csWrite );
+
+        HeapFree( rd->heap,0,aa );
 
         if( rd->opt.raiseException )
           DebugBreak();

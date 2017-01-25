@@ -3235,7 +3235,7 @@ void mainCRTStartup( void )
     int waitCount = in ? 2 : 1;
     int errColor = 0;
     COORD consoleCoord = { 0,0 };
-    allocation *aa = HeapAlloc( heap,0,3*sizeof(allocation) );
+    allocation *aa = HeapAlloc( heap,0,4*sizeof(allocation) );
     exceptionInfo *eiPtr = HeapAlloc( heap,0,sizeof(exceptionInfo) );
     while( 1 )
     {
@@ -3577,16 +3577,48 @@ void mainCRTStartup( void )
 
         case WRITE_FREE_FAIL:
           {
-            if( !readFile(readPipe,aa,sizeof(allocation),&ov) )
+            if( !readFile(readPipe,aa,4*sizeof(allocation),&ov) )
               break;
 
-            cacheSymbolData( aa,NULL,1,mi_a,mi_q,&ds,1 );
+            cacheSymbolData( aa,NULL,4,mi_a,mi_q,&ds,1 );
 
             printf( "\n$Wdeallocation of invalid pointer %p\n",aa->ptr );
             printf( "$S  called on:" );
             printThreadName( aa->threadNameIdx );
             printStackCount( aa->frames,aa->frameCount,
                 mi_a,mi_q,&ds,aa->ft,0 );
+
+            if( aa[1].ptr )
+            {
+              char *ptr = aa->ptr;
+              char *addr = aa[1].ptr;
+              size_t size = aa[1].size;
+              const char *block = aa[2].ptr ? "freed " : "";
+              printf( "$I  pointing to %sblock %p (size %U, offset %s%D)\n",
+                  block,addr,size,ptr>addr?"+":"",ptr-addr );
+              printf( "$S  allocated on: $N(#%U)",aa[1].id );
+              printThreadName( aa[1].threadNameIdx );
+              printStackCount( aa[1].frames,aa[1].frameCount,
+                  mi_a,mi_q,&ds,aa[1].ft,0 );
+
+              if( aa[2].ptr )
+              {
+                printf( "$S  freed on:" );
+                printThreadName( aa[2].threadNameIdx );
+                printStackCount( aa[2].frames,aa[2].frameCount,
+                    mi_a,mi_q,&ds,aa[2].ft,0 );
+              }
+            }
+
+            if( aa[3].ptr )
+            {
+              printf( "$I  referenced by block %p (size %U, offset +%U)\n",
+                  aa[3].ptr,aa[3].size,aa[2].size );
+              printf( "$S  allocated on: $N(#%U)",aa[3].id );
+              printThreadName( aa[3].threadNameIdx );
+              printStackCount( aa[3].frames,aa[3].frameCount,
+                  mi_a,mi_q,&ds,aa[3].ft,0 );
+            }
 
             if( tcXml )
             {
@@ -3600,6 +3632,45 @@ void mainCRTStartup( void )
               printStackCount( aa->frames,aa->frameCount,
                   mi_a,mi_q,&ds,aa->ft,-1 );
               printf( "  </stack>\n" );
+
+              if( aa[1].ptr )
+              {
+                char *ptr = aa->ptr;
+                char *addr = aa[1].ptr;
+                size_t size = aa[1].size;
+                const char *block = aa[2].ptr ? "freed " : "";
+                printf(
+                    "  <auxwhat>pointing to %sblock %p"
+                    " (size %U, offset %s%D)</auxwhat>\n",
+                    block,addr,size,ptr>addr?"+":"",ptr-addr );
+                printf( "  <auxwhat>\nallocated on</auxwhat>\n" );
+                printf( "  <stack>\n" );
+                printStackCount( aa[1].frames,aa[1].frameCount,
+                    mi_a,mi_q,&ds,aa[1].ft,-1 );
+                printf( "  </stack>\n" );
+
+                if( aa[2].ptr )
+                {
+                  printf( "  <auxwhat>freed on</auxwhat>\n" );
+                  printf( "  <stack>\n" );
+                  printStackCount( aa[2].frames,aa[2].frameCount,
+                      mi_a,mi_q,&ds,aa[2].ft,-1 );
+                  printf( "  </stack>\n" );
+                }
+              }
+
+              if( aa[3].ptr )
+              {
+                printf(
+                    "  <auxwhat>referenced by block %p"
+                    " (size %U, offset +%U)</auxwhat>\n",
+                    aa[3].ptr,aa[3].size,aa[2].size );
+                printf( "  <auxwhat>\nallocated on</auxwhat>\n" );
+                printf( "  <stack>\n" );
+                printStackCount( aa[3].frames,aa[3].frameCount,
+                    mi_a,mi_q,&ds,aa[3].ft,-1 );
+                printf( "  </stack>\n" );
+              }
               printf( "</error>\n\n" );
 
               ds.tc = tc = tcOut;
