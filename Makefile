@@ -200,7 +200,9 @@ T_H66=-p1 -a16 -f0 -l0
 T_A66=29
 T_H67=-p1 -a16 -f1 -l0
 T_A67=31
-TESTS:=$(shell seq -w 01 67)
+T_H68=-p1 -a16 -f1 -l0
+T_A68=32
+TESTS:=$(shell seq -w 01 68)
 
 testres:
 	mkdir -p $@

@@ -3235,7 +3235,7 @@ void mainCRTStartup( void )
     int waitCount = in ? 2 : 1;
     int errColor = 0;
     COORD consoleCoord = { 0,0 };
-    allocation *aa = HeapAlloc( heap,0,4*sizeof(allocation) );
+    allocation *aa = HeapAlloc( heap,0,5*sizeof(allocation) );
     exceptionInfo *eiPtr = HeapAlloc( heap,0,sizeof(exceptionInfo) );
     while( 1 )
     {
@@ -3577,12 +3577,34 @@ void mainCRTStartup( void )
 
         case WRITE_FREE_FAIL:
           {
-            if( !readFile(readPipe,aa,4*sizeof(allocation),&ov) )
+            if( !readFile(readPipe,aa,5*sizeof(allocation),&ov) )
               break;
 
-            cacheSymbolData( aa,NULL,4,mi_a,mi_q,&ds,1 );
+            char *alloc_mod_path = NULL;
+            if( aa[4].ptr )
+            {
+              int m;
+              for( m=0; m<mi_q; m++ )
+              {
+                if( mi_a[m].base!=(size_t)aa[4].ptr ) continue;
+                alloc_mod_path = mi_a[m].path;
+                break;
+              }
+            }
+
+            cacheSymbolData( aa,NULL,5,mi_a,mi_q,&ds,1 );
 
             printf( "\n$Wdeallocation of invalid pointer %p\n",aa->ptr );
+            if( alloc_mod_path )
+            {
+              char *path = alloc_mod_path;
+              if( !opt.fullPath )
+              {
+                delim = strrchr( alloc_mod_path,'\\' );
+                if( delim ) path = delim + 1;
+              }
+              printf( "$I  allocated from: %s (size %U)\n",path,aa[4].size );
+            }
             printf( "$S  called on:" );
             printThreadName( aa->threadNameIdx );
             printStackCount( aa->frames,aa->frameCount,
@@ -3626,8 +3648,12 @@ void mainCRTStartup( void )
 
               printf( "<error>\n" );
               printf( "  <kind>InvalidFree</kind>\n" );
-              printf( "  <what>deallocation of invalid pointer %p</what>\n",
+              printf( "  <what>deallocation of invalid pointer %p",
                   aa->ptr );
+              if( alloc_mod_path )
+                printf( "\nallocated from: %s (size %U)",
+                    alloc_mod_path,aa[4].size );
+              printf( "</what>\n" );
               printf( "  <stack>\n" );
               printStackCount( aa->frames,aa->frameCount,
                   mi_a,mi_q,&ds,aa->ft,-1 );

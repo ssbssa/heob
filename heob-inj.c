@@ -172,6 +172,10 @@ typedef struct localData
   int mod_s;
   int mod_d;
 
+  HMODULE *crt_mod_a;
+  int crt_mod_q;
+  int crt_mod_s;
+
   modMemType *mod_mem_a;
   int mod_mem_q;
   int mod_mem_s;
@@ -591,7 +595,7 @@ static NOINLINE void trackAllocs(
       else if( !inExit )
       {
         allocation *aa = HeapAlloc(
-            rd->heap,HEAP_ZERO_MEMORY,4*sizeof(allocation) );
+            rd->heap,HEAP_ZERO_MEMORY,5*sizeof(allocation) );
         if( UNLIKELY(!aa) )
         {
           EnterCriticalSection( &rd->csWrite );
@@ -748,12 +752,31 @@ static NOINLINE void trackAllocs(
 
         EnterCriticalSection( &rd->csWrite );
 
-        writeMods( aa,4 );
+        HMODULE *crt_mod_a = rd->crt_mod_a;
+        int crt_mod_q = rd->crt_mod_q;
+        for( i=0; i<crt_mod_q; i++ )
+        {
+          HANDLE (*fget_heap_handle)( void ) =
+            rd->fGetProcAddress( crt_mod_a[i],"_get_heap_handle" );
+          HANDLE crtHeap = fget_heap_handle();
+          if( crtHeap==rd->crtHeap ) continue;
+
+          size_t s = heap_block_size( crtHeap,free_ptr );
+          if( s==(size_t)-1 ) continue;
+
+          aa[4].ptr = crt_mod_a[i];
+          aa[4].size = s;
+          // send info of this CRT module
+          aa[4].frames[0] = fget_heap_handle;
+          break;
+        }
+
+        writeMods( aa,5 );
 
         DWORD written;
         int type = WRITE_FREE_FAIL;
         WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-        WriteFile( rd->master,aa,4*sizeof(allocation),&written,NULL );
+        WriteFile( rd->master,aa,5*sizeof(allocation),&written,NULL );
 
         LeaveCriticalSection( &rd->csWrite );
 
@@ -2696,6 +2719,33 @@ static void addModule( HMODULE mod )
   }
 
   rd->mod_a[rd->mod_q++] = mod;
+
+  HANDLE (*fget_heap_handle)( void ) =
+    rd->fGetProcAddress( mod,"_get_heap_handle" );
+  if( fget_heap_handle )
+  {
+    if( rd->crt_mod_q>=rd->crt_mod_s )
+    {
+      rd->crt_mod_s += 8;
+      HMODULE *crt_mod_an;
+      if( !rd->crt_mod_a )
+        crt_mod_an = HeapAlloc(
+            rd->heap,0,rd->crt_mod_s*sizeof(HMODULE) );
+      else
+        crt_mod_an = HeapReAlloc(
+            rd->heap,0,rd->crt_mod_a,rd->crt_mod_s*sizeof(HMODULE) );
+      if( UNLIKELY(!crt_mod_an) )
+      {
+        DWORD written;
+        int type = WRITE_MAIN_ALLOC_FAIL;
+        WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+        exitWait( 1,0 );
+      }
+      rd->crt_mod_a = crt_mod_an;
+    }
+
+    rd->crt_mod_a[rd->crt_mod_q++] = mod;
+  }
 }
 
 static HMODULE replaceFuncs( HMODULE app,

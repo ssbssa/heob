@@ -545,6 +545,25 @@ void choose( int arg )
         free( ref );
       }
       break;
+
+    case 32:
+      // free allocation of different CRT
+      {
+        HMODULE msvcr100 = LoadLibrary( "msvcr100.dll" );
+        if( msvcr100 )
+        {
+          typedef void *func_malloc( size_t );
+          func_malloc *f_malloc =
+            (func_malloc*)GetProcAddress( msvcr100,"malloc" );
+          if( f_malloc )
+          {
+            void *ptr = f_malloc( 128 );
+            free( ptr );
+          }
+          FreeLibrary( msvcr100 );
+        }
+      }
+      break;
   }
 
   mem = (char*)realloc( mem,30 );
