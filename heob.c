@@ -3631,6 +3631,14 @@ void mainCRTStartup( void )
                     mi_a,mi_q,&ds,aa[2].ft,0 );
               }
             }
+            else if( aa[1].id )
+            {
+              printf( "$I  pointing to stack\n" );
+              printf( "$S  possibly same frame as:" );
+              printThreadName( aa[1].threadNameIdx );
+              printStackCount( aa[1].frames,aa[1].frameCount,
+                  mi_a,mi_q,&ds,FT_COUNT,0 );
+            }
 
             if( aa[3].ptr )
             {
@@ -3683,6 +3691,15 @@ void mainCRTStartup( void )
                       mi_a,mi_q,&ds,aa[2].ft,-1 );
                   printf( "  </stack>\n" );
                 }
+              }
+              else if( aa[1].id )
+              {
+                printf( "  <auxwhat>pointing to stack</auxwhat>\n" );
+                printf( "  <auxwhat>\npossibly same frame as</auxwhat>\n" );
+                printf( "  <stack>\n" );
+                printStackCount( aa[1].frames,aa[1].frameCount,
+                    mi_a,mi_q,&ds,FT_COUNT,-1 );
+                printf( "  </stack>\n" );
               }
 
               if( aa[3].ptr )

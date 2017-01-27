@@ -534,6 +534,7 @@ void choose( int arg )
         ref[1*d] = (unsigned char*)malloc( 20 ) - 2;
         unsigned char *noref = (unsigned char*)malloc( 30 );
         ref[2*d] = (unsigned char*)(size_t)0xabcdef01;
+        ref[3*d] = (unsigned char*)&ref;
         do_nothing( ref );
         mem[1] = ref[3*d]!=NULL;
         mem[2] = noref[0];
@@ -542,6 +543,7 @@ void choose( int arg )
         free( ref[1*d] );
         free( noref-1 );
         free( ref[2*d] );
+        free( ref[3*d] );
         free( ref );
       }
       break;

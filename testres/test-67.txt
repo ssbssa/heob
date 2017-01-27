@@ -36,6 +36,15 @@ deallocation of invalid pointer 0xPTR
   allocated on: (#2)
     [malloc]
 
+deallocation of invalid pointer 0xPTR
+  called on:
+    [free]
+  pointing to stack
+  possibly same frame as:
+  referenced by block 0xPTR (size 32, offset +24)
+  allocated on: (#2)
+    [malloc]
+
 leaks:
   sum: 48 B / 2
 exit code: 31 (0xPTR)

@@ -37,6 +37,7 @@
 #define LIKELY(c) __builtin_expect(!!(c),1)
 #define UNLIKELY(c) __builtin_expect(!!(c),0)
 #define RETURN_ADDRESS() __builtin_return_address(0)
+#define FRAME_ADDRESS() __builtin_frame_address(0)
 #else
 #define NOINLINE __declspec(noinline)
 #define NORETURN __declspec(noreturn)
@@ -47,6 +48,7 @@
 #define LIKELY(c) (c)
 #define UNLIKELY(c) (c)
 #define RETURN_ADDRESS() _ReturnAddress()
+#define FRAME_ADDRESS() _AddressOfReturnAddress()
 #endif
 
 #if defined(NO_DBGHELP) && USE_STACKWALK

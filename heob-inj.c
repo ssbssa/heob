@@ -366,6 +366,21 @@ static void writeMods( allocation *alloc_a,int alloc_q )
 // }}}
 // memory allocation tracking {{{
 
+typedef struct _TEB
+{
+  PVOID ExceptionList;
+  PVOID StackBase;
+  PVOID StackLimit;
+  BYTE Reserved1[1952];
+  PVOID Reserved2[409];
+  PVOID TlsSlots[64];
+  BYTE Reserved3[8];
+  PVOID Reserved4[26];
+  PVOID ReservedForOle;
+  PVOID Reserved5[4];
+  PVOID *TlsExpansionSlots;
+} TEB, *PTEB;
+
 static NOINLINE size_t heap_block_size( HANDLE heap,void *ptr )
 {
   PROCESS_HEAP_ENTRY phe;
@@ -746,6 +761,41 @@ static NOINLINE void trackAllocs(
               LeaveCriticalSection( &sf->cs );
 
               if( foundAlloc ) break;
+            }
+          }
+
+          if( !foundAlloc )
+          {
+            TEB *teb = NtCurrentTeb();
+            if( free_ptr>=teb->StackLimit && free_ptr<teb->StackBase )
+            {
+              // is otherwise unused since !foundAlloc
+              aa[1].id = 1;
+
+              if( ptr%sizeof(uintptr_t) )
+                ptr -= ptr%sizeof(uintptr_t);
+              void **frame = FRAME_ADDRESS();
+              void **endFrame = (void**)ptr;
+              int frameIdx = 0;
+              void *prevFrame = NULL;
+              void *curFrame = aa[0].frames[frameIdx];
+              while( curFrame && frame<endFrame )
+              {
+                if( *frame==curFrame )
+                {
+                  frameIdx++;
+                  if( frameIdx==PTRS )
+                  {
+                    prevFrame = NULL;
+                    break;
+                  }
+                  prevFrame = curFrame;
+                  curFrame = aa[0].frames[frameIdx];
+                }
+                frame++;
+              }
+              if( !curFrame ) prevFrame = NULL;
+              aa[1].frames[0] = prevFrame;
             }
           }
         }
@@ -1745,18 +1795,6 @@ typedef struct tagTHREADNAME_INFO
   DWORD dwFlags;
 } THREADNAME_INFO;
 #pragma pack(pop)
-
-typedef struct _TEB
-{
-  BYTE Reserved1[1952];
-  PVOID Reserved2[412];
-  PVOID TlsSlots[64];
-  BYTE Reserved3[8];
-  PVOID Reserved4[26];
-  PVOID ReservedForOle;
-  PVOID Reserved5[4];
-  PVOID *TlsExpansionSlots;
-} TEB, *PTEB;
 
 typedef struct _CLIENT_ID
 {
