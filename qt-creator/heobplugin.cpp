@@ -411,6 +411,9 @@ HeobDialog::HeobDialog(QWidget *parent) :
     freedProtectionCheck = new QCheckBox(tr("freed memory protection"));
     layout->addWidget(freedProtectionCheck);
 
+    breakpointCheck = new QCheckBox(tr("raise breakpoint exception on error"));
+    layout->addWidget(breakpointCheck);
+
     QHBoxLayout *leakDetailLayout = new QHBoxLayout;
     QLabel *leakDetailLabel = new QLabel(tr("leak details:"));
     leakDetailLayout->addWidget(leakDetailLabel);
@@ -486,6 +489,9 @@ QString HeobDialog::getArguments()
 
     int freedProtection = freedProtectionCheck->isChecked() ? 1 : 0;
     args += QString::fromLatin1(" -f%1").arg(freedProtection);
+
+    int breakpoint = breakpointCheck->isChecked() ? 1 : 0;
+    args += QString::fromLatin1(" -r%1").arg(breakpoint);
 
     int leakDetail = leakDetailCombo->currentIndex();
     args += QString::fromLatin1(" -l%1").arg(leakDetail);

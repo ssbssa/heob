@@ -78,6 +78,7 @@ private:
     QCheckBox *pidWaitCheck;
     QComboBox *pageProtectionCombo;
     QCheckBox *freedProtectionCheck;
+    QCheckBox *breakpointCheck;
     QComboBox *leakDetailCombo;
     QSpinBox *leakSizeSpin;
     QComboBox *leakRecordingCombo;
