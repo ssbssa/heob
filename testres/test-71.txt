@@ -1,0 +1,10 @@
+allocer: main()
+
+allocation failed of 0 bytes
+  called on: (#4)
+    [realloc]
+
+no leaks found
+exit code: 34 (0xPTR)
+m0: 0xPTR
+r0: 0xPTR

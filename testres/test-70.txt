@@ -1,0 +1,8 @@
+allocer: main()
+
+allocation failed of NUM bytes
+  called on: (#3)
+    [realloc]
+
+no leaks found
+exit code: 33 (0xPTR)

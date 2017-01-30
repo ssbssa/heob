@@ -179,11 +179,7 @@ void choose( int arg )
     case 5:
       // failed allocation
       {
-#ifndef _WIN64
-#define BIGNUM 2000000000
-#else
-#define BIGNUM 0x1000000000000000
-#endif
+#define BIGNUM ((size_t)1 << (sizeof(void*)*8-1))
         char *big = (char*)malloc( BIGNUM );
         mem[1] = big[0];
       }
@@ -564,6 +560,30 @@ void choose( int arg )
           }
           FreeLibrary( msvcr100 );
         }
+      }
+      break;
+
+    case 33:
+      // failed re-allocation
+      {
+        char *small = (char*)malloc( 16 );
+        mem[1] = small[0];
+        char *big = (char*)realloc( small,BIGNUM );
+        if( big ) small = big;
+        mem[2] = small[0];
+      }
+      break;
+
+    case 34:
+      // 0-sized allocation
+      {
+        char *m0 = (char*)malloc( 0 );
+        printf( "m0: 0x%p\n",m0 );
+        free( m0 );
+        char *m16 = (char*)malloc( 16 );
+        char *r0 = (char*)realloc( m16,0 );
+        printf( "r0: 0x%p\n",r0 );
+        free( r0 );
       }
       break;
   }
