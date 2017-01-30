@@ -423,6 +423,8 @@ static NOINLINE void trackAllocs(
     int splitIdx = (((uintptr_t)free_ptr)>>rd->ptrShift)&SPLIT_MASK;
     splitAllocation *sa = rd->splits + splitIdx;
 
+    int failed_realloc = !alloc_ptr && alloc_size && alloc_size!=(size_t)-1;
+
     EnterCriticalSection( &sa->cs );
 
     int i;
@@ -431,12 +433,16 @@ static NOINLINE void trackAllocs(
     {
       freed f;
       RtlMoveMemory( &f.a,&sa->alloc_a[i],sizeof(allocation) );
-      sa->alloc_q--;
-      if( i<sa->alloc_q ) sa->alloc_a[i] = sa->alloc_a[sa->alloc_q];
+
+      if( !failed_realloc )
+      {
+        sa->alloc_q--;
+        if( i<sa->alloc_q ) sa->alloc_a[i] = sa->alloc_a[sa->alloc_q];
+      }
 
       LeaveCriticalSection( &sa->cs );
 
-      if( rd->opt.protectFree )
+      if( rd->opt.protectFree && !failed_realloc )
       {
         f.a.ftFreed = ft;
 #ifndef NO_THREADNAMES
@@ -931,7 +937,7 @@ static NOINLINE void trackAllocs(
     if( raiseException )
       DebugBreak();
   }
-  else if( UNLIKELY(alloc_size!=(size_t)-1) )
+  else if( UNLIKELY(alloc_size && alloc_size!=(size_t)-1) )
   {
     allocation a;
     a.ptr = NULL;

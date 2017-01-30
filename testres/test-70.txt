@@ -4,5 +4,6 @@ allocation failed of NUM bytes
   called on: (#3)
     [realloc]
 
-no leaks found
+leaks:
+  sum: 16 B / 1
 exit code: 33 (0xPTR)
