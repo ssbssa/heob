@@ -477,6 +477,8 @@ QString HeobDialog::getArguments()
 {
     QString args;
 
+    args += QLatin1String(" -A");
+
     QString xml = xmlEdit->text();
     if (!xml.isEmpty()) args += QLatin1String(" -x") +
             xml.replace(QLatin1Char(' '), QLatin1Char('_'));

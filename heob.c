@@ -2407,6 +2407,7 @@ static void printAttachedProcessInfo(
     printf( "$Istdout: $N%s\n",api->stdoutName );
   if( api->stderrName[0] )
     printf( "$Istderr: $N%s\n",api->stderrName );
+  printf( "\n" );
 }
 
 // }}}
@@ -2463,6 +2464,7 @@ void mainCRTStartup( void )
   PROCESS_INFORMATION pi;
   RtlZeroMemory( &pi,sizeof(PROCESS_INFORMATION) );
   HANDLE attachEvent = NULL;
+  int fakeAttached = 0;
   while( args )
   {
     while( args[0]==' ' ) args++;
@@ -2631,6 +2633,12 @@ void mainCRTStartup( void )
 
       case 'A':
         {
+          if( args[2]==' ' )
+          {
+            fakeAttached = 1;
+            break;
+          }
+
           if( pi.hProcess ) break;
           char *start = args + 2;
           pi.dwProcessId = (DWORD)atop( start );
@@ -2975,6 +2983,8 @@ void mainCRTStartup( void )
       writeCloseErrorPipe( errorPipe,HEOB_CONSOLE,0 );
       ExitProcess( exitCode );
     }
+
+    opt.attached = fakeAttached;
   }
   else
     opt.newConsole = 0;
