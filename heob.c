@@ -353,19 +353,16 @@ static NOINLINE char *mstrstr( const char *s,const char *f )
 }
 #define strstr mstrstr
 
-static NOINLINE char *strreplacenum(
-    const char *str,const char *from,uintptr_t to,HANDLE heap )
+static NOINLINE char *strreplace(
+    const char *str,const char *from,const char *to,HANDLE heap )
 {
   const char *pos = strstr( str,from );
   if( !pos ) return( NULL );
 
-  char numStr[32];
-  char *numEnd = numStr + sizeof(numStr);
-  char *numStart = num2str( numEnd,to,0 );
   int strLen = lstrlen( str );
   int fromLen = lstrlen( from );
-  int numLen = (int)( numEnd - numStart );
-  char *replace = HeapAlloc( heap,0,strLen-fromLen+numLen+1 );
+  int toLen = lstrlen( to );
+  char *replace = HeapAlloc( heap,0,strLen-fromLen+toLen+1 );
   if( !replace ) return( NULL );
 
   int replacePos = 0;
@@ -374,8 +371,11 @@ static NOINLINE char *strreplacenum(
     RtlMoveMemory( replace,str,pos-str );
     replacePos += (int)( pos - str );
   }
-  RtlMoveMemory( replace+replacePos,numStart,numLen );
-  replacePos += numLen;
+  if( toLen )
+  {
+    RtlMoveMemory( replace+replacePos,to,toLen );
+    replacePos += toLen;
+  }
   if( str+strLen>pos+fromLen )
   {
     int endLen = (int)( (str+strLen) - (pos+fromLen) );
@@ -384,6 +384,17 @@ static NOINLINE char *strreplacenum(
   }
   replace[replacePos] = 0;
   return( replace );
+}
+
+static NOINLINE char *strreplacenum(
+    const char *str,const char *from,uintptr_t to,HANDLE heap )
+{
+  char numStr[32];
+  char *numEnd = numStr + sizeof(numStr);
+  (--numEnd)[0] = 0;
+  char *numStart = num2str( numEnd,to,0 );
+
+  return( strreplace(str,from,numStart,heap) );
 }
 
 // }}}
@@ -2995,6 +3006,47 @@ void mainCRTStartup( void )
   else
     opt.newConsole = 0;
 
+  char exePath[MAX_PATH];
+  // executable name {{{
+  exePath[0] = 0;
+  if( (outName && strstr(outName,"%n")) ||
+      (xmlName && strstr(xmlName,"%n")) )
+  {
+    HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
+    func_NtQueryInformationProcess *fNtQueryInformationProcess =
+      ntdll ? (func_NtQueryInformationProcess*)GetProcAddress(
+          ntdll,"NtQueryInformationProcess" ) : NULL;
+    if( fNtQueryInformationProcess )
+    {
+      OBJECT_NAME_INFORMATION *oni =
+        HeapAlloc( heap,0,sizeof(OBJECT_NAME_INFORMATION) );
+      if( oni )
+      {
+        ULONG len;
+        if( !fNtQueryInformationProcess(pi.hProcess,ProcessImageFileName,
+              oni,sizeof(OBJECT_NAME_INFORMATION),&len) )
+        {
+          oni->Name.Buffer[oni->Name.Length/2] = 0;
+          wchar_t *lastDelim = NULL;
+          wchar_t *pathPos;
+          for( pathPos=oni->Name.Buffer; *pathPos; pathPos++ )
+            if( *pathPos=='\\' ) lastDelim = pathPos;
+          if( lastDelim ) lastDelim++;
+          else lastDelim = oni->Name.Buffer;
+          int count = WideCharToMultiByte( CP_ACP,0,
+              lastDelim,-1,exePath,MAX_PATH,NULL,NULL );
+          if( count<0 || count>=MAX_PATH )
+            count = 0;
+          exePath[count] = 0;
+          char *lastPoint = strrchr( exePath,'.' );
+          if( lastPoint ) lastPoint[0] = 0;
+        }
+        HeapFree( heap,0,oni );
+      }
+    }
+  }
+  // }}}
+
   const char *subOutName = NULL;
   textColor *tcOutOrig = NULL;
   if( outName )
@@ -3018,11 +3070,16 @@ void mainCRTStartup( void )
         opt.children = 1;
       }
 
+      char *replaced = strreplace( usedName,"%n",exePath,heap );
+      if( replaced )
+        usedName = replaced;
+
       out = CreateFile( usedName,GENERIC_WRITE,FILE_SHARE_READ,
           NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
       if( out==INVALID_HANDLE_VALUE ) out = tc->out;
 
       if( fullName ) HeapFree( heap,0,fullName );
+      if( replaced ) HeapFree( heap,0,replaced );
     }
     if( out!=tc->out )
     {
@@ -3067,7 +3124,6 @@ void mainCRTStartup( void )
   HANDLE controlPipe = NULL;
   HANDLE err = GetStdHandle( STD_ERROR_HANDLE );
   attachedProcessInfo *api = NULL;
-  char exePath[MAX_PATH];
   unsigned heobExit = HEOB_OK;
   unsigned heobExitData = 0;
   if( isWrongArch(pi.hProcess) )
@@ -3127,6 +3183,18 @@ void mainCRTStartup( void )
       {
         fullName = xmlName;
         xmlName = NULL;
+      }
+
+      if( delim ) delim++;
+      else delim = exePath;
+      char *lastPoint = strrchr( delim,'.' );
+      if( lastPoint ) lastPoint[0] = 0;
+      char *replaced = strreplace( fullName,"%n",delim,heap );
+      if( lastPoint ) lastPoint[0] = '.';
+      if( replaced )
+      {
+        HeapFree( heap,0,fullName );
+        fullName = replaced;
       }
 
       HANDLE xml = CreateFile( fullName,GENERIC_WRITE,FILE_SHARE_READ,

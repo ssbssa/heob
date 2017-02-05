@@ -362,13 +362,19 @@ threadNameInfo;
 #endif
 
 // }}}
-// HANDLE type/path detection declarations {{{
+// ntdll.dll function definitions {{{
 
 typedef enum
 {
   ObjectNameInformation=1,
 }
 OBJECT_INFORMATION_CLASS;
+
+typedef enum
+{
+  ProcessImageFileName=27,
+}
+PROCESSINFOCLASS;
 
 typedef struct
 {
@@ -387,6 +393,8 @@ OBJECT_NAME_INFORMATION;
 
 typedef LONG NTAPI func_NtQueryObject(
     HANDLE,OBJECT_INFORMATION_CLASS,PVOID,ULONG,PULONG );
+typedef LONG NTAPI func_NtQueryInformationProcess(
+    HANDLE,PROCESSINFOCLASS,PVOID,ULONG,PULONG );
 
 // }}}
 // common functions {{{
