@@ -2869,6 +2869,9 @@ static HMODULE replaceFuncs( HMODULE app,
 
       if( findCRT )
       {
+        if( rd->fGetProcAddress(curModule,"cygwin_stackdump")!=NULL )
+          break;
+
         ucrtbase = GetModuleHandle( "ucrtbase.dll" );
         if( ucrtbase )
         {
