@@ -843,6 +843,12 @@ static CODE_SEG(".text$2") HANDLE inject(
     RtlMoveMemory( exePath,data->exePathA,MAX_PATH );
   HeapFree( heap,0,fullData );
 
+  if( data->noCRT==2 )
+  {
+    opt->handleException = 2;
+    printf( "\n$Ino CRT found\n" );
+  }
+
   if( data->api )
   {
     *api = HeapAlloc( heap,0,sizeof(attachedProcessInfo) );

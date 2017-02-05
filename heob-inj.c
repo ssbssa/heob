@@ -147,6 +147,7 @@ typedef struct localData
   int processors;
   exceptionInfo *ei;
   int maxStackFrames;
+  int noCRT;
 
 #ifndef NO_THREADNAMES
   DWORD threadNameTls;
@@ -3003,11 +3004,12 @@ static void replaceModFuncs( void )
 
   HMODULE msvcrt = rd->msvcrt;
   HMODULE ucrtbase = rd->ucrtbase;
+  int noCRT = rd->noCRT;
   for( ; rd->mod_d<rd->mod_q; rd->mod_d++ )
   {
     HMODULE mod = rd->mod_a[rd->mod_d];
 
-    HMODULE dll_msvcrt = rd->opt.handleException>=2 ? NULL :
+    HMODULE dll_msvcrt = noCRT ? NULL :
       replaceFuncs( mod,rep,repcount,msvcrt,!rd->mod_d,ucrtbase );
     if( !rd->mod_d && rd->opt.handleException<2 )
     {
@@ -3024,6 +3026,8 @@ static void replaceModFuncs( void )
           msvcrt = dll_msvcrt;
         addModule( dll_msvcrt );
       }
+      else
+        rd->noCRT = noCRT = 2;
 
       if( dll_msvcrt && rd->opt.protect )
       {
@@ -3599,6 +3603,7 @@ DWORD WINAPI heob( LPVOID arg )
   ld->kernel32 = rd->kernel32;
   ld->recording = rd->recording;
   HANDLE controlPipe = rd->controlPipe;
+  ld->noCRT = ld->opt.handleException>=2;
 
   ld->heap = heap;
 
@@ -3739,6 +3744,7 @@ DWORD WINAPI heob( LPVOID arg )
 
   GetModuleFileName( NULL,rd->exePathA,MAX_PATH );
   rd->master = ld->master;
+  rd->noCRT = ld->noCRT;
 
   if( ld->master && rd->opt.attached )
   {

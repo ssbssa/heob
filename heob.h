@@ -295,6 +295,8 @@ typedef struct remoteData
   char subXmlName[MAX_PATH];
   char subCurDir[MAX_PATH];
 
+  int noCRT;
+
   int raise_alloc_q;
   int raise_alloc_a[1];
 }
