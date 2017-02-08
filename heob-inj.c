@@ -65,16 +65,6 @@ typedef struct
 }
 modMemType;
 
-typedef enum _THREADINFOCLASS
-{
-  ThreadBasicInformation,
-} THREADINFOCLASS;
-
-#define NTSTATUS LONG
-
-typedef LONG WINAPI func_NtQueryInformationThread(
-    HANDLE,THREADINFOCLASS,PVOID,ULONG,PULONG );
-
 typedef struct localData
 {
   func_LoadLibraryA *fLoadLibraryA;
@@ -366,21 +356,6 @@ static void writeMods( allocation *alloc_a,int alloc_q )
 
 // }}}
 // memory allocation tracking {{{
-
-typedef struct _TEB
-{
-  PVOID ExceptionList;
-  PVOID StackBase;
-  PVOID StackLimit;
-  BYTE Reserved1[1952];
-  PVOID Reserved2[409];
-  PVOID TlsSlots[64];
-  BYTE Reserved3[8];
-  PVOID Reserved4[26];
-  PVOID ReservedForOle;
-  PVOID Reserved5[4];
-  PVOID *TlsExpansionSlots;
-} TEB, *PTEB;
 
 static NOINLINE size_t heap_block_size( HANDLE heap,void *ptr )
 {
@@ -1803,24 +1778,6 @@ typedef struct tagTHREADNAME_INFO
 } THREADNAME_INFO;
 #pragma pack(pop)
 
-typedef struct _CLIENT_ID
-{
-  PVOID UniqueProcess;
-  PVOID UniqueThread;
-} CLIENT_ID, *PCLIENT_ID;
-
-typedef DWORD KPRIORITY;
-
-typedef struct _THREAD_BASIC_INFORMATION
-{
-  NTSTATUS ExitStatus;
-  PTEB TebBaseAddress;
-  CLIENT_ID ClientId;
-  KAFFINITY AffinityMask;
-  KPRIORITY Priority;
-  KPRIORITY BasePriority;
-} THREAD_BASIC_INFORMATION, *PTHREAD_BASIC_INFORMATION;
-
 static VOID WINAPI new_RaiseException(
     DWORD dwExceptionCode,DWORD dwExceptionFlags,
     DWORD nNumberOfArguments,const ULONG_PTR *lpArguments )
@@ -1968,8 +1925,7 @@ int heobSubProcess(
       lstrcpy( heobCmd,heobEnd );
 #define ADD_OPTION( option,val,defVal ) \
       addOption( heobCmd,option,opt->val,defVal,numEnd )
-      addOption( heobCmd," -A",processInformation->dwProcessId,0,numEnd );
-      addOption( heobCmd,",",processInformation->dwThreadId,0,numEnd );
+      addOption( heobCmd," -A",processInformation->dwThreadId,0,numEnd );
       if( subOutName && subOutName[0] )
       {
         lstrcat( heobCmd," -o" );

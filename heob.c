@@ -2465,7 +2465,7 @@ void mainCRTStartup( void )
     1,                              // group identical leaks
     0,                              // minimum leak size
     0,                              // control leak recording
-    0,                              // attach to process & thread
+    0,                              // attach to thread
     0,                              // hook children
   };
   options opt = defopt;
@@ -2656,24 +2656,41 @@ void mainCRTStartup( void )
             break;
           }
 
+          HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
+          if( !ntdll ) break;
+
+          func_NtQueryInformationThread *fNtQueryInformationThread =
+            (func_NtQueryInformationThread*)GetProcAddress(
+                ntdll,"NtQueryInformationThread" );
+          if( !fNtQueryInformationThread ) break;
+
           if( pi.hProcess ) break;
           char *start = args + 2;
-          pi.dwProcessId = (DWORD)atop( start );
-          while( *start && *start!=' ' && *start!=',' ) start++;
-          if( *start!=',' ) break;
-          pi.dwThreadId = (DWORD)atop( start+1 );
+          pi.dwThreadId = (DWORD)atop( start );
+
+          pi.hThread = OpenThread(
+              STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0x3ff,
+              FALSE,pi.dwThreadId );
+          if( !pi.hThread ) break;
+
+          THREAD_BASIC_INFORMATION tbi;
+          RtlZeroMemory( &tbi,sizeof(THREAD_BASIC_INFORMATION) );
+          if( fNtQueryInformationThread(pi.hThread,ThreadBasicInformation,
+                &tbi,sizeof(THREAD_BASIC_INFORMATION),NULL)!=0 )
+          {
+            CloseHandle( pi.hThread );
+            pi.hThread = NULL;
+            break;
+          }
+          pi.dwProcessId = (DWORD)(LONG_PTR)tbi.ClientId.UniqueProcess;
 
           pi.hProcess = OpenProcess(
               STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0xfff,
               FALSE,pi.dwProcessId );
-          if( !pi.hProcess ) break;
-          pi.hThread = OpenThread(
-              STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0x3ff,
-              FALSE,pi.dwThreadId );
-          if( !pi.hThread )
+          if( !pi.hProcess )
           {
-            CloseHandle( pi.hProcess );
-            pi.hProcess = NULL;
+            CloseHandle( pi.hThread );
+            pi.hThread = NULL;
             break;
           }
 
@@ -2870,7 +2887,7 @@ void mainCRTStartup( void )
     printf( "Usage: $O%s $I[OPTION]... $SAPP [APP-OPTION]...\n",
         delim );
     if( fullhelp )
-      printf( "    $I-A$BP$I,$BT$N  attach to $Ip$Nrocess & $It$Nhread\n" );
+      printf( "    $I-A$BX$N    attach to thread\n" );
     printf( "    $I-o$BX$N    heob output"
         " ($I0$N = none, $I1$N = stdout, $I2$N = stderr, $I...$N = file)"
         " [$I%d$N]\n",

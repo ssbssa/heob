@@ -376,6 +376,12 @@ typedef enum
 }
 PROCESSINFOCLASS;
 
+typedef enum
+{
+  ThreadBasicInformation,
+}
+THREADINFOCLASS;
+
 typedef struct
 {
   USHORT Length;
@@ -391,10 +397,48 @@ typedef struct
 }
 OBJECT_NAME_INFORMATION;
 
+typedef struct _TEB
+{
+  PVOID ExceptionList;
+  PVOID StackBase;
+  PVOID StackLimit;
+  BYTE Reserved1[1952];
+  PVOID Reserved2[409];
+  PVOID TlsSlots[64];
+  BYTE Reserved3[8];
+  PVOID Reserved4[26];
+  PVOID ReservedForOle;
+  PVOID Reserved5[4];
+  PVOID *TlsExpansionSlots;
+}
+TEB, *PTEB;
+
+typedef struct _CLIENT_ID
+{
+  PVOID UniqueProcess;
+  PVOID UniqueThread;
+}
+CLIENT_ID, *PCLIENT_ID;
+
+typedef DWORD KPRIORITY;
+
+typedef struct _THREAD_BASIC_INFORMATION
+{
+  LONG ExitStatus;
+  PTEB TebBaseAddress;
+  CLIENT_ID ClientId;
+  KAFFINITY AffinityMask;
+  KPRIORITY Priority;
+  KPRIORITY BasePriority;
+}
+THREAD_BASIC_INFORMATION, *PTHREAD_BASIC_INFORMATION;
+
 typedef LONG NTAPI func_NtQueryObject(
     HANDLE,OBJECT_INFORMATION_CLASS,PVOID,ULONG,PULONG );
 typedef LONG NTAPI func_NtQueryInformationProcess(
     HANDLE,PROCESSINFOCLASS,PVOID,ULONG,PULONG );
+typedef LONG NTAPI func_NtQueryInformationThread(
+    HANDLE,THREADINFOCLASS,PVOID,ULONG,PULONG );
 
 // }}}
 // common functions {{{
