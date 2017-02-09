@@ -2966,7 +2966,8 @@ void mainCRTStartup( void )
 
   HANDLE in = GetStdHandle( STD_INPUT_HANDLE );
   if( !FlushConsoleInputBuffer(in) ) in = NULL;
-  if( !in ) opt.pid = opt.leakRecording = 0;
+  if( !in && (opt.attached || opt.newConsole<=1) )
+    opt.pid = opt.leakRecording = 0;
 
   if( opt.leakRecording && !opt.newConsole )
     opt.newConsole = 1;
