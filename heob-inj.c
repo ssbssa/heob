@@ -1893,7 +1893,8 @@ int heobSubProcess(
     DWORD creationFlags,LPPROCESS_INFORMATION processInformation,
     HMODULE heobMod,HANDLE heap,options *opt,
     func_CreateProcessA *fCreateProcessA,
-    const char *subOutName,const char *subXmlName,const char *subCurDir )
+    const char *subOutName,const char *subXmlName,const char *subCurDir,
+    int raise_alloc_q,size_t *raise_alloc_a )
 {
   if( creationFlags&CREATE_SUSPENDED )
     SuspendThread( processInformation->hProcess );
@@ -1958,6 +1959,9 @@ int heobSubProcess(
       ADD_OPTION( " -z",minLeakSize,0 );
       ADD_OPTION( " -k",leakRecording,0 );
 #undef ADD_OPTION
+      int i;
+      for( i=0; i<raise_alloc_q; i++ )
+        addOption( heobCmd," -R",raise_alloc_a[i],0,numEnd );
 
       if( subCurDir && !subCurDir[0] ) subCurDir = NULL;
 
@@ -2011,7 +2015,7 @@ BOOL WINAPI new_CreateProcessA(
 
   heobSubProcess( creationFlags,processInformation,
       rd->heobMod,rd->heap,&rd->opt,rd->fCreateProcessA,
-      rd->subOutName,rd->subXmlName,rd->subCurDir );
+      rd->subOutName,rd->subXmlName,rd->subCurDir,0,NULL );
 
   return( 1 );
 }
@@ -2033,7 +2037,7 @@ BOOL WINAPI new_CreateProcessW(
 
   heobSubProcess( creationFlags,processInformation,
       rd->heobMod,rd->heap,&rd->opt,rd->fCreateProcessA,
-      rd->subOutName,rd->subXmlName,rd->subCurDir );
+      rd->subOutName,rd->subXmlName,rd->subCurDir,0,NULL );
 
   return( 1 );
 }

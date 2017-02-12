@@ -2998,7 +2998,7 @@ void mainCRTStartup( void )
         (func_CreateProcessA*)GetProcAddress( kernel32,"CreateProcessA" );
       DWORD exitCode = 0;
       if( !heobSubProcess(0,&pi,NULL,heap,&opt,fCreateProcessA,
-            outName,xmlName,NULL) )
+            outName,xmlName,NULL,raise_alloc_q,raise_alloc_a) )
       {
         printf( "$Wcan't create process for 'heob'\n" );
         TerminateProcess( pi.hProcess,1 );

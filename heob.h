@@ -451,7 +451,8 @@ int heobSubProcess(
     DWORD creationFlags,LPPROCESS_INFORMATION processInformation,
     HMODULE heobMod,HANDLE heap,options *opt,
     func_CreateProcessA *fCreateProcessA,
-    const char *subOutName,const char *subXmlName,const char *subCurDir );
+    const char *subOutName,const char *subXmlName,const char *subCurDir,
+    int raise_alloc_q,size_t *raise_alloc_a );
 
 // }}}
 
