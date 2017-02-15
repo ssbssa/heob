@@ -11,7 +11,12 @@
 #include <projectexplorer/session.h>
 #include <projectexplorer/target.h>
 #include <projectexplorer/environmentaspect.h>
+#ifndef QTCREATOR4
 #include <projectexplorer/localapplicationrunconfiguration.h>
+#else
+#include <projectexplorer/runconfiguration.h>
+#include <projectexplorer/runnables.h>
+#endif
 #include <projectexplorer/kitinformation.h>
 #include <projectexplorer/toolchain.h>
 #include <projectexplorer/abi.h>
@@ -95,19 +100,48 @@ ExtensionSystem::IPlugin::ShutdownFlag heobPlugin::aboutToShutdown()
 
 void heobPlugin::triggerAction()
 {
+    RunConfiguration *rc = 0;
+#ifndef QTCREATOR4
     LocalApplicationRunConfiguration *localRc = 0;
+#else
+    StandardRunnable sr;
+#endif
     const ToolChain *tc = 0;
+    bool hasLocalRc = false;
     if (Project *project = SessionManager::startupProject())
     {
         if (Target *target = project->activeTarget())
         {
-            if (RunConfiguration *rc = target->activeRunConfiguration())
+            rc = target->activeRunConfiguration();
+#ifndef QTCREATOR4
+            if (rc)
+            {
                 localRc = qobject_cast<LocalApplicationRunConfiguration *>(rc);
+                hasLocalRc = localRc != 0;
+            }
+#endif
             if (Kit *kit = target->kit())
+            {
                 tc = ToolChainKitInformation::toolChain(kit);
+
+#ifdef QTCREATOR4
+                if (rc)
+                {
+                    const Runnable runnable = rc->runnable();
+                    if (runnable.is<StandardRunnable>())
+                    {
+                        sr = runnable.as<StandardRunnable>();
+                        const IDevice::ConstPtr device = sr.device;
+                        hasLocalRc = device && device->type() == ProjectExplorer::Constants::DESKTOP_DEVICE_TYPE;
+                        if (!hasLocalRc)
+                            hasLocalRc = DeviceTypeKitInformation::deviceTypeId(kit) == ProjectExplorer::Constants::DESKTOP_DEVICE_TYPE;
+                    }
+                }
+#endif
+            }
         }
     }
-    if (!localRc)
+    if (!hasLocalRc)
     {
         QMessageBox::warning(Core::ICore::mainWindow(),
                              tr("heob"),
@@ -122,8 +156,24 @@ void heobPlugin::triggerAction()
         return;
     }
 
+    QString executable;
+    QString workingDirectory;
+    QString commandLineArguments;
+    QStringList envStrings;
+#ifndef QTCREATOR4
+    executable = localRc->executable();
+    workingDirectory = localRc->workingDirectory();
+    commandLineArguments = localRc->commandLineArguments();
+    if (EnvironmentAspect *environment = localRc->extraAspect<EnvironmentAspect>())
+        envStrings = environment->environment().toStringList();
+#else
+    executable = sr.executable;
+    workingDirectory = sr.workingDirectory;
+    commandLineArguments = sr.commandLineArguments;
+    envStrings = sr.environment.toStringList();
+#endif
+
     // target executable
-    QString executable = localRc->executable();
     if (executable.isEmpty())
     {
         QMessageBox::warning(Core::ICore::mainWindow(),
@@ -144,7 +194,7 @@ void heobPlugin::triggerAction()
     }
 
     // working directory
-    QString workingDirectory = Utils::FileUtils::normalizePathName(localRc->workingDirectory());
+    workingDirectory = Utils::FileUtils::normalizePathName(workingDirectory);
 
     // make executable a relative path if possible
     QString wdSlashed = workingDirectory + QLatin1Char('/');
@@ -163,31 +213,27 @@ void heobPlugin::triggerAction()
 
     // full command line
     QString arguments = heob + heobArguments + QLatin1Char(' ') +
-            exeQuote + executable + exeQuote + QLatin1Char(' ') + localRc->commandLineArguments();
+            exeQuote + executable + exeQuote + QLatin1Char(' ') + commandLineArguments;
     QByteArray argumentsCopy((const char *)arguments.utf16(), arguments.size()*2+2);
 
     // process environment
     QByteArray env;
     void *envPtr = 0;
-    if (EnvironmentAspect *environment = localRc->extraAspect<EnvironmentAspect>())
+    if (!envStrings.isEmpty())
     {
-        QStringList envStrings = environment->environment().toStringList();
-        if (!envStrings.isEmpty())
+        uint pos = 0;
+        foreach (QString par, envStrings)
         {
-            uint pos = 0;
-            foreach (QString par, envStrings)
-            {
-                uint parsize = par.size()*2 + 2;
-                env.resize(env.size()+parsize);
-                memcpy(env.data()+pos, par.utf16(), parsize);
-                pos += parsize;
-            }
-            env.resize(env.size()+2);
-            env[pos++] = 0;
-            env[pos++] = 0;
-
-            envPtr = env.data();
+            uint parsize = par.size()*2 + 2;
+            env.resize(env.size()+parsize);
+            memcpy(env.data()+pos, par.utf16(), parsize);
+            pos += parsize;
         }
+        env.resize(env.size()+2);
+        env[pos++] = 0;
+        env[pos++] = 0;
+
+        envPtr = env.data();
     }
 
     // heob process

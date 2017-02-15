@@ -44,4 +44,8 @@ QTC_PLUGIN_RECOMMENDS += \
 
 include($$QTCREATOR_SOURCES/src/qtcreatorplugin.pri)
 
+!lessThan(QTCREATOR_VERSION, 4) {
+    DEFINES += QTCREATOR4
+}
+
 DESTDIR = .
