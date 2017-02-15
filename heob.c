@@ -58,12 +58,24 @@ static inline char num2hex( unsigned int bits )
   return( bits>=10 ? bits - 10 + 'A' : bits + '0' );
 }
 
-char *num2hexstr( char *str,uintptr_t arg,int count )
+char *num2hexstr( char *str,UINT64 arg,int count )
 {
+#ifndef _WIN64
+  uint32_t a32[2];
+  RtlMoveMemory( a32,&arg,sizeof(arg) );
+  int b;
+  for( b=count-1; b>=0; b-- )
+  {
+    uint32_t v = a32[b>=8];
+    str++[0] = num2hex( v>>((b%8)*4) );
+  }
+  return( str );
+#else
   int b;
   for( b=count-1; b>=0; b-- )
     str++[0] = num2hex( (unsigned)(arg>>(b*4)) );
   return( str );
+#endif
 }
 
 NOINLINE char *num2str( char *start,uintptr_t arg,int minus )

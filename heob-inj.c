@@ -1939,7 +1939,13 @@ int heobSubProcess(
       }
       ADD_OPTION( " -p",protect,1 );
       ADD_OPTION( " -a",align,MEMORY_ALLOCATION_ALIGNMENT );
-      ADD_OPTION( " -i",init&0xff,0xff );
+      if( opt->init!=0xffffffffffffffffULL )
+      {
+        lstrcat( heobCmd," -i0x" );
+        *num2hexstr( num,opt->init,16 ) = 0;
+        lstrcat( heobCmd,num );
+        lstrcat( heobCmd,":8" );
+      }
       ADD_OPTION( " -s",slackInit&0xff,0xcc );
       ADD_OPTION( " -f",protectFree,0 );
       ADD_OPTION( " -h",handleException,1 );
