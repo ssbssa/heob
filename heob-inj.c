@@ -145,6 +145,8 @@ typedef struct localData
 #endif
 
   options opt;
+  options globalopt;
+  char *specificOptions;
 
   int recording;
 
@@ -1894,7 +1896,7 @@ int heobSubProcess(
     HMODULE heobMod,HANDLE heap,options *opt,
     func_CreateProcessA *fCreateProcessA,
     const char *subOutName,const char *subXmlName,const char *subCurDir,
-    int raise_alloc_q,size_t *raise_alloc_a )
+    int raise_alloc_q,size_t *raise_alloc_a,const char *specificOptions )
 {
   if( creationFlags&CREATE_SUSPENDED )
     SuspendThread( processInformation->hProcess );
@@ -1968,6 +1970,11 @@ int heobSubProcess(
       int i;
       for( i=0; i<raise_alloc_q; i++ )
         addOption( heobCmd," -R",raise_alloc_a[i],0,numEnd );
+      if( specificOptions )
+      {
+        lstrcat( heobCmd," -O" );
+        lstrcat( heobCmd,specificOptions );
+      }
 
       if( subCurDir && !subCurDir[0] ) subCurDir = NULL;
 
@@ -2020,8 +2027,8 @@ BOOL WINAPI new_CreateProcessA(
   if( !ret ) return( 0 );
 
   heobSubProcess( creationFlags,processInformation,
-      rd->heobMod,rd->heap,&rd->opt,rd->fCreateProcessA,
-      rd->subOutName,rd->subXmlName,rd->subCurDir,0,NULL );
+      rd->heobMod,rd->heap,&rd->globalopt,rd->fCreateProcessA,
+      rd->subOutName,rd->subXmlName,rd->subCurDir,0,NULL,rd->specificOptions );
 
   return( 1 );
 }
@@ -2042,8 +2049,8 @@ BOOL WINAPI new_CreateProcessW(
   if( !ret ) return( 0 );
 
   heobSubProcess( creationFlags,processInformation,
-      rd->heobMod,rd->heap,&rd->opt,rd->fCreateProcessA,
-      rd->subOutName,rd->subXmlName,rd->subCurDir,0,NULL );
+      rd->heobMod,rd->heap,&rd->globalopt,rd->fCreateProcessA,
+      rd->subOutName,rd->subXmlName,rd->subCurDir,0,NULL,rd->specificOptions );
 
   return( 1 );
 }
@@ -3560,6 +3567,12 @@ DWORD WINAPI heob( LPVOID arg )
   localData *ld = &g_ld;
 
   RtlMoveMemory( &ld->opt,&rd->opt,sizeof(options) );
+  RtlMoveMemory( &ld->globalopt,&rd->globalopt,sizeof(options) );
+  if( rd->specificOptions )
+  {
+    ld->specificOptions = HeapAlloc( heap,0,lstrlen(rd->specificOptions)+1 );
+    lstrcpy( ld->specificOptions,rd->specificOptions );
+  }
   ld->fLoadLibraryA = rd->fLoadLibraryA;
   ld->fLoadLibraryW = rd->fLoadLibraryW;
   ld->fFreeLibrary = rd->fFreeLibrary;

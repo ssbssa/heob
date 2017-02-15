@@ -409,6 +409,15 @@ static NOINLINE char *strreplacenum(
   return( strreplace(str,from,numStart,heap) );
 }
 
+static int strstart( const char *str,const char *start )
+{
+  int l1 = lstrlen( str );
+  int l2 = lstrlen( start );
+  if( l1<l2 ) return( 0 );
+  return( CompareString(LOCALE_SYSTEM_DEFAULT,NORM_IGNORECASE,
+        str,l2,start,l2)==2 );
+}
+
 // }}}
 // output variants {{{
 
@@ -677,7 +686,8 @@ static CODE_SEG(".text$1") VOID CALLBACK remoteCall( remoteData *rd )
 }
 
 static CODE_SEG(".text$2") HANDLE inject(
-    HANDLE process,HANDLE thread,options *opt,char *exePath,textColor *tc,
+    HANDLE process,HANDLE thread,options *opt,options *globalopt,
+    const char *specificOptions,char *exePath,textColor *tc,
     int raise_alloc_q,size_t *raise_alloc_a,HANDLE *controlPipe,
     HANDLE in,HANDLE err,attachedProcessInfo **api,
     const char *subOutName,const char *subXmlName,const char *subCurDir,
@@ -685,8 +695,10 @@ static CODE_SEG(".text$2") HANDLE inject(
 {
   func_inj *finj = &remoteCall;
   size_t funcSize = (size_t)&inject - (size_t)finj;
-  size_t fullSize = funcSize + sizeof(remoteData) +
+  size_t soOffset = funcSize + sizeof(remoteData) +
     raise_alloc_q*sizeof(size_t);
+  size_t soSize = ( specificOptions ? lstrlen(specificOptions) + 1 : 0 );
+  size_t fullSize = soOffset + soSize;
 
   unsigned char *fullDataRemote =
     VirtualAllocEx( process,NULL,fullSize,MEM_COMMIT,PAGE_EXECUTE_READWRITE );
@@ -779,6 +791,7 @@ static CODE_SEG(".text$2") HANDLE inject(
       DUPLICATE_SAME_ACCESS );
 
   RtlMoveMemory( &data->opt,opt,sizeof(options) );
+  RtlMoveMemory( &data->globalopt,globalopt,sizeof(options) );
 
   if( subOutName ) lstrcpy( data->subOutName,subOutName );
   if( subXmlName ) lstrcpy( data->subXmlName,subXmlName );
@@ -788,6 +801,12 @@ static CODE_SEG(".text$2") HANDLE inject(
   if( raise_alloc_q )
     RtlMoveMemory( data->raise_alloc_a,
         raise_alloc_a,raise_alloc_q*sizeof(size_t) );
+
+  if( soSize )
+  {
+    data->specificOptions = (char*)fullDataRemote + soOffset;
+    RtlMoveMemory( fullData+soOffset,specificOptions,soSize );
+  }
 
   WriteProcessMemory( process,fullDataRemote,fullData,fullSize,NULL );
 
@@ -2440,6 +2459,153 @@ static void printAttachedProcessInfo(
 }
 
 // }}}
+// common options {{{
+
+char *readOption( char *args,options *opt,int *raq,size_t **raa,HANDLE heap )
+{
+  if( !args || args[0]!='-' ) return( NULL );
+
+  int raise_alloc_q = *raq;
+  size_t *raise_alloc_a = *raa;
+
+  switch( args[1] )
+  {
+    case 'p':
+      opt->protect = atoi( args+2 );
+      if( opt->protect<0 ) opt->protect = 0;
+      break;
+
+    case 'a':
+      {
+        int align = atoi( args+2 );
+        if( align>0 && !(align&(align-1)) )
+          opt->align = align;
+      }
+      break;
+
+    case 'i':
+      {
+        const char *pos = args + 2;
+        uint64_t init = atou64( pos );
+        int initSize = 1;
+        while( *pos && *pos!=' ' && *pos!=':' ) pos++;
+        if( *pos==':' )
+          initSize = atoi( pos+1 );
+        if( initSize<2 )
+          init = init | ( init<<8 );
+        if( initSize<4 )
+          init = init | ( init<<16 );
+        if( initSize<8 )
+          init = init | ( init<<32 );
+        opt->init = init;
+      }
+      break;
+
+    case 's':
+      opt->slackInit = atoi( args+2 );
+      break;
+
+    case 'f':
+      opt->protectFree = atoi( args+2 );
+      break;
+
+    case 'h':
+      opt->handleException = atoi( args+2 );
+      break;
+
+    case 'F':
+      opt->fullPath = atoi( args+2 );
+      break;
+
+    case 'm':
+      opt->allocMethod = atoi( args+2 );
+      break;
+
+    case 'l':
+      opt->leakDetails = atoi( args+2 );
+      break;
+
+    case 'S':
+      opt->useSp = atoi( args+2 );
+      break;
+
+    case 'd':
+      opt->dlls = atoi( args+2 );
+      break;
+
+    case 'P':
+      opt->pid = atoi( args+2 );
+      break;
+
+    case 'e':
+      opt->exitTrace = atoi( args+2 );
+      break;
+
+    case 'C':
+      opt->sourceCode = atoi( args+2 );
+      break;
+
+    case 'r':
+      opt->raiseException = atoi( args+2 );
+      break;
+
+    case 'M':
+      opt->minProtectSize = atoi( args+2 );
+      if( opt->minProtectSize<1 ) opt->minProtectSize = 1;
+      break;
+
+    case 'n':
+      opt->findNearest = atoi( args+2 );
+      break;
+
+    case 'L':
+      opt->leakContents = atoi( args+2 );
+      break;
+
+    case 'g':
+      opt->groupLeaks = atoi( args+2 );
+      break;
+
+    case 'z':
+      opt->minLeakSize = atop( args+2 );
+      break;
+
+    case 'k':
+      opt->leakRecording = atoi( args+2 );
+      break;
+
+    case 'R':
+      {
+        size_t id = atop( args+2 );
+        if( !id ) break;
+        int i;
+        for( i=0; i<raise_alloc_q && raise_alloc_a[i]<id; i++ );
+        if( i<raise_alloc_q && raise_alloc_a[i]==id ) break;
+        raise_alloc_q++;
+        if( !raise_alloc_a )
+          raise_alloc_a = HeapAlloc( heap,0,raise_alloc_q*sizeof(size_t) );
+        else
+          raise_alloc_a = HeapReAlloc(
+              heap,0,raise_alloc_a,raise_alloc_q*sizeof(size_t) );
+        if( i<raise_alloc_q-1 )
+          RtlMoveMemory( raise_alloc_a+i+1,raise_alloc_a+i,
+              (raise_alloc_q-1-i)*sizeof(size_t) );
+        raise_alloc_a[i] = id;
+      }
+      break;
+
+    default:
+      return( NULL );
+  }
+  while( args[0] && args[0]!=' ' ) args++;
+
+  *raq = raise_alloc_q;
+  *raa = raise_alloc_a;
+
+  return( args );
+}
+
+// }}}
 // main {{{
 
 void mainCRTStartup( void )
@@ -2494,130 +2660,21 @@ void mainCRTStartup( void )
   RtlZeroMemory( &pi,sizeof(PROCESS_INFORMATION) );
   HANDLE attachEvent = NULL;
   int fakeAttached = 0;
+  char *specificOptions = NULL;
   while( args )
   {
     while( args[0]==' ' ) args++;
     if( args[0]!='-' ) break;
+    char *ro = readOption( args,&opt,&raise_alloc_q,&raise_alloc_a,heap );
+    if( ro )
+    {
+      args = ro;
+      continue;
+    }
     switch( args[1] )
     {
-      case 'p':
-        opt.protect = atoi( args+2 );
-        if( opt.protect<0 ) opt.protect = 0;
-        break;
-
-      case 'a':
-        {
-          int align = atoi( args+2 );
-          if( align>0 && !(align&(align-1)) )
-            opt.align = align;
-        }
-        break;
-
-      case 'i':
-        {
-          const char *pos = args + 2;
-          uint64_t init = atou64( pos );
-          int initSize = 1;
-          while( *pos && *pos!=':' ) pos++;
-          if( *pos )
-            initSize = atoi( pos+1 );
-          if( initSize<2 )
-            init = init | ( init<<8 );
-          if( initSize<4 )
-            init = init | ( init<<16 );
-          if( initSize<8 )
-            init = init | ( init<<32 );
-          opt.init = init;
-        }
-        break;
-
-      case 's':
-        opt.slackInit = atoi( args+2 );
-        break;
-
-      case 'f':
-        opt.protectFree = atoi( args+2 );
-        break;
-
-      case 'h':
-        opt.handleException = atoi( args+2 );
-        break;
-
       case 'c':
         opt.newConsole = atoi( args+2 );
-        break;
-
-      case 'F':
-        opt.fullPath = atoi( args+2 );
-        break;
-
-      case 'm':
-        opt.allocMethod = atoi( args+2 );
-        break;
-
-      case 'l':
-        opt.leakDetails = atoi( args+2 );
-        break;
-
-      case 'S':
-        opt.useSp = atoi( args+2 );
-        break;
-
-      case 'd':
-        opt.dlls = atoi( args+2 );
-        break;
-
-      case 'P':
-        opt.pid = atoi( args+2 );
-        break;
-
-      case 'e':
-        opt.exitTrace = atoi( args+2 );
-        break;
-
-      case 'C':
-        opt.sourceCode = atoi( args+2 );
-        break;
-
-      case 'r':
-        opt.raiseException = atoi( args+2 );
-        break;
-
-      case 'M':
-        opt.minProtectSize = atoi( args+2 );
-        if( opt.minProtectSize<1 ) opt.minProtectSize = 1;
-        break;
-
-      case 'n':
-        opt.findNearest = atoi( args+2 );
-        break;
-
-      case 'L':
-        opt.leakContents = atoi( args+2 );
-        break;
-
-      case 'g':
-        opt.groupLeaks = atoi( args+2 );
-        break;
-
-      case 'R':
-        {
-          size_t id = atop( args+2 );
-          if( !id ) break;
-          int i;
-          for( i=0; i<raise_alloc_q && raise_alloc_a[i]<id; i++ );
-          if( i<raise_alloc_q && raise_alloc_a[i]==id ) break;
-          raise_alloc_q++;
-          if( !raise_alloc_a )
-            raise_alloc_a = HeapAlloc( heap,0,raise_alloc_q*sizeof(size_t) );
-          else
-            raise_alloc_a = HeapReAlloc(
-                heap,0,raise_alloc_a,raise_alloc_q*sizeof(size_t) );
-          if( i<raise_alloc_q-1 )
-            RtlMoveMemory( raise_alloc_a+i+1,raise_alloc_a+i,
-                (raise_alloc_q-1-i)*sizeof(size_t) );
-          raise_alloc_a[i] = id;
-        }
         break;
 
       case 'o':
@@ -2634,14 +2691,6 @@ void mainCRTStartup( void )
             outName[len] = 0;
           }
         }
-        break;
-
-      case 'z':
-        opt.minLeakSize = atop( args+2 );
-        break;
-
-      case 'k':
-        opt.leakRecording = atoi( args+2 );
         break;
 
       case 'x':
@@ -2716,6 +2765,34 @@ void mainCRTStartup( void )
         }
         break;
 
+      case 'O':
+        {
+          char *optionStart = args + 2;
+          char *optionEnd = optionStart;
+          while( *optionEnd && *optionEnd!=' ' )
+          {
+            optionEnd = strchr( optionEnd,':' );
+            if( !optionEnd ) break;
+            optionEnd = strchr( optionEnd+1,';' );
+            if( !optionEnd ) break;
+            optionEnd++;
+          }
+          if( optionEnd && optionEnd>optionStart )
+          {
+            size_t curLen = specificOptions ? lstrlen( specificOptions ) : 0;
+            size_t addLen = optionEnd - optionStart;
+            if( !specificOptions )
+              specificOptions = HeapAlloc( heap,0,curLen+addLen+1 );
+            else
+              specificOptions = HeapReAlloc(
+                  heap,0,specificOptions,curLen+addLen+1 );
+            RtlMoveMemory( specificOptions+curLen,optionStart,addLen );
+            specificOptions[curLen+addLen] = 0;
+          }
+          args = optionEnd;
+        }
+        break;
+
       case '"':
         {
           char *start = args + 2;
@@ -2783,6 +2860,7 @@ void mainCRTStartup( void )
       CloseHandle( pi.hThread );
       CloseHandle( pi.hProcess );
     }
+    if( specificOptions ) HeapFree( heap,0,specificOptions );
     writeCloseErrorPipe( errorPipe,HEOB_BAD_ARG,badArg );
     ExitProcess( -1 );
   }
@@ -2880,6 +2958,7 @@ void mainCRTStartup( void )
         CloseHandle( pi.hThread );
         CloseHandle( pi.hProcess );
       }
+      if( specificOptions ) HeapFree( heap,0,specificOptions );
       writeCloseErrorPipe( errorPipe,HEOB_TRACE,0 );
       ExitProcess( 0 );
     }
@@ -2962,6 +3041,7 @@ void mainCRTStartup( void )
           defopt.sourceCode );
       printf( "    $I-e$BX$N    show exit trace [$I%d$N]\n",
           defopt.exitTrace );
+      printf( "    $I-O$BA$I:$BO$I; a$Npplication specific $Io$Nptions\n" );
       printf( "    $I-\"$BM$I\"$BB$N  trace mode:"
           " load $Im$Nodule on $Ib$Nase address\n" );
     }
@@ -2971,6 +3051,7 @@ void mainCRTStartup( void )
     if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
     if( outName ) HeapFree( heap,0,outName );
     if( xmlName ) HeapFree( heap,0,xmlName );
+    if( specificOptions ) HeapFree( heap,0,specificOptions );
     writeCloseErrorPipe( errorPipe,HEOB_HELP,0 );
     ExitProcess( -1 );
   }
@@ -2999,6 +3080,7 @@ void mainCRTStartup( void )
       if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
       if( outName ) HeapFree( heap,0,outName );
       if( xmlName ) HeapFree( heap,0,xmlName );
+      if( specificOptions ) HeapFree( heap,0,specificOptions );
       writeCloseErrorPipe( errorPipe,HEOB_PROCESS_FAIL,0 );
       ExitProcess( -1 );
     }
@@ -3010,7 +3092,7 @@ void mainCRTStartup( void )
         (func_CreateProcessA*)GetProcAddress( kernel32,"CreateProcessA" );
       DWORD exitCode = 0;
       if( !heobSubProcess(0,&pi,NULL,heap,&opt,fCreateProcessA,
-            outName,xmlName,NULL,raise_alloc_q,raise_alloc_a) )
+            outName,xmlName,NULL,raise_alloc_q,raise_alloc_a,specificOptions) )
       {
         printf( "$Wcan't create process for 'heob'\n" );
         TerminateProcess( pi.hProcess,1 );
@@ -3027,6 +3109,7 @@ void mainCRTStartup( void )
       if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
       if( outName ) HeapFree( heap,0,outName );
       if( xmlName ) HeapFree( heap,0,xmlName );
+      if( specificOptions ) HeapFree( heap,0,specificOptions );
       writeCloseErrorPipe( errorPipe,HEOB_CONSOLE,0 );
       ExitProcess( exitCode );
     }
@@ -3039,7 +3122,8 @@ void mainCRTStartup( void )
   char exePath[MAX_PATH];
   // executable name {{{
   exePath[0] = 0;
-  if( (outName && strstr(outName,"%n")) ||
+  if( specificOptions ||
+      (outName && strstr(outName,"%n")) ||
       (xmlName && strstr(xmlName,"%n")) )
   {
     HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
@@ -3076,6 +3160,32 @@ void mainCRTStartup( void )
     }
   }
   // }}}
+
+  defopt = opt;
+  if( specificOptions )
+  {
+    int nameLen = lstrlen( exePath );
+    char *name = specificOptions;
+    char *so = NULL;
+    lstrcpy( exePath+nameLen,":" );
+    while( 1 )
+    {
+      char *nameEnd = strchr( name,':' );
+      if( !nameEnd ) break;
+      if( strstart(name,exePath) )
+        so = name + nameLen + 1;
+      name = strchr( nameEnd+1,';' );
+      if( !name ) break;
+      name++;
+    }
+    exePath[nameLen] = 0;
+    while( so )
+    {
+      while( so[0]==' ' ) so++;
+      if( so[0]!='-' ) break;
+      so = readOption( so,&opt,&raise_alloc_q,&raise_alloc_a,heap );
+    }
+  }
 
   const char *subOutName = NULL;
   textColor *tcOutOrig = NULL;
@@ -3162,8 +3272,8 @@ void mainCRTStartup( void )
     heobExit = HEOB_WRONG_BITNESS;
   }
   else
-    readPipe = inject( pi.hProcess,pi.hThread,&opt,exePath,tc,
-        raise_alloc_q,raise_alloc_a,&controlPipe,in,err,&api,
+    readPipe = inject( pi.hProcess,pi.hThread,&opt,&defopt,specificOptions,
+        exePath,tc,raise_alloc_q,raise_alloc_a,&controlPipe,in,err,&api,
         subOutName,subXmlName,subCurDir,&heobExit );
   if( !readPipe )
     TerminateProcess( pi.hProcess,1 );
@@ -4114,6 +4224,7 @@ void mainCRTStartup( void )
   if( xmlName ) HeapFree( heap,0,xmlName );
   if( subCurDir ) HeapFree( heap,0,subCurDir );
   if( api ) HeapFree( heap,0,api );
+  if( specificOptions ) HeapFree( heap,0,specificOptions );
 
   writeCloseErrorPipe( errorPipe,heobExit,heobExitData );
   ExitProcess( exitCode );

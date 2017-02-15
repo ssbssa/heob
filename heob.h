@@ -286,6 +286,8 @@ typedef struct remoteData
   size_t injOffset;
 
   options opt;
+  options globalopt;
+  char *specificOptions;
 
   int recording;
 
@@ -452,7 +454,7 @@ int heobSubProcess(
     HMODULE heobMod,HANDLE heap,options *opt,
     func_CreateProcessA *fCreateProcessA,
     const char *subOutName,const char *subXmlName,const char *subCurDir,
-    int raise_alloc_q,size_t *raise_alloc_a );
+    int raise_alloc_q,size_t *raise_alloc_a,const char *specificOptions );
 
 // }}}
 
