@@ -2764,6 +2764,55 @@ static void addModule( HMODULE mod )
 
     rd->crt_mod_a[rd->crt_mod_q++] = mod;
   }
+
+  // modules of forwarded functions {{{
+  if( rd->opt.dlls )
+  {
+    PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)mod;
+    PIMAGE_NT_HEADERS inh = (PIMAGE_NT_HEADERS)REL_PTR( idh,idh->e_lfanew );
+    if( IMAGE_NT_SIGNATURE==inh->Signature )
+    {
+      PIMAGE_DATA_DIRECTORY idd =
+        &inh->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+      if( idd->Size )
+      {
+        char forwardName[128];
+        forwardName[0] = 0;
+        int forwardLen = 0;
+        DWORD iedStart = idd->VirtualAddress;
+        DWORD iedEnd = iedStart + idd->Size;
+        PIMAGE_EXPORT_DIRECTORY ied =
+          (PIMAGE_EXPORT_DIRECTORY)REL_PTR( idh,iedStart );
+        DWORD number = ied->NumberOfFunctions;
+        DWORD *functions = (DWORD*)REL_PTR( idh,ied->AddressOfFunctions );
+        DWORD i;
+        for( i=0; i<number; i++ )
+        {
+          DWORD f = functions[i];
+          if( f<=iedStart || f>=iedEnd ) continue;
+
+          const char *funcName = (const char*)REL_PTR( idh,f );
+          const char *point;
+          for( point=funcName; *point && *point!='.'; point++ );
+          if( *point!='.' || point==funcName ) continue;
+
+          uintptr_t pointPos = point - funcName;
+          if( pointPos>=sizeof(forwardName) ) continue;
+          if( forwardLen==(int)pointPos && strstart(funcName,forwardName) )
+            continue;
+
+          forwardLen = (int)pointPos;
+          RtlMoveMemory( forwardName,funcName,forwardLen );
+          forwardName[forwardLen] = 0;
+
+          HMODULE forwardMod = GetModuleHandle( forwardName );
+          if( forwardMod )
+            addModule( forwardMod );
+        }
+      }
+    }
+  }
+  // }}}
 }
 
 static HMODULE replaceFuncs( HMODULE app,

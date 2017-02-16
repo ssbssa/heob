@@ -448,6 +448,7 @@ typedef LONG NTAPI func_NtQueryInformationThread(
 char *num2hexstr( char *str,UINT64 arg,int count );
 char *num2str( char *start,uintptr_t arg,int minus );
 char *mstrrchr( const char *s,char c );
+int strstart( const char *str,const char *start );
 int isWrongArch( HANDLE process );
 int heobSubProcess(
     DWORD creationFlags,LPPROCESS_INFORMATION processInformation,

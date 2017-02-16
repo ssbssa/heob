@@ -409,7 +409,7 @@ static NOINLINE char *strreplacenum(
   return( strreplace(str,from,numStart,heap) );
 }
 
-static int strstart( const char *str,const char *start )
+int strstart( const char *str,const char *start )
 {
   int l1 = lstrlen( str );
   int l2 = lstrlen( start );
