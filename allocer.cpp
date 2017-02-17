@@ -10,6 +10,7 @@
 #include <windows.h>
 #include <direct.h>
 #include <conio.h>
+#include <fcntl.h>
 
 
 #if !defined(_MSC_VER) || _MSC_VER<1900
@@ -605,6 +606,7 @@ int main( int argc,char **argv )
 #else
 extern "C" void mainCRTStartup( void )
 {
+  _setmode( stdout->_file,_O_BINARY );
   const char *cmdLine = GetCommandLineA();
   if( cmdLine[0]=='"' )
   {
