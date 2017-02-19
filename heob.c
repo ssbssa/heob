@@ -487,6 +487,20 @@ static void TextColorHtml( textColor *tc,textColorAtt color )
   }
 }
 
+static void setTextColorTerminal( textColor *tc )
+{
+  tc->fTextColor = &TextColorTerminal;
+
+  tc->colors[ATT_NORMAL]  =  4939;
+  tc->colors[ATT_OK]      =  4932;
+  tc->colors[ATT_SECTION] =  4936;
+  tc->colors[ATT_INFO]    =  4935;
+  tc->colors[ATT_WARN]    =  4931;
+  tc->colors[ATT_BASE]    = 10030;
+
+  TextColorTerminal( tc,ATT_NORMAL );
+}
+
 static void checkOutputVariant( textColor *tc,const char *cmdLine,HANDLE out )
 {
   // default
@@ -498,9 +512,19 @@ static void checkOutputVariant( textColor *tc,const char *cmdLine,HANDLE out )
 
   if( !out ) return;
 
+  HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
+  if( !ntdll ) return;
+
   DWORD flags;
   if( GetConsoleMode(tc->out,&flags) )
   {
+    if( GetProcAddress(ntdll,"wine_get_version") )
+    {
+      // wine terminal
+      setTextColorTerminal( tc );
+      return;
+    }
+
     // windows console
     CONSOLE_SCREEN_BUFFER_INFO csbi;
     GetConsoleScreenBufferInfo( tc->out,&csbi );
@@ -523,9 +547,6 @@ static void checkOutputVariant( textColor *tc,const char *cmdLine,HANDLE out )
       if( tc->colors[i]==bg ) tc->colors[i] ^=0x08;
     return;
   }
-
-  HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
-  if( !ntdll ) return;
 
   func_NtQueryObject *fNtQueryObject =
     (func_NtQueryObject*)GetProcAddress( ntdll,"NtQueryObject" );
@@ -551,16 +572,7 @@ static void checkOutputVariant( textColor *tc,const char *cmdLine,HANDLE out )
           !memcmp(oni->Name.Buffer+(oni->Name.Length/2-l2),toMaster,l2*2) )
       {
         // terminal emulator
-        tc->fTextColor = &TextColorTerminal;
-
-        tc->colors[ATT_NORMAL]  =  4939;
-        tc->colors[ATT_OK]      =  4932;
-        tc->colors[ATT_SECTION] =  4936;
-        tc->colors[ATT_INFO]    =  4935;
-        tc->colors[ATT_WARN]    =  4931;
-        tc->colors[ATT_BASE]    = 10030;
-
-        TextColorTerminal( tc,ATT_NORMAL );
+        setTextColorTerminal( tc );
       }
       else if( oni->Name.Length/2==dnl &&
           !memcmp(oni->Name.Buffer,deviceNull,dnl*2) )
@@ -3057,6 +3069,25 @@ void mainCRTStartup( void )
   }
   // }}}
 
+  HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
+  if( ntdll )
+  {
+    typedef const char *func_wine_get_version( void );
+    func_wine_get_version *fwine_get_version =
+      (func_wine_get_version*)GetProcAddress( ntdll,"wine_get_version" );
+    if( fwine_get_version )
+    {
+      printf( "$Wheob does not work with Wine\n" );
+      HeapFree( heap,0,tcOut );
+      if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
+      if( outName ) HeapFree( heap,0,outName );
+      if( xmlName ) HeapFree( heap,0,xmlName );
+      if( specificOptions ) HeapFree( heap,0,specificOptions );
+      writeCloseErrorPipe( errorPipe,HEOB_WRONG_BITNESS,0 );
+      ExitProcess( -1 );
+    }
+  }
+
   HANDLE in = GetStdHandle( STD_INPUT_HANDLE );
   if( !FlushConsoleInputBuffer(in) ) in = NULL;
   if( !in && (opt.attached || opt.newConsole<=1) )
@@ -3126,7 +3157,6 @@ void mainCRTStartup( void )
       (outName && strstr(outName,"%n")) ||
       (xmlName && strstr(xmlName,"%n")) )
   {
-    HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
     func_NtQueryInformationProcess *fNtQueryInformationProcess =
       ntdll ? (func_NtQueryInformationProcess*)GetProcAddress(
           ntdll,"NtQueryInformationProcess" ) : NULL;
