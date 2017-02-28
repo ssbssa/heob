@@ -441,17 +441,33 @@ static void TextColorTerminal( textColor *tc,textColorAtt color )
   WriteFile( tc->out,text,sizeof(text),&written,NULL );
 }
 
-static void WriteTextHtml( textColor *tc,const char *t,size_t l )
+static void WriteTextHtml( textColor *tc,const char *ts,size_t l )
 {
-  const char *end = t + l;
-  const char *next;
+  const unsigned char *t = (const unsigned char*)ts;
+  const unsigned char *end = t + l;
+  const unsigned char *next;
   char lt[] = "&lt;";
   char gt[] = "&gt;";
   char amp[] = "&amp;";
   DWORD written;
   for( next=t; next<end; next++ )
   {
-    char c = next[0];
+    unsigned char c = next[0];
+    if( c<0x09 || (c>=0x0b && c<=0x0c) || (c>=0x0e && c<=0x1f) || c>=0x7f )
+    {
+      if( next>t )
+        WriteFile( tc->out,t,(DWORD)(next-t),&written,NULL );
+      char hex[] = "&#x00;";
+      int i;
+      for( i=0; i<2; i++ )
+      {
+        int hexchar = ( c>>(i*4) )&0xf;
+        hex[4-i] = hexchar>=10 ? hexchar - 10 + 'a' : hexchar + '0';
+      }
+      WriteFile( tc->out,hex,sizeof(hex)-1,&written,NULL );
+      t = next + 1;
+      continue;
+    }
     if( c!='<' && c!='>' && c!='&' ) continue;
 
     if( next>t )
