@@ -248,11 +248,11 @@ options;
 
 typedef struct
 {
-  char commandLine[32768];
-  char currentDirectory[MAX_PATH];
-  char stdinName[32768];
-  char stdoutName[32768];
-  char stderrName[32768];
+  wchar_t commandLine[32768];
+  wchar_t currentDirectory[MAX_PATH];
+  wchar_t stdinName[32768];
+  wchar_t stdoutName[32768];
+  wchar_t stderrName[32768];
 }
 attachedProcessInfo;
 
@@ -278,10 +278,7 @@ typedef struct remoteData
   HANDLE initFinished;
   HANDLE startMain;
 
-  union {
-    wchar_t exePath[MAX_PATH];
-    char exePathA[MAX_PATH];
-  };
+  wchar_t exePath[MAX_PATH];
 
   size_t injOffset;
 

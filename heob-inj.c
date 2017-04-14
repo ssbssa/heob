@@ -3449,24 +3449,24 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 // }}}
 // get type/path of standard device {{{
 
-static int getHandleName( HANDLE h,char *buf,int buflen,HANDLE heap )
+static int getHandleName( HANDLE h,wchar_t *buf,int buflen,HANDLE heap )
 {
   if( !h || h==INVALID_HANDLE_VALUE ) return( 0 );
 
   DWORD flags;
   if( GetConsoleMode(h,&flags) )
   {
-    lstrcpy( buf,"console" );
+    lstrcpyW( buf,L"console" );
     return( 1 );
   }
 
   GET_REMOTEDATA( rd );
-  typedef DWORD WINAPI func_GetFinalPathNameByHandleA(
-      HANDLE,LPSTR,DWORD,DWORD );
-  func_GetFinalPathNameByHandleA *fGetFinalPathNameByHandleA =
-    rd->fGetProcAddress( rd->kernel32,"GetFinalPathNameByHandleA" );
-  if( fGetFinalPathNameByHandleA &&
-      fGetFinalPathNameByHandleA(h,buf,buflen,VOLUME_NAME_DOS) )
+  typedef DWORD WINAPI func_GetFinalPathNameByHandleW(
+      HANDLE,LPWSTR,DWORD,DWORD );
+  func_GetFinalPathNameByHandleW *fGetFinalPathNameByHandleW =
+    rd->fGetProcAddress( rd->kernel32,"GetFinalPathNameByHandleW" );
+  if( fGetFinalPathNameByHandleW &&
+      fGetFinalPathNameByHandleW(h,buf,buflen,VOLUME_NAME_DOS) )
     return( 1 );
 
   HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
@@ -3485,17 +3485,19 @@ static int getHandleName( HANDLE h,char *buf,int buflen,HANDLE heap )
   if( !fNtQueryObject(h,ObjectNameInformation,
         oni,sizeof(OBJECT_NAME_INFORMATION),&len) )
   {
-    int count = WideCharToMultiByte( CP_ACP,0,
-        oni->Name.Buffer,oni->Name.Length/2,buf,buflen,NULL,NULL );
-    if( count>0 && count<buflen && lstrcmp(buf,"\\Device\\Null") )
+    int half = oni->Name.Length/2;
+    if( half>0 && half<buflen )
     {
-      buf[count] = 0;
-      ret = 1;
+      oni->Name.Buffer[half] = 0;
+      lstrcpyW( buf,oni->Name.Buffer );
+
+      if( lstrcmpW(buf,L"\\Device\\Null") )
+        ret = 1;
     }
   }
   else if( GetFileType(h)==FILE_TYPE_PIPE )
   {
-    lstrcpy( buf,"pipe" );
+    lstrcpyW( buf,L"pipe" );
     ret = 1;
   }
   HeapFree( heap,0,oni );
@@ -3773,7 +3775,7 @@ DWORD WINAPI heob( LPVOID arg )
   addModule( GetModuleHandle(NULL) );
   replaceModFuncs();
 
-  GetModuleFileName( NULL,rd->exePathA,MAX_PATH );
+  GetModuleFileNameW( NULL,rd->exePath,MAX_PATH );
   rd->master = ld->master;
   rd->noCRT = ld->noCRT;
 
@@ -3781,8 +3783,8 @@ DWORD WINAPI heob( LPVOID arg )
   {
     attachedProcessInfo *api = rd->api = VirtualAlloc(
         NULL,sizeof(attachedProcessInfo),MEM_COMMIT,PAGE_READWRITE );
-    lstrcpy( api->commandLine,GetCommandLineA() );
-    if( !GetCurrentDirectory(MAX_PATH,api->currentDirectory) )
+    lstrcpyW( api->commandLine,GetCommandLineW() );
+    if( !GetCurrentDirectoryW(MAX_PATH,api->currentDirectory) )
       api->currentDirectory[0] = 0;
     if( !getHandleName(GetStdHandle(STD_INPUT_HANDLE),
           api->stdinName,32768,heap) )

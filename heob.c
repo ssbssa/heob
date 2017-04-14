@@ -33,12 +33,14 @@ textColorAtt;
 
 struct textColor;
 typedef void func_WriteText( struct textColor*,const char*,size_t );
+typedef void func_WriteTextW( struct textColor*,const wchar_t*,size_t );
 typedef void func_TextColor( struct textColor*,textColorAtt );
 
 typedef struct textColor
 {
   func_WriteText *fWriteText;
   func_WriteText *fWriteSubText;
+  func_WriteTextW *fWriteSubTextW;
   func_TextColor *fTextColor;
   HANDLE out;
   union {
@@ -111,11 +113,15 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
           {
             const char *arg = va_arg( vl,const char* );
             if( arg && arg[0] )
-            {
-              size_t l = 0;
-              while( arg[l] ) l++;
-              tc->fWriteSubText( tc,arg,l );
-            }
+              tc->fWriteSubText( tc,arg,lstrlen(arg) );
+          }
+          break;
+
+        case 'S': // const wchar_t*
+          {
+            const wchar_t *arg = va_arg( vl,const wchar_t* );
+            if( arg && arg[0] )
+              tc->fWriteSubTextW( tc,arg,lstrlenW(arg) );
           }
           break;
 
@@ -427,6 +433,59 @@ static void WriteText( textColor *tc,const char *t,size_t l )
   WriteFile( tc->out,t,(DWORD)l,&written,NULL );
 }
 
+static int UTF16toUTF32( const uint16_t *u16,size_t l,uint32_t *c32 )
+{
+  uint16_t c16_1 = u16[0];
+  if( c16_1<0xd800 )                     // 11010AAA AAAAAAAA
+    *c32 = c16_1;                        // -> 11010AAA AAAAAAAA
+  else if( c16_1<0xdc00 )                // 110110AA AAAAAAAA
+  {
+    if( l<2 ) return( 0 );
+    uint16_t c16_2 = u16[1];
+    if( (c16_2&0xdc00)!=0xdc00 )         // 110111BB BBBBBBBB
+      return( 0 );
+    *c32 =
+      ( (((uint32_t)c16_1&0x3ff)<<10) |  // -> 0000AAAA AAAAAABB BBBBBBBB
+        ((uint32_t)c16_2&0x3ff) ) +
+      0x10000;
+    return( 2 );
+  }
+  else if( c16_1<0xe000 )                // 110XXXXX XXXXXXXX
+    return( 0 );
+  else                                   // AAAAAAAA AAAAAAAA
+    *c32 = c16_1;                        // -> 00000000 AAAAAAAA AAAAAAAA
+
+  return( 1 );
+}
+
+static void WriteTextW( textColor *tc,const wchar_t *t,size_t l )
+{
+  const uint16_t *u16 = t;
+  uint32_t c32;
+  DWORD written;
+  size_t i;
+  for( i=0; i<l; i++ )
+  {
+    int chars = UTF16toUTF32( u16+i,l-i,&c32 );
+    if( !chars ) continue;
+
+    uint8_t c8 = c32;
+    if( c32>=0x80 )
+      c8 = '?';
+    else
+      c8 = c32;
+    WriteFile( tc->out,&c8,1,&written,NULL );
+
+    if( chars>1 ) i++;
+  }
+}
+
+static void WriteTextConsoleW( textColor *tc,const wchar_t *t,size_t l )
+{
+  DWORD written;
+  WriteConsoleW( tc->out,t,(DWORD)l,&written,NULL );
+}
+
 static void TextColorConsole( textColor *tc,textColorAtt color )
 {
   SetConsoleTextAttribute( tc->out,tc->colors[color] );
@@ -458,12 +517,7 @@ static void WriteTextHtml( textColor *tc,const char *ts,size_t l )
       if( next>t )
         WriteFile( tc->out,t,(DWORD)(next-t),&written,NULL );
       char hex[] = "&#x00;";
-      int i;
-      for( i=0; i<2; i++ )
-      {
-        int hexchar = ( c>>(i*4) )&0xf;
-        hex[4-i] = hexchar>=10 ? hexchar - 10 + 'a' : hexchar + '0';
-      }
+      num2hexstr( hex+3,c,2 );
       WriteFile( tc->out,hex,sizeof(hex)-1,&written,NULL );
       t = next + 1;
       continue;
@@ -482,6 +536,45 @@ static void WriteTextHtml( textColor *tc,const char *ts,size_t l )
   }
   if( next>t )
     WriteFile( tc->out,t,(DWORD)(next-t),&written,NULL );
+}
+
+static void WriteTextHtmlW( textColor *tc,const wchar_t *ts,size_t l )
+{
+  const uint16_t *u16 = ts;
+  uint32_t c32;
+  char lt[] = "&lt;";
+  char gt[] = "&gt;";
+  char amp[] = "&amp;";
+  DWORD written;
+  size_t i;
+  for( i=0; i<l; i++ )
+  {
+    int chars = UTF16toUTF32( u16+i,l-i,&c32 );
+    if( !chars ) continue;
+
+    if( c32<0x09 || (c32>=0x0b && c32<=0x0c) ||
+        (c32>=0x0e && c32<=0x1f) || c32>=0x7f )
+    {
+      char hex[] = "&#x000000;";
+      int bytes = c32>=0x10000 ? 3 : ( c32>=0x100 ? 2 : 1 );
+      char *end = num2hexstr( hex+3,c32,bytes*2 );
+      end++[0] = ';';
+      WriteFile( tc->out,hex,(DWORD)(end-hex),&written,NULL );
+    }
+    else if( c32=='<' )
+      WriteFile( tc->out,lt,sizeof(lt)-1,&written,NULL );
+    else if( c32=='>' )
+      WriteFile( tc->out,gt,sizeof(gt)-1,&written,NULL );
+    else if( c32=='&' )
+      WriteFile( tc->out,amp,sizeof(amp)-1,&written,NULL );
+    else
+    {
+      uint8_t c8 = c32;
+      WriteFile( tc->out,&c8,1,&written,NULL );
+    }
+
+    if( chars>1 ) i++;
+  }
 }
 
 static void TextColorHtml( textColor *tc,textColorAtt color )
@@ -517,11 +610,12 @@ static void setTextColorTerminal( textColor *tc )
   TextColorTerminal( tc,ATT_NORMAL );
 }
 
-static void checkOutputVariant( textColor *tc,const char *cmdLine,HANDLE out )
+static void checkOutputVariant( textColor *tc,HANDLE out )
 {
   // default
   tc->fWriteText = &WriteText;
   tc->fWriteSubText = &WriteText;
+  tc->fWriteSubTextW = &WriteTextW;
   tc->fTextColor = NULL;
   tc->out = out;
   tc->color = ATT_NORMAL;
@@ -546,6 +640,7 @@ static void checkOutputVariant( textColor *tc,const char *cmdLine,HANDLE out )
     GetConsoleScreenBufferInfo( tc->out,&csbi );
     int bg = csbi.wAttributes&0xf0;
 
+    tc->fWriteSubTextW = &WriteTextConsoleW;
     tc->fTextColor = &TextColorConsole;
 
     tc->colors[ATT_NORMAL]  = csbi.wAttributes&0xff;
@@ -619,11 +714,13 @@ static void checkOutputVariant( textColor *tc,const char *cmdLine,HANDLE out )
           "<pre>\n";
         DWORD written;
         WriteFile( tc->out,styleInit,lstrlen(styleInit),&written,NULL );
-        WriteTextHtml( tc,cmdLine,lstrlen(cmdLine) );
+        const wchar_t *cmdLineW = GetCommandLineW();
+        WriteTextHtmlW( tc,cmdLineW,lstrlenW(cmdLineW) );
         WriteFile( tc->out,styleInit2,lstrlen(styleInit2),&written,NULL );
 
         tc->fWriteText = &WriteTextHtml;
         tc->fWriteSubText = &WriteTextHtml;
+        tc->fWriteSubTextW = &WriteTextHtmlW;
         tc->fTextColor = &TextColorHtml;
 
         tc->styles[ATT_NORMAL]  = NULL;
@@ -715,7 +812,7 @@ static CODE_SEG(".text$1") VOID CALLBACK remoteCall( remoteData *rd )
 
 static CODE_SEG(".text$2") HANDLE inject(
     HANDLE process,HANDLE thread,options *opt,options *globalopt,
-    const char *specificOptions,char *exePath,textColor *tc,
+    const char *specificOptions,wchar_t *exePath,textColor *tc,
     int raise_alloc_q,size_t *raise_alloc_a,HANDLE *controlPipe,
     HANDLE in,HANDLE err,attachedProcessInfo **api,
     const char *subOutName,const char *subXmlName,const char *subCurDir,
@@ -910,7 +1007,7 @@ static CODE_SEG(".text$2") HANDLE inject(
     *heobExit = HEOB_NO_CRT;
   }
   else
-    RtlMoveMemory( exePath,data->exePathA,MAX_PATH );
+    RtlMoveMemory( exePath,data->exePath,MAX_PATH*2 );
   HeapFree( heap,0,fullData );
 
   if( data->noCRT==2 )
@@ -2468,21 +2565,21 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
 // information of attached process {{{
 
 static void printAttachedProcessInfo(
-    const char *exePath,attachedProcessInfo *api,textColor *tc,DWORD pid )
+    const wchar_t *exePath,attachedProcessInfo *api,textColor *tc,DWORD pid )
 {
   if( !api ) return;
-  printf( "\n$Iapplication: $N%s\n",exePath );
+  printf( "\n$Iapplication: $N%S\n",exePath );
   if( api->commandLine[0] )
-    printf( "$Icommand line: $N%s\n",api->commandLine );
+    printf( "$Icommand line: $N%S\n",api->commandLine );
   if( api->currentDirectory[0] )
-    printf( "$Idirectory: $N%s\n",api->currentDirectory );
+    printf( "$Idirectory: $N%S\n",api->currentDirectory );
   printf( "$IPID: $N%u\n",pid );
   if( api->stdinName[0] )
-    printf( "$Istdin: $N%s\n",api->stdinName );
+    printf( "$Istdin: $N%S\n",api->stdinName );
   if( api->stdoutName[0] )
-    printf( "$Istdout: $N%s\n",api->stdoutName );
+    printf( "$Istdout: $N%S\n",api->stdoutName );
   if( api->stderrName[0] )
-    printf( "$Istderr: $N%s\n",api->stderrName );
+    printf( "$Istderr: $N%S\n",api->stderrName );
   printf( "\n" );
 }
 
@@ -2866,7 +2963,7 @@ void mainCRTStartup( void )
   if( opt.protect<1 ) opt.protectFree = 0;
   textColor *tcOut = HeapAlloc( heap,0,sizeof(textColor) );
   textColor *tc = tcOut;
-  checkOutputVariant( tc,cmdLine,out );
+  checkOutputVariant( tc,out );
 
   if( badArg )
   {
@@ -3112,12 +3209,41 @@ void mainCRTStartup( void )
   if( opt.leakRecording && !opt.newConsole )
     opt.newConsole = 1;
 
+  wchar_t *cmdLineW = GetCommandLineW();
+  wchar_t *argsW = cmdLineW;
+  if( argsW[0]=='"' )
+  {
+    argsW++;
+    while( argsW[0] && argsW[0]!='"' ) argsW++;
+    if( argsW[0]=='"' ) argsW++;
+  }
+  else
+  {
+    while( argsW[0] && argsW[0]!=' ' ) argsW++;
+  }
+  while( 1 )
+  {
+    while( argsW[0]==' ' ) argsW++;
+    if( argsW[0]!='-' ) break;
+    if( argsW[1]=='O' )
+    {
+      argsW += 2;
+      while( *argsW && *argsW!=' ' )
+      {
+        while( argsW[0] && argsW[0]!=':' ) argsW++;
+        while( argsW[0] && argsW[0]!=';' ) argsW++;
+        if( argsW[0] ) argsW++;
+      }
+    }
+    while( argsW[0] && argsW[0]!=' ' ) argsW++;
+  }
+
   if( !opt.attached )
   {
-    STARTUPINFO si;
+    STARTUPINFOW si;
     RtlZeroMemory( &si,sizeof(STARTUPINFO) );
     si.cb = sizeof(STARTUPINFO);
-    BOOL result = CreateProcess( NULL,args,NULL,NULL,FALSE,
+    BOOL result = CreateProcessW( NULL,argsW,NULL,NULL,FALSE,
         CREATE_SUSPENDED|(opt.newConsole&1?CREATE_NEW_CONSOLE:0),
         NULL,NULL,&si,&pi );
     if( !result )
@@ -3241,7 +3367,7 @@ void mainCRTStartup( void )
     {
       out = outName[0]=='0' ? NULL : GetStdHandle(
           outName[0]=='1' ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE );
-      checkOutputVariant( tc,cmdLine,out );
+      checkOutputVariant( tc,out );
     }
     else
     {
@@ -3271,7 +3397,7 @@ void mainCRTStartup( void )
     {
       tcOutOrig = tcOut;
       tc = tcOut = HeapAlloc( heap,0,sizeof(textColor) );
-      checkOutputVariant( tc,cmdLine,out );
+      checkOutputVariant( tc,out );
     }
   }
   else if( xmlName )
@@ -3279,7 +3405,7 @@ void mainCRTStartup( void )
   if( !tc->out && !tcOutOrig && opt.attached )
   {
     tcOutOrig = HeapAlloc( heap,0,sizeof(textColor) );
-    checkOutputVariant( tcOutOrig,cmdLine,GetStdHandle(STD_OUTPUT_HANDLE) );
+    checkOutputVariant( tcOutOrig,GetStdHandle(STD_OUTPUT_HANDLE) );
   }
   if( !out )
     opt.sourceCode = opt.leakContents = 0;
@@ -3312,6 +3438,7 @@ void mainCRTStartup( void )
   attachedProcessInfo *api = NULL;
   unsigned heobExit = HEOB_OK;
   unsigned heobExitData = 0;
+  wchar_t *exePathW = HeapAlloc( heap,0,MAX_PATH*2 );
   if( isWrongArch(pi.hProcess) )
   {
     printf( "$Wonly " BITS "bit applications possible\n" );
@@ -3319,7 +3446,7 @@ void mainCRTStartup( void )
   }
   else
     readPipe = inject( pi.hProcess,pi.hThread,&opt,&defopt,specificOptions,
-        exePath,tc,raise_alloc_q,raise_alloc_a,&controlPipe,in,err,&api,
+        exePathW,tc,raise_alloc_q,raise_alloc_a,&controlPipe,in,err,&api,
         subOutName,subXmlName,subCurDir,&heobExit );
   if( !readPipe )
     TerminateProcess( pi.hProcess,1 );
@@ -3327,6 +3454,10 @@ void mainCRTStartup( void )
   UINT exitCode = -1;
   if( readPipe )
   {
+    int count = WideCharToMultiByte( CP_ACP,0,
+        exePathW,-1,exePath,MAX_PATH,NULL,NULL );
+    if( count<0 || count>=MAX_PATH ) count = 0;
+    exePath[count] = 0;
     char *delim = strrchr( exePath,'\\' );
     if( delim ) delim[0] = 0;
     dbgsym ds;
@@ -3334,9 +3465,9 @@ void mainCRTStartup( void )
         RETURN_ADDRESS() );
     if( delim ) delim[0] = '\\';
 
-    printAttachedProcessInfo( exePath,api,tc,pi.dwProcessId );
+    printAttachedProcessInfo( exePathW,api,tc,pi.dwProcessId );
     if( tcOutOrig )
-      printAttachedProcessInfo( exePath,api,tcOutOrig,pi.dwProcessId );
+      printAttachedProcessInfo( exePathW,api,tcOutOrig,pi.dwProcessId );
 
     if( opt.pid )
     {
@@ -3390,6 +3521,7 @@ void mainCRTStartup( void )
         tcXml = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(textColor) );
         tcXml->fWriteText = &WriteText;
         tcXml->fWriteSubText = &WriteTextHtml;
+        tcXml->fWriteSubTextW = &WriteTextHtmlW;
         tcXml->fTextColor = NULL;
         tcXml->out = xml;
         tcXml->color = ATT_NORMAL;
@@ -3410,32 +3542,32 @@ void mainCRTStartup( void )
       printf( "  <line>heap-observer " HEOB_VER " (" BITS "bit)</line>\n" );
       if( api )
       {
-        printf( "  <line>application: %s</line>\n",exePath );
+        printf( "  <line>application: %S</line>\n",exePathW );
         if( api->commandLine[0] )
-          printf( "  <line>command line: %s</line>\n",api->commandLine );
+          printf( "  <line>command line: %S</line>\n",api->commandLine );
         if( api->currentDirectory[0] )
-          printf( "  <line>directory: %s</line>\n",api->currentDirectory );
+          printf( "  <line>directory: %S</line>\n",api->currentDirectory );
         if( api->stdinName[0] )
-          printf( "  <line>stdin: %s</line>\n",api->stdinName );
+          printf( "  <line>stdin: %S</line>\n",api->stdinName );
         if( api->stdoutName[0] )
-          printf( "  <line>stdout: %s</line>\n",api->stdoutName );
+          printf( "  <line>stdout: %S</line>\n",api->stdoutName );
         if( api->stderrName[0] )
-          printf( "  <line>stderr: %s</line>\n",api->stderrName );
+          printf( "  <line>stderr: %S</line>\n",api->stderrName );
       }
       printf( "</preamble>\n\n" );
       printf( "<pid>%u</pid>\n<ppid>%u</ppid>\n<tool>heob</tool>\n\n",
           pi.dwProcessId,GetCurrentProcessId() );
 
-      const char *argva[2] = { cmdLine,args };
+      const wchar_t *argva[2] = { cmdLineW,argsW };
       if( api ) argva[1] = api->commandLine;
-      int l = (int)( args - cmdLine );
-      while( l>0 && cmdLine[l-1]==' ' ) l--;
-      int argvl[2] = { l,lstrlen(argva[1]) };
+      int l = (int)( argsW - cmdLineW );
+      while( l>0 && cmdLineW[l-1]==' ' ) l--;
+      int argvl[2] = { l,lstrlenW(argva[1]) };
       printf( "<args>\n" );
       for( l=0; l<2; l++ )
       {
         const char *argvstr = l ? "argv" : "vargv";
-        const char *argv = argva[l];
+        const wchar_t *argv = argva[l];
         int argl = argvl[l];
         printf( "  <%s>\n",argvstr );
         int i = 0;
@@ -3444,7 +3576,7 @@ void mainCRTStartup( void )
           int startI = i;
           while( i<argl && argv[i]!=' ' )
           {
-            char c = argv[i];
+            wchar_t c = argv[i];
             i++;
             if( c=='"' )
             {
@@ -3456,7 +3588,7 @@ void mainCRTStartup( void )
           {
             const char *argstr = startI ? "arg" : "exe";
             printf( "    <%s>",argstr );
-            tc->fWriteSubText( tc,argv+startI,i-startI );
+            tc->fWriteSubTextW( tc,argv+startI,i-startI );
             printf( "</%s>\n",argstr );
           }
           while( i<argl && argv[i]==' ' ) i++;
@@ -4271,6 +4403,7 @@ void mainCRTStartup( void )
   if( subCurDir ) HeapFree( heap,0,subCurDir );
   if( api ) HeapFree( heap,0,api );
   if( specificOptions ) HeapFree( heap,0,specificOptions );
+  HeapFree( heap,0,exePathW );
 
   writeCloseErrorPipe( errorPipe,heobExit,heobExitData );
   ExitProcess( exitCode );
