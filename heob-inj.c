@@ -2914,6 +2914,10 @@ static HMODULE replaceFuncs( HMODULE app,
       if( !repModule )
         repModule = curModule;
 
+      // look for, but don't actually replace the function
+      // used with "exit" to help identify CRT
+      if( !myFunc ) continue;
+
       DWORD prot;
       if( !VirtualProtect(thunk,sizeof(size_t),
             PAGE_EXECUTE_READWRITE,&prot) )
@@ -2963,7 +2967,9 @@ static void replaceModFuncs( void )
   const char *fname_wtempnam = "_wtempnam";
   const char *fname_free_dbg = "_free_dbg";
   const char *fname_recalloc = "_recalloc";
+  const char *fname_exit = "exit";
   const char *fname_msize = "_msize";
+  void *fexit = NULL;
   void *fmsize = NULL;
   replaceData rep[] = {
     { fname_malloc         ,&rd->fmalloc         ,&new_malloc          },
@@ -2986,6 +2992,7 @@ static void replaceModFuncs( void )
     { fname_wtempnam       ,&rd->fwtempnam       ,&new_wtempnam        },
     { fname_free_dbg       ,&rd->ffree_dbg       ,&new_free_dbg        },
     { fname_recalloc       ,&rd->frecalloc       ,&new_recalloc        },
+    { fname_exit           ,&fexit               ,NULL                 },
     // needs to be last, only used with page protection
     { fname_msize          ,&fmsize              ,&protect_msize       },
   };
