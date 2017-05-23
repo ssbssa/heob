@@ -44,8 +44,10 @@ QTC_PLUGIN_RECOMMENDS += \
 
 include($$QTCREATOR_SOURCES/src/qtcreatorplugin.pri)
 
-!lessThan(QTCREATOR_VERSION, 4) {
-    DEFINES += QTCREATOR4
-}
+version_split = $$split(QTCREATOR_VERSION, .)
+major = $$member(version_split, 0)
+minor = $$member(version_split, 1)
+DEFINES += "QTCREATOR_MAJOR_VERSION=$$major"
+DEFINES += "QTCREATOR_MINOR_VERSION=$$minor"
 
 DESTDIR = .

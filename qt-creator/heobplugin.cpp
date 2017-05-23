@@ -11,7 +11,7 @@
 #include <projectexplorer/session.h>
 #include <projectexplorer/target.h>
 #include <projectexplorer/environmentaspect.h>
-#ifndef QTCREATOR4
+#if QTCREATOR_MAJOR_VERSION<4
 #include <projectexplorer/localapplicationrunconfiguration.h>
 #else
 #include <projectexplorer/runconfiguration.h>
@@ -101,19 +101,19 @@ ExtensionSystem::IPlugin::ShutdownFlag heobPlugin::aboutToShutdown()
 void heobPlugin::triggerAction()
 {
     RunConfiguration *rc = 0;
-#ifndef QTCREATOR4
+#if QTCREATOR_MAJOR_VERSION<4
     LocalApplicationRunConfiguration *localRc = 0;
 #else
     StandardRunnable sr;
 #endif
-    const ToolChain *tc = 0;
+    Abi abi;
     bool hasLocalRc = false;
     if (Project *project = SessionManager::startupProject())
     {
         if (Target *target = project->activeTarget())
         {
             rc = target->activeRunConfiguration();
-#ifndef QTCREATOR4
+#if QTCREATOR_MAJOR_VERSION<4
             if (rc)
             {
                 localRc = qobject_cast<LocalApplicationRunConfiguration *>(rc);
@@ -122,9 +122,15 @@ void heobPlugin::triggerAction()
 #endif
             if (Kit *kit = target->kit())
             {
-                tc = ToolChainKitInformation::toolChain(kit);
+#if QTCREATOR_MAJOR_VERSION<4 || (QTCREATOR_MAJOR_VERSION==4 && QTCREATOR_MINOR_VERSION<2)
+                const ToolChain *tc = ToolChainKitInformation::toolChain(kit);
+                if (tc)
+                    abi = tc->targetAbi();
+#else
+                abi = ToolChainKitInformation::targetAbi(kit);
+#endif
 
-#ifdef QTCREATOR4
+#if QTCREATOR_MAJOR_VERSION>=4
                 if (rc)
                 {
                     const Runnable runnable = rc->runnable();
@@ -148,7 +154,10 @@ void heobPlugin::triggerAction()
                              tr("no local run configuration available"));
         return;
     }
-    if (!tc)
+    if (abi.architecture() != Abi::X86Architecture ||
+            abi.os() != Abi::WindowsOS ||
+            abi.binaryFormat() != Abi::PEFormat ||
+            (abi.wordWidth() != 32 && abi.wordWidth() != 64))
     {
         QMessageBox::warning(Core::ICore::mainWindow(),
                              tr("heob"),
@@ -160,7 +169,7 @@ void heobPlugin::triggerAction()
     QString workingDirectory;
     QString commandLineArguments;
     QStringList envStrings;
-#ifndef QTCREATOR4
+#if QTCREATOR_MAJOR_VERSION<4
     executable = localRc->executable();
     workingDirectory = localRc->workingDirectory();
     commandLineArguments = localRc->commandLineArguments();
@@ -183,7 +192,7 @@ void heobPlugin::triggerAction()
     }
 
     // heob executable
-    QString heob = QString::fromLatin1("heob%1.exe").arg(tc->targetAbi().wordWidth());
+    QString heob = QString::fromLatin1("heob%1.exe").arg(abi.wordWidth());
     QString heobPath = QStandardPaths::findExecutable(heob);
     if (heobPath.isEmpty())
     {
