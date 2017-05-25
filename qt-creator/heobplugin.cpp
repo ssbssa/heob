@@ -26,7 +26,11 @@
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/actionmanager/command.h>
 #include <coreplugin/actionmanager/actioncontainer.h>
-#include <coreplugin/coreconstants.h>
+#if QTCREATOR_MAJOR_VERSION<4
+#include <analyzerbase/analyzerconstants.h>
+#else
+#include <debugger/analyzer/analyzerconstants.h>
+#endif
 
 #include <utils/fileutils.h>
 
@@ -48,6 +52,12 @@
 
 using namespace heob::Internal;
 using namespace ProjectExplorer;
+
+#if QTCREATOR_MAJOR_VERSION<4
+using namespace Analyzer::Constants;
+#else
+using namespace Debugger::Constants;
+#endif
 
 
 heobPlugin::heobPlugin()
@@ -78,7 +88,7 @@ bool heobPlugin::initialize(const QStringList &arguments, QString *errorString)
                                                              Core::Context(Core::Constants::C_GLOBAL));
     cmd->setDefaultKeySequence(QKeySequence(tr("Ctrl+Alt+H")));
     connect(action, SIGNAL(triggered()), this, SLOT(triggerAction()));
-    Core::ActionManager::actionContainer(Core::Constants::M_TOOLS)->addAction(cmd);
+    Core::ActionManager::actionContainer(M_DEBUG_ANALYZER)->addAction(cmd, G_ANALYZER_REMOTE_TOOLS);
 
     return true;
 }

@@ -5,6 +5,7 @@
     \"Vendor\" : \"ssbssa\",
     \"Copyright\" : \"(C) 2017 Hannes Domani\",
     \"License\" : \"Boost Software License\",
+    \"Category\" : \"Code Analyzer\",
     \"Description\" : \"heob Plugin.\",
     \"Url\" : \"https://github.com/ssbssa/heob\",
     $$dependencyList
