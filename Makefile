@@ -210,7 +210,9 @@ T_H71=-p0 -a16 -f0 -l0
 T_A71=34
 T_H72=-p1 -a16 -f0 -l0
 T_A72=34
-TESTS:=$(shell seq -w 01 72)
+T_H73=-p0 -a16 -f0 -l1
+T_A73=35
+TESTS:=$(shell seq -w 01 73)
 
 testres:
 	mkdir -p $@

@@ -115,6 +115,18 @@ static DWORD WINAPI namedThread( LPVOID arg )
 }
 
 
+typedef int func_heob_control( int );
+enum
+{
+  LEAK_RECORDING_STOP,
+  LEAK_RECORDING_START,
+  LEAK_RECORDING_CLEAR,
+  LEAK_RECORDING_SHOW,
+  LEAK_RECORDING_STATE=-1,
+  LEAK_COUNT=-2,
+};
+
+
 void choose( int arg )
 {
   printf( "allocer: main()\n" );
@@ -484,7 +496,27 @@ void choose( int arg )
         int c = _getch();
         if( c==27 ) break;
 
-        if( c=='f' )
+        if( c=='n' || c=='f' || c=='c' || c=='s' )
+        {
+          HMODULE heob = GetModuleHandle( "heob" BITS ".exe" );
+          func_heob_control *heob_control = heob ?
+            (func_heob_control*)GetProcAddress( heob,"heob_control" ) : NULL;
+          if( heob_control )
+          {
+            int cmd;
+            if( c=='n' )
+              cmd = LEAK_RECORDING_START;
+            else if( c=='f' )
+              cmd = LEAK_RECORDING_STOP;
+            else if( c=='c' )
+              cmd = LEAK_RECORDING_CLEAR;
+            else
+              cmd = LEAK_RECORDING_SHOW;
+            heob_control( cmd );
+          }
+          continue;
+        }
+        else if( c=='i' )
         {
           free( (void*)0x1 );
           continue;
@@ -590,6 +622,46 @@ void choose( int arg )
         char *r0 = (char*)realloc( m16,0 );
         printf( "r0: 0x%p\n",r0 );
         free( r0 );
+      }
+      break;
+
+    case 35:
+      // control leak recording
+      {
+        HMODULE heob = GetModuleHandle( "heob" BITS ".exe" );
+        func_heob_control *heob_control = heob ?
+          (func_heob_control*)GetProcAddress( heob,"heob_control" ) : NULL;
+        if( heob_control )
+        {
+          printf( "recording: %d\n",heob_control(LEAK_RECORDING_STATE) );
+          printf( "leak count: %d\n",heob_control(LEAK_COUNT) );
+
+          heob_control( LEAK_RECORDING_CLEAR );
+
+          heob_control( LEAK_RECORDING_STOP );
+
+          char *leakNo = (char*)malloc( 16 );
+          mem[1] = leakNo[0];
+
+          heob_control( LEAK_RECORDING_START );
+
+          printf( "leak count: %d\n",heob_control(LEAK_COUNT) );
+
+          char *leakYes = (char*)malloc( 16 );
+          mem[2] = leakYes[0];
+          leakYes = strdup( "string leak" );
+          mem[3] = leakYes[0];
+
+          printf( "leak count: %d\n",heob_control(LEAK_COUNT) );
+          fflush( stdout );
+
+          heob_control( LEAK_RECORDING_SHOW );
+
+          leakYes = (char*)malloc( 16 );
+          mem[4] = leakYes[0];
+        }
+        else
+          printf( "heob.exe is not running\n" );
       }
       break;
   }

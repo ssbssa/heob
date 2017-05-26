@@ -3512,6 +3512,105 @@ static int getHandleName( HANDLE h,wchar_t *buf,int buflen,HANDLE heap )
 }
 
 // }}}
+// control leak recording {{{
+
+DLLEXPORT int heob_control( int cmd )
+{
+  GET_REMOTEDATA( rd );
+
+  if( rd->noCRT ) return( -rd->noCRT );
+
+  int prevRecording = rd->recording;
+
+  switch( cmd )
+  {
+    case LEAK_RECORDING_STOP:
+    case LEAK_RECORDING_START:
+      rd->recording = cmd;
+      break;
+
+    case LEAK_RECORDING_CLEAR:
+      {
+        int i;
+        for( i=0; i<=SPLIT_MASK; i++ )
+        {
+          int j;
+          splitAllocation *sa = rd->splits + i;
+
+          EnterCriticalSection( &sa->cs );
+
+          int alloc_q = sa->alloc_q;
+          allocation *alloc_a = sa->alloc_a;
+          for( j=0; j<alloc_q; j++ )
+            alloc_a[j].recording = 0;
+
+          LeaveCriticalSection( &sa->cs );
+        }
+      }
+      break;
+
+    case LEAK_RECORDING_SHOW:
+      {
+        int i;
+        EnterCriticalSection( &rd->csWrite );
+        for( i=0; i<=SPLIT_MASK; i++ )
+          EnterCriticalSection( &rd->splits[i].cs );
+
+        writeLeakMods();
+        writeLeakData();
+
+        LeaveCriticalSection( &rd->csWrite );
+
+        for( i=0; i<=SPLIT_MASK; i++ )
+        {
+          int j;
+          splitAllocation *sa = rd->splits + i;
+          int alloc_q = sa->alloc_q;
+          allocation *alloc_a = sa->alloc_a;
+          for( j=0; j<alloc_q; j++ )
+            alloc_a[j].recording = 0;
+
+          LeaveCriticalSection( &rd->splits[i].cs );
+        }
+      }
+      break;
+
+    case LEAK_COUNT:
+      {
+        int i,j;
+        int count = 0;
+        for( i=0; i<=SPLIT_MASK; i++ )
+        {
+          EnterCriticalSection( &rd->splits[i].cs );
+
+          splitAllocation *sa = rd->splits + i;
+          int alloc_q = sa->alloc_q;
+          allocation *alloc_a = sa->alloc_a;
+          for( j=0; j<alloc_q; j++ )
+            if( alloc_a[j].recording ) count++;
+
+          LeaveCriticalSection( &rd->splits[i].cs );
+        }
+        return( count );
+      }
+  }
+
+  if( cmd>=LEAK_RECORDING_STOP && cmd<=LEAK_RECORDING_SHOW )
+  {
+    EnterCriticalSection( &rd->csWrite );
+
+    int type = WRITE_RECORDING;
+    DWORD written;
+    WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+    WriteFile( rd->master,&cmd,sizeof(int),&written,NULL );
+
+    LeaveCriticalSection( &rd->csWrite );
+  }
+
+  return( prevRecording );
+}
+
+// }}}
 // injected main {{{
 
 DWORD WINAPI heob( LPVOID arg )
@@ -3810,61 +3909,10 @@ DWORD WINAPI heob( LPVOID arg )
 
   if( controlPipe )
   {
-    int type;
+    int cmd;
     DWORD didread;
-    while( ReadFile(controlPipe,&type,sizeof(int),&didread,NULL) )
-    {
-      switch( type )
-      {
-        case LEAK_RECORDING_STOP:
-        case LEAK_RECORDING_START:
-          ld->recording = type;
-          break;
-
-        case LEAK_RECORDING_CLEAR:
-          {
-            int i;
-            for( i=0; i<=SPLIT_MASK; i++ )
-            {
-              int j;
-              splitAllocation *sa = ld->splits + i;
-              EnterCriticalSection( &sa->cs );
-              int alloc_q = sa->alloc_q;
-              allocation *alloc_a = sa->alloc_a;
-              for( j=0; j<alloc_q; j++ )
-                alloc_a[j].recording = 0;
-              LeaveCriticalSection( &sa->cs );
-            }
-          }
-          break;
-
-        case LEAK_RECORDING_SHOW:
-          {
-            int i;
-            EnterCriticalSection( &ld->csWrite );
-            for( i=0; i<=SPLIT_MASK; i++ )
-              EnterCriticalSection( &ld->splits[i].cs );
-
-            writeLeakMods();
-            writeLeakData();
-
-            for( i=0; i<=SPLIT_MASK; i++ )
-            {
-              int j;
-              splitAllocation *sa = ld->splits + i;
-              int alloc_q = sa->alloc_q;
-              allocation *alloc_a = sa->alloc_a;
-              for( j=0; j<alloc_q; j++ )
-                alloc_a[j].recording = 0;
-            }
-
-            for( i=0; i<=SPLIT_MASK; i++ )
-              LeaveCriticalSection( &ld->splits[i].cs );
-            LeaveCriticalSection( &ld->csWrite );
-          }
-          break;
-      }
-    }
+    while( ReadFile(controlPipe,&cmd,sizeof(int),&didread,NULL) )
+      heob_control( cmd );
   }
 
   return( 0 );

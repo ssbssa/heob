@@ -1,0 +1,18 @@
+allocer: main()
+recording: 1
+leak count: 1
+leak count: 0
+leak count: 2
+
+leaks:
+  16 B (#3)
+    [malloc]
+  16 B (#4)
+    [strdup]
+  sum: 32 B / 2
+
+leaks:
+  16 B (#5)
+    [malloc]
+  sum: 16 B / 1
+exit code: 35 (0xPTR)

@@ -3660,42 +3660,33 @@ void mainCRTStartup( void )
             ir.EventType==KEY_EVENT &&
             ir.Event.KeyEvent.bKeyDown )
         {
-          int sendType = -1;
+          int cmd = -1;
 
           switch( ir.Event.KeyEvent.wVirtualKeyCode )
           {
             case 'N':
               if( recording>0 ) break;
-              recording = 1;
-              sendType = LEAK_RECORDING_START;
+              cmd = LEAK_RECORDING_START;
               break;
 
             case 'F':
               if( recording<=0 ) break;
-              recording = 0;
-              sendType = LEAK_RECORDING_STOP;
+              cmd = LEAK_RECORDING_STOP;
               break;
 
             case 'C':
               if( recording<0 ) break;
-              if( !recording ) recording = -1;
-              sendType = LEAK_RECORDING_CLEAR;
+              cmd = LEAK_RECORDING_CLEAR;
               break;
 
             case 'S':
               if( recording<0 ) break;
-              if( !recording ) recording = -1;
-              sendType = LEAK_RECORDING_SHOW;
+              cmd = LEAK_RECORDING_SHOW;
               break;
           }
 
-          if( sendType>=0 )
-          {
-            WriteFile( controlPipe,&sendType,sizeof(int),&didread,NULL );
-
-            clearRecording( err,consoleCoord,errColor,0 );
-            showRecording( err,recording,&consoleCoord,&errColor );
-          }
+          if( cmd>=0 )
+            WriteFile( controlPipe,&cmd,sizeof(int),&didread,NULL );
         }
         continue;
       }
@@ -4344,6 +4335,28 @@ void mainCRTStartup( void )
             printf( "\n$Stermination code: %u (%x)\n",exitCode,exitCode );
           }
           heobExitData = exitCode;
+          break;
+
+        case WRITE_RECORDING:
+          {
+            int cmd;
+            if( !readFile(readPipe,&cmd,sizeof(int),&ov) )
+              break;
+
+            switch( cmd )
+            {
+              case LEAK_RECORDING_START:
+                recording = 1;
+                break;
+              case LEAK_RECORDING_STOP:
+                if( recording>0 ) recording = 0;
+                break;
+              case LEAK_RECORDING_CLEAR:
+              case LEAK_RECORDING_SHOW:
+                if( !recording ) recording = -1;
+                break;
+            }
+          }
           break;
       }
     }
