@@ -117,7 +117,6 @@ typedef struct localData
   func_tempnam *otempnam;
   func_wtempnam *owtempnam;
 
-  HANDLE master;
   HANDLE controlPipe;
   HMODULE heobMod;
   HMODULE kernel32;
@@ -156,11 +155,12 @@ typedef struct localData
   char subXmlName[MAX_PATH];
   char subCurDir[MAX_PATH];
 
+  CRITICAL_SECTION csMod;
+  CRITICAL_SECTION csAllocId;
   CRITICAL_SECTION csWrite;
   CRITICAL_SECTION csFreedMod;
-  CRITICAL_SECTION csLeakType;
 
-  // protected by csWrite {{{
+  // protected by csMod {{{
 
   HMODULE *mod_a;
   int mod_q;
@@ -175,10 +175,18 @@ typedef struct localData
   int mod_mem_q;
   int mod_mem_s;
 
+  // }}}
+  // protected by csAllocId {{{
+
   size_t cur_id;
   size_t raise_id;
   int raise_alloc_q;
   size_t *raise_alloc_a;
+
+  // }}}
+  // protected by csWrite {{{
+
+  HANDLE master;
 
 #ifndef NO_THREADNAMES
   threadNameInfo *threadName_a;
@@ -820,7 +828,7 @@ static NOINLINE void trackFree(
           }
         }
 
-        EnterCriticalSection( &rd->csWrite );
+        EnterCriticalSection( &rd->csMod );
 
         HMODULE *crt_mod_a = rd->crt_mod_a;
         int crt_mod_q = rd->crt_mod_q;
@@ -840,6 +848,10 @@ static NOINLINE void trackFree(
           aa[4].frames[0] = fget_heap_handle;
           break;
         }
+
+        LeaveCriticalSection( &rd->csMod );
+
+        EnterCriticalSection( &rd->csWrite );
 
         writeMods( aa,5 );
 
@@ -904,25 +916,32 @@ static NOINLINE void trackAlloc(
 
     CAPTURE_STACK_TRACE( 2,PTRS,a.frames,caller,rd->maxStackFrames );
 
-    EnterCriticalSection( &rd->csWrite );
+    EnterCriticalSection( &rd->csAllocId );
 
     size_t id = a.id = ++rd->cur_id;
+    size_t next_raise_id = rd->raise_id;
+    int is_next_raise = id==next_raise_id && id;
+
+    if( UNLIKELY(is_next_raise) )
+      rd->raise_id = rd->raise_alloc_q-- ? *(rd->raise_alloc_a++) : 0;
+
+    LeaveCriticalSection( &rd->csAllocId );
 
     int raiseException = 0;
-    if( UNLIKELY(id==rd->raise_id) && id )
+    if( UNLIKELY(is_next_raise) )
     {
+      EnterCriticalSection( &rd->csWrite );
+
       DWORD written;
       int type = WRITE_RAISE_ALLOCATION;
       WriteFile( rd->master,&type,sizeof(int),&written,NULL );
       WriteFile( rd->master,&id,sizeof(size_t),&written,NULL );
       WriteFile( rd->master,&ft,sizeof(funcType),&written,NULL );
 
-      rd->raise_id = rd->raise_alloc_q-- ? *(rd->raise_alloc_a++) : 0;
+      LeaveCriticalSection( &rd->csWrite );
 
       raiseException = 1;
     }
-
-    LeaveCriticalSection( &rd->csWrite );
 
     int splitIdx = (((uintptr_t)alloc_ptr)>>rd->ptrShift)&SPLIT_MASK;
     splitAllocation *sa = rd->splits + splitIdx;
@@ -976,9 +995,18 @@ static NOINLINE void trackAlloc(
 
     CAPTURE_STACK_TRACE( 2,PTRS,a.frames,caller,rd->maxStackFrames );
 
-    EnterCriticalSection( &rd->csWrite );
+    EnterCriticalSection( &rd->csAllocId );
 
     size_t id = a.id = ++rd->cur_id;
+    size_t next_raise_id = rd->raise_id;
+    int is_next_raise = id==next_raise_id && id;
+
+    if( UNLIKELY(is_next_raise) )
+      rd->raise_id = rd->raise_alloc_q-- ? *(rd->raise_alloc_a++) : 0;
+
+    LeaveCriticalSection( &rd->csAllocId );
+
+    EnterCriticalSection( &rd->csWrite );
 
     writeMods( &a,1 );
 
@@ -988,14 +1016,12 @@ static NOINLINE void trackAlloc(
     WriteFile( rd->master,&a,sizeof(allocation),&written,NULL );
 
     int raiseException = rd->opt.raiseException;
-    if( UNLIKELY(id==rd->raise_id) && id )
+    if( UNLIKELY(is_next_raise) )
     {
       type = WRITE_RAISE_ALLOCATION;
       WriteFile( rd->master,&type,sizeof(int),&written,NULL );
       WriteFile( rd->master,&id,sizeof(size_t),&written,NULL );
       WriteFile( rd->master,&ft,sizeof(funcType),&written,NULL );
-
-      rd->raise_id = rd->raise_alloc_q-- ? *(rd->raise_alloc_a++) : 0;
 
       raiseException = 1;
     }
@@ -1519,9 +1545,14 @@ static void addModMem( PBYTE start,PBYTE end )
           rd->heap,0,rd->mod_mem_a,rd->mod_mem_s*sizeof(modMemType) );
     if( UNLIKELY(!mod_mem_an) )
     {
+      EnterCriticalSection( &rd->csWrite );
+
       DWORD written;
       int type = WRITE_MAIN_ALLOC_FAIL;
       WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+
+      LeaveCriticalSection( &rd->csWrite );
+
       exitWait( 1,0 );
     }
     rd->mod_mem_a = mod_mem_an;
@@ -1607,9 +1638,9 @@ static void findLeakTypeWork( leakTypeInfo *lti )
         if( lt!=LT_JOINTLY_LOST )
         {
           PBYTE memStart = a->ptr;
-          EnterCriticalSection( &rd->csLeakType );
+          EnterCriticalSection( &rd->csMod );
           addModMem( memStart,memStart+a->size );
-          LeaveCriticalSection( &rd->csLeakType );
+          LeaveCriticalSection( &rd->csMod );
         }
       }
     }
@@ -1709,7 +1740,9 @@ void findLeakTypes( void )
         allocation *a = alloc_a + j;
         if( a->lt!=LT_LOST || !a->frameCount ) continue;
         PBYTE memStart = a->ptr;
+        EnterCriticalSection( &rd->csMod );
         addModMem( memStart,memStart+a->size );
+        LeaveCriticalSection( &rd->csMod );
       }
     }
     leakType lt = k ? LT_INDIRECTLY_LOST : LT_JOINTLY_LOST;
@@ -2133,10 +2166,10 @@ static void addLoadedModule( HMODULE mod )
 {
   GET_REMOTEDATA( rd );
 
-  EnterCriticalSection( &rd->csWrite );
+  EnterCriticalSection( &rd->csMod );
   addModule( mod );
   replaceModFuncs();
-  LeaveCriticalSection( &rd->csWrite );
+  LeaveCriticalSection( &rd->csMod );
 }
 
 static HMODULE WINAPI new_LoadLibraryA( LPCSTR name )
@@ -2783,9 +2816,14 @@ static void addModule( HMODULE mod )
           rd->heap,0,rd->mod_a,rd->mod_s*sizeof(HMODULE) );
     if( UNLIKELY(!mod_an) )
     {
+      EnterCriticalSection( &rd->csWrite );
+
       DWORD written;
       int type = WRITE_MAIN_ALLOC_FAIL;
       WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+
+      LeaveCriticalSection( &rd->csWrite );
+
       exitWait( 1,0 );
     }
     rd->mod_a = mod_an;
@@ -2809,9 +2847,14 @@ static void addModule( HMODULE mod )
             rd->heap,0,rd->crt_mod_a,rd->crt_mod_s*sizeof(HMODULE) );
       if( UNLIKELY(!crt_mod_an) )
       {
+        EnterCriticalSection( &rd->csWrite );
+
         DWORD written;
         int type = WRITE_MAIN_ALLOC_FAIL;
         WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+
+        LeaveCriticalSection( &rd->csWrite );
+
         exitWait( 1,0 );
       }
       rd->crt_mod_a = crt_mod_an;
@@ -3825,6 +3868,8 @@ DWORD WINAPI heob( LPVOID arg )
     rd->fGetProcAddress( rd->kernel32,"InitializeCriticalSectionEx" );
   if( fInitCritSecEx )
   {
+    fInitCritSecEx( &ld->csMod,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
+    fInitCritSecEx( &ld->csAllocId,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
     fInitCritSecEx( &ld->csWrite,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
     fInitCritSecEx( &ld->csFreedMod,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
     int i;
@@ -3835,11 +3880,11 @@ DWORD WINAPI heob( LPVOID arg )
         fInitCritSecEx( &ld->freeds[i].cs,
             4000,CRITICAL_SECTION_NO_DEBUG_INFO );
     }
-    if( rd->opt.leakDetails>1 )
-      fInitCritSecEx( &ld->csLeakType,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
   }
   else
   {
+    InitializeCriticalSection( &ld->csMod );
+    InitializeCriticalSection( &ld->csAllocId );
     InitializeCriticalSection( &ld->csWrite );
     InitializeCriticalSection( &ld->csFreedMod );
     int i;
@@ -3849,8 +3894,6 @@ DWORD WINAPI heob( LPVOID arg )
       if( rd->opt.protectFree )
         InitializeCriticalSection( &ld->freeds[i].cs );
     }
-    if( rd->opt.leakDetails>1 )
-      InitializeCriticalSection( &ld->csLeakType );
   }
 
   ld->ptrShift = 5;
