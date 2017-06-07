@@ -1,0 +1,5 @@
+allocer: main()
+size of mem: 15
+
+no leaks found
+exit code: 36 (0xPTR)

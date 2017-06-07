@@ -664,6 +664,12 @@ void choose( int arg )
           printf( "heob.exe is not running\n" );
       }
       break;
+
+    case 36:
+      // _msize
+      printf( "size of mem: %d\n",(int)_msize(mem) );
+      fflush( stdout );
+      break;
   }
 
   mem = (char*)realloc( mem,30 );
