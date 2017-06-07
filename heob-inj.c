@@ -144,6 +144,8 @@ typedef struct localData
   int threadNameIdx;
 #endif
 
+  DWORD freeSizeTls;
+
   options opt;
   options globalopt;
   char *specificOptions;
@@ -359,6 +361,37 @@ static void writeMods( allocation *alloc_a,int alloc_q )
 // }}}
 // memory allocation tracking {{{
 
+static NOINLINE int allocSizeAndState( void *p,size_t *s,int enable )
+{
+  GET_REMOTEDATA( rd );
+
+  int splitIdx = (((uintptr_t)p)>>rd->ptrShift)&SPLIT_MASK;
+  splitAllocation *sa = rd->splits + splitIdx;
+  int prevEnable = 0;
+  size_t freeSize = -1;
+
+  EnterCriticalSection( &sa->cs );
+
+  int i;
+  for( i=sa->alloc_q-1; i>=0; i-- )
+  {
+    allocation *a = sa->alloc_a + i;
+    if( a->ptr!=p ) continue;
+    if( !a->frameCount ) break;
+
+    prevEnable = 1;
+    a->frameCount = enable;
+    freeSize = a->size;
+    break;
+  }
+
+  LeaveCriticalSection( &sa->cs );
+
+  *s = freeSize;
+
+  return( prevEnable );
+}
+
 static NOINLINE size_t heap_block_size( HANDLE heap,void *ptr )
 {
   PROCESS_HEAP_ENTRY phe;
@@ -390,24 +423,23 @@ static NOINLINE size_t heap_block_size( HANDLE heap,void *ptr )
   return( s );
 }
 
-static NOINLINE void trackAllocs(
-    void *free_ptr,void *alloc_ptr,size_t alloc_size,allocType at,funcType ft,
+static NOINLINE void trackFree(
+    void *free_ptr,allocType at,funcType ft,int failed_realloc,int enable,
     void *caller )
 {
-  GET_REMOTEDATA( rd );
-
   if( free_ptr )
   {
+    GET_REMOTEDATA( rd );
+
     int splitIdx = (((uintptr_t)free_ptr)>>rd->ptrShift)&SPLIT_MASK;
     splitAllocation *sa = rd->splits + splitIdx;
-
-    int failed_realloc = !alloc_ptr && alloc_size && alloc_size!=(size_t)-1;
+    size_t freeSize = -1;
 
     EnterCriticalSection( &sa->cs );
 
     int i;
     for( i=sa->alloc_q-1; i>=0 && sa->alloc_a[i].ptr!=free_ptr; i-- );
-    if( LIKELY(i>=0) )
+    if( LIKELY(i>=0 && (sa->alloc_a[i].frameCount || enable)) )
     {
       freed f;
       RtlMoveMemory( &f.a,&sa->alloc_a[i],sizeof(allocation) );
@@ -417,8 +449,12 @@ static NOINLINE void trackAllocs(
         sa->alloc_q--;
         if( i<sa->alloc_q ) sa->alloc_a[i] = sa->alloc_a[sa->alloc_q];
       }
+      else
+        sa->alloc_a[i].frameCount = enable;
 
       LeaveCriticalSection( &sa->cs );
+
+      freeSize = f.a.size;
 
       if( rd->opt.protectFree && !failed_realloc )
       {
@@ -668,7 +704,7 @@ static NOINLINE void trackAllocs(
                 }
               }
 
-              if( !foundRef )
+              if( !foundRef && a->frameCount )
               {
                 uintptr_t *refP = a->ptr;
                 size_t refS = s/sizeof(void*);
@@ -820,7 +856,17 @@ static NOINLINE void trackAllocs(
           DebugBreak();
       }
     }
+
+    TlsSetValue( rd->freeSizeTls,(void*)freeSize );
   }
+}
+#define trackFree(f,at,ft,fr,e) trackFree(f,at,ft,fr,e,RETURN_ADDRESS())
+
+static NOINLINE void trackAlloc(
+    void *alloc_ptr,size_t alloc_size,allocType at,funcType ft,
+    void *caller )
+{
+  GET_REMOTEDATA( rd );
 
   if( alloc_ptr )
   {
@@ -834,6 +880,7 @@ static NOINLINE void trackAllocs(
     a.recording = rd->recording;
     a.lt = LT_LOST;
     a.ft = ft;
+    a.frameCount = 1; // is 0 while realloc() is called (state unknown)
 #ifndef NO_THREADNAMES
     a.threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
     if( UNLIKELY(!a.threadNameIdx) )
@@ -959,20 +1006,17 @@ static NOINLINE void trackAllocs(
       DebugBreak();
   }
 }
-#define trackAllocs(f,a,s,at,ft) trackAllocs(f,a,s,at,ft,RETURN_ADDRESS())
+#define trackAlloc(a,s,at,ft) trackAlloc(a,s,at,ft,RETURN_ADDRESS())
 
 // }}}
 // replacements for memory allocation tracking {{{
-
-static void addModule( HMODULE mod );
-static void replaceModFuncs( void );
 
 static void *new_malloc( size_t s )
 {
   GET_REMOTEDATA( rd );
   void *b = rd->fmalloc( s );
 
-  trackAllocs( NULL,b,s,AT_MALLOC,FT_MALLOC );
+  trackAlloc( b,s,AT_MALLOC,FT_MALLOC );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_malloc\n";
@@ -990,7 +1034,7 @@ static void *new_calloc( size_t n,size_t s )
   GET_REMOTEDATA( rd );
   void *b = rd->fcalloc( n,s );
 
-  trackAllocs( NULL,b,n*s,AT_MALLOC,FT_CALLOC );
+  trackAlloc( b,n*s,AT_MALLOC,FT_CALLOC );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_calloc\n";
@@ -1005,10 +1049,10 @@ static void *new_calloc( size_t n,size_t s )
 
 static void new_free( void *b )
 {
+  trackFree( b,AT_MALLOC,FT_FREE,0,0 );
+
   GET_REMOTEDATA( rd );
   rd->ffree( b );
-
-  trackAllocs( b,NULL,-1,AT_MALLOC,FT_FREE );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_free\n";
@@ -1022,9 +1066,19 @@ static void new_free( void *b )
 static void *new_realloc( void *b,size_t s )
 {
   GET_REMOTEDATA( rd );
+
+  size_t os = -1;
+  int enable = 0;
+  if( b )
+  {
+    enable = allocSizeAndState( b,&os,0 );
+    TlsSetValue( rd->freeSizeTls,(void*)os );
+  }
+
   void *nb = rd->frealloc( b,s );
 
-  trackAllocs( b,nb,s,AT_MALLOC,FT_REALLOC );
+  trackFree( b,AT_MALLOC,FT_REALLOC,!nb && s,enable );
+  trackAlloc( nb,s,AT_MALLOC,FT_REALLOC );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_realloc\n";
@@ -1042,7 +1096,7 @@ static char *new_strdup( const char *s )
   GET_REMOTEDATA( rd );
   char *b = rd->fstrdup( s );
 
-  trackAllocs( NULL,b,lstrlen(s)+1,AT_MALLOC,FT_STRDUP );
+  trackAlloc( b,lstrlen(s)+1,AT_MALLOC,FT_STRDUP );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_strdup\n";
@@ -1060,7 +1114,7 @@ static wchar_t *new_wcsdup( const wchar_t *s )
   GET_REMOTEDATA( rd );
   wchar_t *b = rd->fwcsdup( s );
 
-  trackAllocs( NULL,b,(lstrlenW(s)+1)*2,AT_MALLOC,FT_WCSDUP );
+  trackAlloc( b,(lstrlenW(s)+1)*2,AT_MALLOC,FT_WCSDUP );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_wcsdup\n";
@@ -1078,7 +1132,7 @@ static void *new_op_new( size_t s )
   GET_REMOTEDATA( rd );
   void *b = rd->fop_new( s );
 
-  trackAllocs( NULL,b,s,AT_NEW,FT_OP_NEW );
+  trackAlloc( b,s,AT_NEW,FT_OP_NEW );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_op_new\n";
@@ -1093,10 +1147,10 @@ static void *new_op_new( size_t s )
 
 static void new_op_delete( void *b )
 {
+  trackFree( b,AT_NEW,FT_OP_DELETE,0,0 );
+
   GET_REMOTEDATA( rd );
   rd->fop_delete( b );
-
-  trackAllocs( b,NULL,-1,AT_NEW,FT_OP_DELETE );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_op_delete\n";
@@ -1112,7 +1166,7 @@ static void *new_op_new_a( size_t s )
   GET_REMOTEDATA( rd );
   void *b = rd->fop_new_a( s );
 
-  trackAllocs( NULL,b,s,rd->newArrAllocMethod,FT_OP_NEW_A );
+  trackAlloc( b,s,rd->newArrAllocMethod,FT_OP_NEW_A );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_op_new_a\n";
@@ -1128,9 +1182,10 @@ static void *new_op_new_a( size_t s )
 static void new_op_delete_a( void *b )
 {
   GET_REMOTEDATA( rd );
-  rd->fop_delete_a( b );
 
-  trackAllocs( b,NULL,-1,rd->newArrAllocMethod,FT_OP_DELETE_A );
+  trackFree( b,rd->newArrAllocMethod,FT_OP_DELETE_A,0,0 );
+
+  rd->fop_delete_a( b );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_op_delete_a\n";
@@ -1149,7 +1204,7 @@ static char *new_getcwd( char *buffer,int maxlen )
 
   size_t l = lstrlen( cwd ) + 1;
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
-  trackAllocs( NULL,cwd,l,AT_MALLOC,FT_GETCWD );
+  trackAlloc( cwd,l,AT_MALLOC,FT_GETCWD );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_getcwd\n";
@@ -1170,7 +1225,7 @@ static wchar_t *new_wgetcwd( wchar_t *buffer,int maxlen )
 
   size_t l = lstrlenW( cwd ) + 1;
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
-  trackAllocs( NULL,cwd,l*2,AT_MALLOC,FT_WGETCWD );
+  trackAlloc( cwd,l*2,AT_MALLOC,FT_WGETCWD );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_wgetcwd\n";
@@ -1191,7 +1246,7 @@ static char *new_getdcwd( int drive,char *buffer,int maxlen )
 
   size_t l = lstrlen( cwd ) + 1;
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
-  trackAllocs( NULL,cwd,l,AT_MALLOC,FT_GETDCWD );
+  trackAlloc( cwd,l,AT_MALLOC,FT_GETDCWD );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_getdcwd\n";
@@ -1212,7 +1267,7 @@ static wchar_t *new_wgetdcwd( int drive,wchar_t *buffer,int maxlen )
 
   size_t l = lstrlenW( cwd ) + 1;
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
-  trackAllocs( NULL,cwd,l*2,AT_MALLOC,FT_WGETDCWD );
+  trackAlloc( cwd,l*2,AT_MALLOC,FT_WGETDCWD );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_wgetdcwd\n";
@@ -1233,7 +1288,7 @@ static char *new_fullpath( char *absPath,const char *relPath,
   if( !fp || absPath ) return( fp );
 
   size_t l = lstrlen( fp ) + 1;
-  trackAllocs( NULL,fp,l,AT_MALLOC,FT_FULLPATH );
+  trackAlloc( fp,l,AT_MALLOC,FT_FULLPATH );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_fullpath\n";
@@ -1254,7 +1309,7 @@ static wchar_t *new_wfullpath( wchar_t *absPath,const wchar_t *relPath,
   if( !fp || absPath ) return( fp );
 
   size_t l = lstrlenW( fp ) + 1;
-  trackAllocs( NULL,fp,l*2,AT_MALLOC,FT_WFULLPATH );
+  trackAlloc( fp,l*2,AT_MALLOC,FT_WFULLPATH );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_wfullpath\n";
@@ -1274,7 +1329,7 @@ static char *new_tempnam( char *dir,char *prefix )
   if( !tn ) return( tn );
 
   size_t l = lstrlen( tn ) + 1;
-  trackAllocs( NULL,tn,l,AT_MALLOC,FT_TEMPNAM );
+  trackAlloc( tn,l,AT_MALLOC,FT_TEMPNAM );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_tempnam\n";
@@ -1294,7 +1349,7 @@ static wchar_t *new_wtempnam( wchar_t *dir,wchar_t *prefix )
   if( !tn ) return( tn );
 
   size_t l = lstrlenW( tn ) + 1;
-  trackAllocs( NULL,tn,l*2,AT_MALLOC,FT_WTEMPNAM );
+  trackAlloc( tn,l*2,AT_MALLOC,FT_WTEMPNAM );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_wtempnam\n";
@@ -1309,18 +1364,28 @@ static wchar_t *new_wtempnam( wchar_t *dir,wchar_t *prefix )
 
 static void new_free_dbg( void *b,int blockType )
 {
+  trackFree( b,AT_MALLOC,FT_FREE_DBG,0,0 );
+
   GET_REMOTEDATA( rd );
   rd->ffree_dbg( b,blockType );
-
-  trackAllocs( b,NULL,-1,AT_MALLOC,FT_FREE_DBG );
 }
 
 static void *new_recalloc( void *b,size_t n,size_t s )
 {
   GET_REMOTEDATA( rd );
+
+  size_t os = -1;
+  int enable = 0;
+  if( b )
+  {
+    enable = allocSizeAndState( b,&os,0 );
+    TlsSetValue( rd->freeSizeTls,(void*)os );
+  }
+
   void *nb = rd->frecalloc( b,n,s );
 
-  trackAllocs( b,nb,n*s,AT_MALLOC,FT_RECALLOC );
+  trackFree( b,AT_MALLOC,FT_RECALLOC,!nb && n && s,enable );
+  trackAlloc( nb,n*s,AT_MALLOC,FT_RECALLOC );
 
 #if WRITE_DEBUG_STRINGS
   char t[] = "called: new_recalloc\n";
@@ -1365,7 +1430,10 @@ static void writeLeakData( void )
     int j;
     int part_q = sa->alloc_q;
     for( j=0; j<part_q; j++ )
-      if( sa->alloc_a[j].recording ) alloc_q++;
+    {
+      allocation *a = sa->alloc_a + j;
+      if( a->recording && a->frameCount ) alloc_q++;
+    }
   }
   DWORD written;
   int type = WRITE_LEAKS;
@@ -1385,7 +1453,7 @@ static void writeLeakData( void )
     for( j=0; j<alloc_q; j++ )
     {
       allocation *a = sa->alloc_a + j;
-      if( a->recording )
+      if( a->recording && a->frameCount )
         WriteFile( rd->master,a,sizeof(allocation),&written,NULL );
     }
 
@@ -1395,7 +1463,7 @@ static void writeLeakData( void )
       for( j=0; j<alloc_q; j++ )
       {
         allocation *a = sa->alloc_a + j;
-        if( !a->recording || a->lt>=lDetails ) continue;
+        if( !a->recording || !a->frameCount || a->lt>=lDetails ) continue;
         size_t s = a->size;
         alloc_mem_sum += s<leakContents ? s : leakContents;
       }
@@ -1414,7 +1482,7 @@ static void writeLeakData( void )
       for( j=0; j<alloc_q; j++ )
       {
         allocation *a = sa->alloc_a + j;
-        if( !a->recording || a->lt>=lDetails ) continue;
+        if( !a->recording || !a->frameCount || a->lt>=lDetails ) continue;
         size_t s = a->size;
         if( leakContents<s ) s = leakContents;
         if( s )
@@ -1503,7 +1571,7 @@ static void findLeakTypeWork( leakTypeInfo *lti )
     for( j=0; j<alloc_q; j++ )
     {
       allocation *a = alloc_a + j;
-      if( a->lt!=ltUse ) continue;
+      if( a->lt!=ltUse || !a->frameCount ) continue;
       int k;
       uintptr_t ptr = (uintptr_t)a->ptr;
       size_t size = a->size;
@@ -1639,7 +1707,7 @@ void findLeakTypes( void )
       for( j=0; j<alloc_q; j++ )
       {
         allocation *a = alloc_a + j;
-        if( a->lt!=LT_LOST ) continue;
+        if( a->lt!=LT_LOST || !a->frameCount ) continue;
         PBYTE memStart = a->ptr;
         addModMem( memStart,memStart+a->size );
       }
@@ -1685,7 +1753,7 @@ static VOID WINAPI new_ExitProcess( UINT c )
     int save_recording = rd->recording;
     rd->recording = 1;
 
-    trackAllocs( NULL,(void*)-1,0,AT_EXIT,FT_COUNT );
+    trackAlloc( (void*)-1,0,AT_EXIT,FT_COUNT );
 
     rd->recording = save_recording;
   }
@@ -2058,6 +2126,9 @@ BOOL WINAPI new_CreateProcessW(
 // }}}
 // replacements for LoadLibrary/FreeLibrary {{{
 
+static void addModule( HMODULE mod );
+static void replaceModFuncs( void );
+
 static void addLoadedModule( HMODULE mod )
 {
   GET_REMOTEDATA( rd );
@@ -2190,24 +2261,6 @@ static VOID WINAPI new_FreeLibraryAET( HMODULE mod,DWORD exitCode )
 // }}}
 // page protection {{{
 
-static size_t alloc_size( void *p )
-{
-  GET_REMOTEDATA( rd );
-
-  int splitIdx = (((uintptr_t)p)>>rd->ptrShift)&SPLIT_MASK;
-  splitAllocation *sa = rd->splits + splitIdx;
-
-  EnterCriticalSection( &sa->cs );
-
-  int i;
-  for( i=sa->alloc_q-1; i>=0 && sa->alloc_a[i].ptr!=p; i-- );
-  size_t s = i>=0 ? sa->alloc_a[i].size : (size_t)-1;
-
-  LeaveCriticalSection( &sa->cs );
-
-  return( s );
-}
-
 static void *protect_alloc_m( size_t s )
 {
   GET_REMOTEDATA( rd );
@@ -2249,10 +2302,10 @@ static NOINLINE void protect_free_m( void *b,funcType ft )
 {
   if( !b ) return;
 
-  size_t s = alloc_size( b );
-  if( UNLIKELY(s==(size_t)-1) ) return;
-
   GET_REMOTEDATA( rd );
+
+  size_t s = (size_t)TlsGetValue( rd->freeSizeTls );
+  if( UNLIKELY(s==(size_t)-1) ) return;
 
   size_t pageAdd = rd->pageAdd;
   DWORD pageSize = rd->pageSize;
@@ -2405,7 +2458,7 @@ static void *protect_realloc( void *b,size_t s )
   if( !b )
     return( protect_alloc_m(s) );
 
-  size_t os = alloc_size( b );
+  size_t os = (size_t)TlsGetValue( rd->freeSizeTls );
   int extern_alloc = os==(size_t)-1;
   if( UNLIKELY(extern_alloc) )
   {
@@ -2661,7 +2714,7 @@ static void *protect_recalloc( void *b,size_t n,size_t s )
   if( !b )
     return( protect_alloc_m(res) );
 
-  size_t os = alloc_size( b );
+  size_t os = (size_t)TlsGetValue( rd->freeSizeTls );
   int extern_alloc = os==(size_t)-1;
   if( UNLIKELY(extern_alloc) )
   {
@@ -2689,7 +2742,9 @@ static void *protect_recalloc( void *b,size_t n,size_t s )
 static size_t protect_msize( void *b )
 {
   GET_REMOTEDATA( rd );
-  size_t s = alloc_size( b );
+  size_t s = -1;
+  if( b )
+    allocSizeAndState( b,&s,1 );
   if( s==(size_t)-1 && rd->crtHeap )
     s = heap_block_size( rd->crtHeap,b );
   return( s );
@@ -3830,6 +3885,8 @@ DWORD WINAPI heob( LPVOID arg )
         ntdll,"NtQueryInformationThread" );
   ld->threadNameTls = TlsAlloc();
 #endif
+
+  ld->freeSizeTls = TlsAlloc();
 
   if( rd->opt.protect )
   {

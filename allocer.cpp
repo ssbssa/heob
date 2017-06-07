@@ -127,6 +127,26 @@ enum
 };
 
 
+static DWORD WINAPI raceThread( LPVOID arg )
+{
+  char *r = NULL;
+  int c = 0;
+  for( int i=1; i<=1000; i++ )
+  {
+    if( arg )
+      r = (char*)realloc( r,i*10 );
+    else
+      r = (char*)malloc( i*10 );
+    c += r[0];
+    if( !arg )
+      free( r );
+  }
+  if( arg )
+    free( r );
+  return( c );
+}
+
+
 void choose( int arg )
 {
   printf( "allocer: main()\n" );
@@ -669,6 +689,21 @@ void choose( int arg )
       // _msize
       printf( "size of mem: %d\n",(int)_msize(mem) );
       fflush( stdout );
+      break;
+
+    case 37:
+    case 38:
+      // check for free/realloc race condition
+      {
+        HANDLE thread = CreateThread(
+            NULL,0,&raceThread,arg==37?(void*)1:NULL,0,NULL );
+
+        for( int i=1; i<=1000; i++ )
+          free( (void*)(size_t)i );
+
+        WaitForSingleObject( thread,INFINITE );
+        CloseHandle( thread );
+      }
       break;
   }
 
