@@ -2868,7 +2868,7 @@ void mainCRTStartup( void )
             pi.hThread = NULL;
             break;
           }
-          pi.dwProcessId = (DWORD)(LONG_PTR)tbi.ClientId.UniqueProcess;
+          pi.dwProcessId = (DWORD)(ULONG_PTR)tbi.ClientId.UniqueProcess;
 
           pi.hProcess = OpenProcess(
               STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0xfff,

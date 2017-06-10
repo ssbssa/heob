@@ -1952,7 +1952,8 @@ static VOID WINAPI new_RaiseException(
           THREAD_BASIC_INFORMATION tbi;
           RtlZeroMemory( &tbi,sizeof(THREAD_BASIC_INFORMATION) );
           if( rd->fNtQueryInformationThread(thread,
-                ThreadBasicInformation,&tbi,sizeof(tbi),NULL)==0 )
+                ThreadBasicInformation,&tbi,sizeof(tbi),NULL)==0 &&
+              (ULONG_PTR)tbi.ClientId.UniqueProcess==GetCurrentProcessId() )
           {
             PTEB teb = tbi.TebBaseAddress;
             if( threadNameTls<64 )
