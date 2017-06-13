@@ -217,8 +217,14 @@ static NORETURN void exitWait( UINT c,int terminate )
 {
   GET_REMOTEDATA( rd );
 
+  EnterCriticalSection( &rd->csWrite );
+
   FlushFileBuffers( rd->master );
   CloseHandle( rd->master );
+  rd->master = INVALID_HANDLE_VALUE;
+
+  LeaveCriticalSection( &rd->csWrite );
+
   rd->opt.raiseException = 0;
 
   if( rd->opt.newConsole )
@@ -3218,7 +3224,7 @@ static void replaceModFuncs( void )
 // }}}
 // exported functions for debugger {{{
 
-DLLEXPORT allocation *heob_find_allocation( uintptr_t addr )
+static allocation *heob_find_allocation_a( uintptr_t addr,allocation *aa )
 {
   GET_REMOTEDATA( rd );
 
@@ -3230,6 +3236,9 @@ DLLEXPORT allocation *heob_find_allocation( uintptr_t addr )
   int i,j;
   splitAllocation *sa;
   for( j=SPLIT_MASK,sa=rd->splits; j>=0; j--,sa++ )
+  {
+    EnterCriticalSection( &sa->cs );
+
     for( i=sa->alloc_q-1; i>=0; i-- )
     {
       allocation *a = sa->alloc_a + i;
@@ -3249,13 +3258,27 @@ DLLEXPORT allocation *heob_find_allocation( uintptr_t addr )
       }
 
       if( addr>=noAccessStart && addr<noAccessEnd )
-        return( a );
+      {
+        RtlMoveMemory( aa,a,sizeof(allocation) );
+        LeaveCriticalSection( &sa->cs );
+        return( aa );
+      }
     }
+
+    LeaveCriticalSection( &sa->cs );
+  }
 
   return( NULL );
 }
 
-DLLEXPORT freed *heob_find_freed( uintptr_t addr )
+DLLEXPORT allocation *heob_find_allocation( uintptr_t addr )
+{
+  GET_REMOTEDATA( rd );
+
+  return( heob_find_allocation_a(addr,&rd->ei->aa[0]) );
+}
+
+static allocation *heob_find_freed_a( uintptr_t addr,allocation *aa )
 {
   GET_REMOTEDATA( rd );
 
@@ -3268,6 +3291,9 @@ DLLEXPORT freed *heob_find_freed( uintptr_t addr )
   int i,j;
   splitFreed *sf;
   for( j=SPLIT_MASK,sf=rd->freeds; j>=0; j--,sf++ )
+  {
+    EnterCriticalSection( &sf->cs );
+
     for( i=sf->freed_q-1; i>=0; i-- )
     {
       freed *f = sf->freed_a + i;
@@ -3288,13 +3314,33 @@ DLLEXPORT freed *heob_find_freed( uintptr_t addr )
       }
 
       if( addr>=noAccessStart && addr<noAccessEnd )
-        return( f );
+      {
+        RtlMoveMemory( &aa[0],&f->a,sizeof(allocation) );
+        RtlMoveMemory( &aa[1].frames,&f->frames,PTRS*sizeof(void*) );
+        aa[1].ft = f->a.ftFreed;
+#ifndef NO_THREADNAMES
+        aa[1].threadNameIdx = f->threadNameIdx;
+#endif
+        LeaveCriticalSection( &sf->cs );
+        return( aa );
+      }
     }
+
+    LeaveCriticalSection( &sf->cs );
+  }
 
   return( NULL );
 }
 
-DLLEXPORT allocation *heob_find_nearest_allocation( uintptr_t addr )
+DLLEXPORT allocation *heob_find_freed( uintptr_t addr )
+{
+  GET_REMOTEDATA( rd );
+
+  return( heob_find_freed_a(addr,&rd->ei->aa[1]) );
+}
+
+static allocation *heob_find_nearest_allocation_a(
+    uintptr_t addr,allocation *aa )
 {
   GET_REMOTEDATA( rd );
 
@@ -3302,7 +3348,12 @@ DLLEXPORT allocation *heob_find_nearest_allocation( uintptr_t addr )
   splitAllocation *sa;
   uintptr_t nearestPtr = 0;
   allocation *nearestA = NULL;
+  CRITICAL_SECTION *nearestCs = NULL;
   for( j=SPLIT_MASK,sa=rd->splits; j>=0; j--,sa++ )
+  {
+    CRITICAL_SECTION *cs = &sa->cs;
+    EnterCriticalSection( cs );
+
     for( i=sa->alloc_q-1; i>=0; i-- )
     {
       allocation *a = sa->alloc_a + i;
@@ -3312,15 +3363,39 @@ DLLEXPORT allocation *heob_find_nearest_allocation( uintptr_t addr )
       if( addr>=ptr && (!nearestPtr || ptr>nearestPtr) &&
           addr-ptr<INTPTR_MAX )
       {
+        if( nearestCs!=cs )
+        {
+          if( nearestCs )
+            LeaveCriticalSection( nearestCs );
+          nearestCs = cs;
+        }
         nearestPtr = ptr;
         nearestA = a;
       }
     }
 
-  return( nearestA );
+    if( nearestCs!=cs )
+      LeaveCriticalSection( cs );
+  }
+
+  if( nearestA )
+  {
+    RtlMoveMemory( aa,nearestA,sizeof(allocation) );
+    LeaveCriticalSection( nearestCs );
+    return( aa );
+  }
+
+  return( NULL );
 }
 
-DLLEXPORT freed *heob_find_nearest_freed( uintptr_t addr )
+DLLEXPORT allocation *heob_find_nearest_allocation( uintptr_t addr )
+{
+  GET_REMOTEDATA( rd );
+
+  return( heob_find_nearest_allocation_a(addr,&rd->ei->aa[0]) );
+}
+
+static allocation *heob_find_nearest_freed_a( uintptr_t addr,allocation *aa )
 {
   GET_REMOTEDATA( rd );
 
@@ -3329,8 +3404,13 @@ DLLEXPORT freed *heob_find_nearest_freed( uintptr_t addr )
   int i,j;
   uintptr_t nearestPtr = 0;
   freed *nearestF = NULL;
+  CRITICAL_SECTION *nearestCs = NULL;
   splitFreed *sf;
   for( j=SPLIT_MASK,sf=rd->freeds; j>=0; j--,sf++ )
+  {
+    CRITICAL_SECTION *cs = &sf->cs;
+    EnterCriticalSection( cs );
+
     for( i=sf->freed_q-1; i>=0; i-- )
     {
       freed *f = sf->freed_a + i;
@@ -3340,12 +3420,41 @@ DLLEXPORT freed *heob_find_nearest_freed( uintptr_t addr )
       if( addr>=ptr && (!nearestPtr || ptr>nearestPtr) &&
           addr-ptr<INTPTR_MAX )
       {
+        if( nearestCs!=cs )
+        {
+          if( nearestCs )
+            LeaveCriticalSection( nearestCs );
+          nearestCs = cs;
+        }
         nearestPtr = ptr;
         nearestF = f;
       }
     }
 
-  return( nearestF );
+    if( nearestCs!=cs )
+      LeaveCriticalSection( cs );
+  }
+
+  if( nearestF )
+  {
+    RtlMoveMemory( &aa[0],&nearestF->a,sizeof(allocation) );
+    RtlMoveMemory( &aa[1].frames,&nearestF->frames,PTRS*sizeof(void*) );
+    aa[1].ft = nearestF->a.ftFreed;
+#ifndef NO_THREADNAMES
+    aa[1].threadNameIdx = nearestF->threadNameIdx;
+#endif
+    LeaveCriticalSection( nearestCs );
+    return( aa );
+  }
+
+  return( NULL );
+}
+
+DLLEXPORT allocation *heob_find_nearest_freed( uintptr_t addr )
+{
+  GET_REMOTEDATA( rd );
+
+  return( heob_find_nearest_freed_a(addr,&rd->ei->aa[1]) );
 }
 
 DLLEXPORT VOID heob_exit( UINT c )
@@ -3375,9 +3484,6 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 {
   GET_REMOTEDATA( rd );
 
-  int type;
-  DWORD written;
-
   exceptionInfo *eiPtr = rd->ei;
 #define ei (*eiPtr)
 
@@ -3389,51 +3495,36 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   {
     uintptr_t addr = ep->ExceptionRecord->ExceptionInformation[1];
 
-    allocation *a = heob_find_allocation( addr );
+    allocation *a = heob_find_allocation_a( addr,&ei.aa[1] );
     if( a )
     {
-      RtlMoveMemory( &ei.aa[1],a,sizeof(allocation) );
       ei.aq++;
     }
     else
     {
-      freed *f = heob_find_freed( addr );
-      if( f )
+      allocation *af = heob_find_freed_a( addr,&ei.aa[1] );
+      if( af )
       {
-        RtlMoveMemory( &ei.aa[1],&f->a,sizeof(allocation) );
-        RtlMoveMemory( &ei.aa[2].frames,&f->frames,PTRS*sizeof(void*) );
-        ei.aa[2].ft = f->a.ftFreed;
-#ifndef NO_THREADNAMES
-        ei.aa[2].threadNameIdx = f->threadNameIdx;
-#endif
         ei.aq += 2;
       }
       else if( rd->opt.findNearest )
       {
-        a = heob_find_nearest_allocation( addr );
-        f = heob_find_nearest_freed( addr );
-        if( a && (!f || a->ptr>f->a.ptr) )
+        a = heob_find_nearest_allocation_a( addr,&ei.aa[0] );
+        af = heob_find_nearest_freed_a( addr,&ei.aa[1] );
+        if( a && (!af || a->ptr>af->ptr) )
         {
-          RtlMoveMemory( &ei.aa[1],a,sizeof(allocation) );
+          RtlMoveMemory( &ei.aa[1],&ei.aa[0],sizeof(allocation) );
           ei.aq++;
           ei.nearest = 1;
         }
-        else if( f )
+        else if( af )
         {
-          RtlMoveMemory( &ei.aa[1],&f->a,sizeof(allocation) );
-          RtlMoveMemory( &ei.aa[2].frames,&f->frames,PTRS*sizeof(void*) );
-          ei.aa[2].ft = f->a.ftFreed;
-#ifndef NO_THREADNAMES
-          ei.aa[2].threadNameIdx = f->threadNameIdx;
-#endif
           ei.aq += 2;
           ei.nearest = 2;
         }
       }
     }
   }
-
-  type = WRITE_EXCEPTION;
 
   int count = 0;
   void **frames = ei.aa[0].frames;
@@ -3529,11 +3620,18 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
     rd->fFreeLibrary( symMod );
 #endif
 
+  RtlMoveMemory( &ei.er,ep->ExceptionRecord,sizeof(EXCEPTION_RECORD) );
+
+  EnterCriticalSection( &rd->csWrite );
+
   writeMods( ei.aa,ei.aq );
 
-  RtlMoveMemory( &ei.er,ep->ExceptionRecord,sizeof(EXCEPTION_RECORD) );
+  int type = WRITE_EXCEPTION;
+  DWORD written;
   WriteFile( rd->master,&type,sizeof(int),&written,NULL );
   WriteFile( rd->master,&ei,sizeof(exceptionInfo),&written,NULL );
+
+  LeaveCriticalSection( &rd->csWrite );
 
 #undef ei
 
