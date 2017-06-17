@@ -3232,6 +3232,7 @@ static allocation *heob_find_allocation_a( uintptr_t addr,allocation *aa )
 
   int protect = rd->opt.protect;
   size_t sizeAdd = rd->pageSize*rd->pageAdd;
+  DWORD pageSize = rd->pageSize;
 
   int i,j;
   splitAllocation *sa;
@@ -3244,20 +3245,21 @@ static allocation *heob_find_allocation_a( uintptr_t addr,allocation *aa )
       allocation *a = sa->alloc_a + i;
 
       uintptr_t ptr = (uintptr_t)a->ptr;
-      uintptr_t noAccessStart;
-      uintptr_t noAccessEnd;
+      size_t size = a->size;
+      uintptr_t blockStart;
+      uintptr_t blockEnd;
       if( protect==1 )
       {
-        noAccessStart = ptr + a->size;
-        noAccessEnd = noAccessStart + sizeAdd;
+        blockStart = ptr - ( ptr%pageSize );
+        blockEnd = ptr + size + sizeAdd;
       }
       else
       {
-        noAccessStart = ptr - sizeAdd;
-        noAccessEnd = ptr;
+        blockStart = ptr - sizeAdd;
+        blockEnd = ptr + ( size?(size-1)/pageSize+1:0 )*pageSize;
       }
 
-      if( addr>=noAccessStart && addr<noAccessEnd )
+      if( addr>=blockStart && addr<blockEnd )
       {
         RtlMoveMemory( aa,a,sizeof(allocation) );
         LeaveCriticalSection( &sa->cs );
@@ -3305,7 +3307,7 @@ static allocation *heob_find_freed_a( uintptr_t addr,allocation *aa )
       if( protect==1 )
       {
         noAccessStart = ptr - ( ptr%pageSize );
-        noAccessEnd = ptr + f->a.size + sizeAdd;
+        noAccessEnd = ptr + size + sizeAdd;
       }
       else
       {
