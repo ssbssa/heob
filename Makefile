@@ -216,7 +216,11 @@ T_H74=-p0 -a16 -f0 -l1
 T_A74=36
 T_H75=-p1 -a16 -f0 -l1
 T_A75=36
-TESTS:=$(shell seq -w 01 75)
+T_H76=-p1 -a16 -f0
+T_A76=39
+T_H77=-p1 -a16 -f1
+T_A77=39
+TESTS:=$(shell seq -w 01 77)
 
 testres:
 	mkdir -p $@

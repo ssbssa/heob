@@ -147,6 +147,51 @@ static DWORD WINAPI raceThread( LPVOID arg )
 }
 
 
+typedef struct
+{
+  char *ptr;
+  size_t size;
+} heob_allocation;
+
+typedef heob_allocation *func_heob_find( void* );
+
+func_heob_find *heob_find_allocation;
+func_heob_find *heob_find_freed;
+func_heob_find *heob_find_nearest_allocation;
+func_heob_find *heob_find_nearest_freed;
+
+static void heob_find( char *ptr )
+{
+  heob_allocation *a;
+  const char *found_text = NULL;
+  if( (a=heob_find_allocation(ptr)) )
+    found_text = "allocated";
+  else if( (a=heob_find_freed(ptr)) )
+    found_text = "freed";
+  else
+  {
+    a = heob_find_nearest_allocation( ptr );
+    heob_allocation *f = heob_find_nearest_freed( ptr );
+    if( a && (!f || a->ptr>f->ptr) && ptr-a->ptr<16384 )
+      found_text = "near allocated";
+    else if( f && ptr-f->ptr<16384 )
+    {
+      a = f;
+      found_text = "near freed";
+    }
+  }
+
+  if( found_text )
+  {
+    intptr_t d = ptr - a->ptr;
+    printf( "pointer 0x%p is %s: size=%u; offset=%s%d\n",
+        ptr,found_text,(unsigned)a->size,d>0?"+":"",(int)d );
+  }
+  else
+    printf( "pointer 0x%p not found\n",ptr );
+}
+
+
 void choose( int arg )
 {
   printf( "allocer: main()\n" );
@@ -703,6 +748,44 @@ void choose( int arg )
 
         WaitForSingleObject( thread,INFINITE );
         CloseHandle( thread );
+      }
+      break;
+
+    case 39:
+      // query heob for allocation information
+      {
+        HMODULE heob = GetModuleHandle( "heob" BITS ".exe" );
+        heob_find_allocation = heob ? (func_heob_find*)GetProcAddress(
+            heob,"heob_find_allocation" ) : NULL;
+        heob_find_freed = heob ? (func_heob_find*)GetProcAddress(
+            heob,"heob_find_freed" ) : NULL;
+        heob_find_nearest_allocation = heob ? (func_heob_find*)GetProcAddress(
+            heob,"heob_find_nearest_allocation" ) : NULL;
+        heob_find_nearest_freed = heob ? (func_heob_find*)GetProcAddress(
+            heob,"heob_find_nearest_freed" ) : NULL;
+        if( heob_find_allocation && heob_find_freed &&
+            heob_find_nearest_allocation && heob_find_nearest_freed )
+        {
+          char *ptr = (char*)malloc( 10 );
+
+          heob_find( ptr );
+          heob_find( ptr-10 );
+          heob_find( ptr+3 );
+          heob_find( ptr+100 );
+          heob_find( ptr+8192 );
+
+          free( ptr );
+
+          heob_find( ptr );
+          heob_find( ptr-10 );
+          heob_find( ptr+3 );
+          heob_find( ptr+100 );
+          heob_find( ptr+8192 );
+
+          heob_find( (char*)0x5 );
+
+          fflush( stdout );
+        }
       }
       break;
   }

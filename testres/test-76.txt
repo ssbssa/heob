@@ -1,0 +1,15 @@
+allocer: main()
+pointer 0xPTR is near allocated: size=16; offset=0
+pointer 0xPTR not found
+pointer 0xPTR is near allocated: size=16; offset=+3
+pointer 0xPTR is allocated: size=16; offset=+100
+pointer 0xPTR is near allocated: size=16; offset=+8192
+pointer 0xPTR not found
+pointer 0xPTR not found
+pointer 0xPTR not found
+pointer 0xPTR not found
+pointer 0xPTR not found
+pointer 0xPTR not found
+
+no leaks found
+exit code: 39 (0xPTR)
