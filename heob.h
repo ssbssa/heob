@@ -23,7 +23,6 @@
 #define PTRS 128
 
 #define USE_STACKWALK       1
-#define WRITE_DEBUG_STRINGS 0
 
 #define DLLEXPORT __declspec(dllexport)
 
@@ -308,9 +307,6 @@ DWORD WINAPI heob( LPVOID arg );
 
 enum
 {
-#if WRITE_DEBUG_STRINGS
-  WRITE_STRING,
-#endif
   WRITE_LEAKS,
   WRITE_MODS,
   WRITE_EXCEPTION,

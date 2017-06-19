@@ -3701,27 +3701,6 @@ void mainCRTStartup( void )
 
       switch( type )
       {
-#if WRITE_DEBUG_STRINGS
-        case WRITE_STRING:
-          {
-            char buf[1024];
-            char *bufpos = buf;
-            while( readFile(readPipe,bufpos,1,&ov) )
-            {
-              if( bufpos[0]!='\n' )
-              {
-                bufpos++;
-                continue;
-              }
-              bufpos[0] = 0;
-              printf( "child: '%s'\n",buf );
-              bufpos = buf;
-              break;
-            }
-          }
-          break;
-#endif
-
         case WRITE_LEAKS:
           {
             alloc_q = 0;

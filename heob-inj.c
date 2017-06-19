@@ -1050,14 +1050,6 @@ static void *new_malloc( size_t s )
 
   trackAlloc( b,s,AT_MALLOC,FT_MALLOC );
 
-#if WRITE_DEBUG_STRINGS
-  char t[] = "called: new_malloc\n";
-  DWORD written;
-  int type = WRITE_STRING;
-  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
-#endif
-
   return( b );
 }
 
@@ -1068,14 +1060,6 @@ static void *new_calloc( size_t n,size_t s )
 
   trackAlloc( b,n*s,AT_MALLOC,FT_CALLOC );
 
-#if WRITE_DEBUG_STRINGS
-  char t[] = "called: new_calloc\n";
-  DWORD written;
-  int type = WRITE_STRING;
-  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
-#endif
-
   return( b );
 }
 
@@ -1085,14 +1069,6 @@ static void new_free( void *b )
 
   GET_REMOTEDATA( rd );
   rd->ffree( b );
-
-#if WRITE_DEBUG_STRINGS
-  char t[] = "called: new_free\n";
-  DWORD written;
-  int type = WRITE_STRING;
-  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
-#endif
 }
 
 static void *new_realloc( void *b,size_t s )
@@ -1112,14 +1088,6 @@ static void *new_realloc( void *b,size_t s )
   trackFree( b,AT_MALLOC,FT_REALLOC,!nb && s,enable );
   trackAlloc( nb,s,AT_MALLOC,FT_REALLOC );
 
-#if WRITE_DEBUG_STRINGS
-  char t[] = "called: new_realloc\n";
-  DWORD written;
-  int type = WRITE_STRING;
-  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
-#endif
-
   return( nb );
 }
 
@@ -1129,14 +1097,6 @@ static char *new_strdup( const char *s )
   char *b = rd->fstrdup( s );
 
   trackAlloc( b,lstrlen(s)+1,AT_MALLOC,FT_STRDUP );
-
-#if WRITE_DEBUG_STRINGS
-  char t[] = "called: new_strdup\n";
-  DWORD written;
-  int type = WRITE_STRING;
-  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
-#endif
 
   return( b );
 }
@@ -1148,14 +1108,6 @@ static wchar_t *new_wcsdup( const wchar_t *s )
 
   trackAlloc( b,(lstrlenW(s)+1)*2,AT_MALLOC,FT_WCSDUP );
 
-#if WRITE_DEBUG_STRINGS
-  char t[] = "called: new_wcsdup\n";
-  DWORD written;
-  int type = WRITE_STRING;
-  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
-#endif
-
   return( b );
 }
 
@@ -1166,14 +1118,6 @@ static void *new_op_new( size_t s )
 
   trackAlloc( b,s,AT_NEW,FT_OP_NEW );
 
-#if WRITE_DEBUG_STRINGS
-  char t[] = "called: new_op_new\n";
-  DWORD written;
-  int type = WRITE_STRING;
-  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
-#endif
-
   return( b );
 }
 
@@ -1183,14 +1127,6 @@ static void new_op_delete( void *b )
 
   GET_REMOTEDATA( rd );
   rd->fop_delete( b );
-
-#if WRITE_DEBUG_STRINGS
-  char t[] = "called: new_op_delete\n";
-  DWORD written;
-  int type = WRITE_STRING;
-  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
-#endif
 }
 
 static void *new_op_new_a( size_t s )
@@ -1199,14 +1135,6 @@ static void *new_op_new_a( size_t s )
   void *b = rd->fop_new_a( s );
 
   trackAlloc( b,s,rd->newArrAllocMethod,FT_OP_NEW_A );
-
-#if WRITE_DEBUG_STRINGS
-  char t[] = "called: new_op_new_a\n";
-  DWORD written;
-  int type = WRITE_STRING;
-  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
-#endif
 
   return( b );
 }
@@ -1218,14 +1146,6 @@ static void new_op_delete_a( void *b )
   trackFree( b,rd->newArrAllocMethod,FT_OP_DELETE_A,0,0 );
 
   rd->fop_delete_a( b );
-
-#if WRITE_DEBUG_STRINGS
-  char t[] = "called: new_op_delete_a\n";
-  DWORD written;
-  int type = WRITE_STRING;
-  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
-#endif
 }
 
 static char *new_getcwd( char *buffer,int maxlen )
@@ -1237,14 +1157,6 @@ static char *new_getcwd( char *buffer,int maxlen )
   size_t l = lstrlen( cwd ) + 1;
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
   trackAlloc( cwd,l,AT_MALLOC,FT_GETCWD );
-
-#if WRITE_DEBUG_STRINGS
-  char t[] = "called: new_getcwd\n";
-  DWORD written;
-  int type = WRITE_STRING;
-  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
-#endif
 
   return( cwd );
 }
@@ -1259,14 +1171,6 @@ static wchar_t *new_wgetcwd( wchar_t *buffer,int maxlen )
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
   trackAlloc( cwd,l*2,AT_MALLOC,FT_WGETCWD );
 
-#if WRITE_DEBUG_STRINGS
-  char t[] = "called: new_wgetcwd\n";
-  DWORD written;
-  int type = WRITE_STRING;
-  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
-#endif
-
   return( cwd );
 }
 
@@ -1279,14 +1183,6 @@ static char *new_getdcwd( int drive,char *buffer,int maxlen )
   size_t l = lstrlen( cwd ) + 1;
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
   trackAlloc( cwd,l,AT_MALLOC,FT_GETDCWD );
-
-#if WRITE_DEBUG_STRINGS
-  char t[] = "called: new_getdcwd\n";
-  DWORD written;
-  int type = WRITE_STRING;
-  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
-#endif
 
   return( cwd );
 }
@@ -1301,14 +1197,6 @@ static wchar_t *new_wgetdcwd( int drive,wchar_t *buffer,int maxlen )
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
   trackAlloc( cwd,l*2,AT_MALLOC,FT_WGETDCWD );
 
-#if WRITE_DEBUG_STRINGS
-  char t[] = "called: new_wgetdcwd\n";
-  DWORD written;
-  int type = WRITE_STRING;
-  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
-#endif
-
   return( cwd );
 }
 
@@ -1321,14 +1209,6 @@ static char *new_fullpath( char *absPath,const char *relPath,
 
   size_t l = lstrlen( fp ) + 1;
   trackAlloc( fp,l,AT_MALLOC,FT_FULLPATH );
-
-#if WRITE_DEBUG_STRINGS
-  char t[] = "called: new_fullpath\n";
-  DWORD written;
-  int type = WRITE_STRING;
-  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
-#endif
 
   return( fp );
 }
@@ -1343,14 +1223,6 @@ static wchar_t *new_wfullpath( wchar_t *absPath,const wchar_t *relPath,
   size_t l = lstrlenW( fp ) + 1;
   trackAlloc( fp,l*2,AT_MALLOC,FT_WFULLPATH );
 
-#if WRITE_DEBUG_STRINGS
-  char t[] = "called: new_wfullpath\n";
-  DWORD written;
-  int type = WRITE_STRING;
-  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
-#endif
-
   return( fp );
 }
 
@@ -1363,14 +1235,6 @@ static char *new_tempnam( char *dir,char *prefix )
   size_t l = lstrlen( tn ) + 1;
   trackAlloc( tn,l,AT_MALLOC,FT_TEMPNAM );
 
-#if WRITE_DEBUG_STRINGS
-  char t[] = "called: new_tempnam\n";
-  DWORD written;
-  int type = WRITE_STRING;
-  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
-#endif
-
   return( tn );
 }
 
@@ -1382,14 +1246,6 @@ static wchar_t *new_wtempnam( wchar_t *dir,wchar_t *prefix )
 
   size_t l = lstrlenW( tn ) + 1;
   trackAlloc( tn,l*2,AT_MALLOC,FT_WTEMPNAM );
-
-#if WRITE_DEBUG_STRINGS
-  char t[] = "called: new_wtempnam\n";
-  DWORD written;
-  int type = WRITE_STRING;
-  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
-#endif
 
   return( tn );
 }
@@ -1418,14 +1274,6 @@ static void *new_recalloc( void *b,size_t n,size_t s )
 
   trackFree( b,AT_MALLOC,FT_RECALLOC,!nb && n && s,enable );
   trackAlloc( nb,n*s,AT_MALLOC,FT_RECALLOC );
-
-#if WRITE_DEBUG_STRINGS
-  char t[] = "called: new_recalloc\n";
-  DWORD written;
-  int type = WRITE_STRING;
-  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
-#endif
 
   return( nb );
 }
@@ -1767,19 +1615,11 @@ static VOID WINAPI new_ExitProcess( UINT c )
 {
   GET_REMOTEDATA( rd );
 
-  int type,i;
-  DWORD written;
-#if WRITE_DEBUG_STRINGS
-  char t[] = "called: new_ExitProcess\n";
-  type = WRITE_STRING;
-  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
-#endif
-
   EnterCriticalSection( &rd->csFreedMod );
   rd->inExit = 1;
   LeaveCriticalSection( &rd->csFreedMod );
 
+  int i;
   EnterCriticalSection( &rd->csWrite );
   for( i=0; i<=SPLIT_MASK; i++ )
     EnterCriticalSection( &rd->splits[i].cs );
@@ -1837,8 +1677,9 @@ static VOID WINAPI new_ExitProcess( UINT c )
 
   writeLeakData();
 
-  type = WRITE_EXIT;
+  int type = WRITE_EXIT;
   int terminated = 0;
+  DWORD written;
   WriteFile( rd->master,&type,sizeof(int),&written,NULL );
   WriteFile( rd->master,&c,sizeof(UINT),&written,NULL );
   WriteFile( rd->master,&terminated,sizeof(int),&written,NULL );
@@ -2183,15 +2024,6 @@ static HMODULE WINAPI new_LoadLibraryA( LPCSTR name )
 {
   GET_REMOTEDATA( rd );
 
-#if WRITE_DEBUG_STRINGS
-  int type;
-  DWORD written;
-  char t[] = "called: new_LoadLibraryA\n";
-  type = WRITE_STRING;
-  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
-#endif
-
   HMODULE mod = rd->fLoadLibraryA( name );
 
   if( mod ) addLoadedModule( mod );
@@ -2202,15 +2034,6 @@ static HMODULE WINAPI new_LoadLibraryA( LPCSTR name )
 static HMODULE WINAPI new_LoadLibraryW( LPCWSTR name )
 {
   GET_REMOTEDATA( rd );
-
-#if WRITE_DEBUG_STRINGS
-  int type;
-  DWORD written;
-  char t[] = "called: new_LoadLibraryW\n";
-  type = WRITE_STRING;
-  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,t,sizeof(t)-1,&written,NULL );
-#endif
 
   HMODULE mod = rd->fLoadLibraryW( name );
 
