@@ -3627,6 +3627,7 @@ void mainCRTStartup( void )
     int threadName_q = 0;
     threadNameInfo *threadName_a = NULL;
 #endif
+    if( opt.handleException>=2 ) opt.leakRecording = 0;
     if( !opt.leakRecording ) in = NULL;
     int recording = opt.leakRecording!=1 ? 1 : -1;
     int needData = 1;
