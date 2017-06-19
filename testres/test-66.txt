@@ -1,5 +1,5 @@
 allocer: main()
+thread id: same
 
 no leaks found
 exit code: 29 (0xPTR)
-thread id: same

@@ -1,6 +1,6 @@
 allocer: main()
+m0: 0xPTR
+r0: 0xPTR
 
 no leaks found
 exit code: 34 (0xPTR)
-m0: 0xPTR
-r0: 0xPTR

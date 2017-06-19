@@ -733,7 +733,6 @@ void choose( int arg )
     case 36:
       // _msize
       printf( "size of mem: %d\n",(int)_msize(mem) );
-      fflush( stdout );
       break;
 
     case 37:
@@ -783,8 +782,6 @@ void choose( int arg )
           heob_find( ptr+8192 );
 
           heob_find( (char*)0x5 );
-
-          fflush( stdout );
         }
       }
       break;
@@ -793,6 +790,8 @@ void choose( int arg )
   mem = (char*)realloc( mem,30 );
   if( mem ) printf( "%s",mem );
   free( mem );
+
+  fflush( stdout );
 }
 
 
