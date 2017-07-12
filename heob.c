@@ -3844,10 +3844,13 @@ void mainCRTStartup( void )
                 char *ptr = (char*)ei.aa[1].ptr;
                 size_t size = ei.aa[1].size;
                 nearBlock = ei.nearest ? "near " : "";
-                blockType = ei.aq>2 ? "freed block" : "protected area of";
+                intptr_t accessPos = addr - ptr;
+                blockType = ei.aq>2 ? "freed block" :
+                  ( accessPos>=0 && (size_t)accessPos<size ?
+                    "accessible (!) area of" : "protected area of" );
                 printf( "$I  %s%s %p (size %U, offset %s%D)\n",
                     nearBlock,blockType,
-                    ptr,size,addr>ptr?"+":"",addr-ptr );
+                    ptr,size,accessPos>0?"+":"",accessPos );
                 printf( "$S  allocated on: $N(#%U)",ei.aa[1].id );
                 printThreadName( ei.aa[1].threadNameIdx );
                 printStackCount( ei.aa[1].frames,ei.aa[1].frameCount,

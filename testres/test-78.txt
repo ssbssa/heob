@@ -1,0 +1,8 @@
+allocer: main()
+
+unhandled exception code: 0xPTR (ACCESS_VIOLATION)
+  exception on:
+  read access violation at 0xPTR
+  accessible (!) area of 0xPTR (size 16, offset +1)
+  allocated on: (#2)
+    [strdup]

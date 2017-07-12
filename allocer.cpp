@@ -785,6 +785,17 @@ void choose( int arg )
         }
       }
       break;
+
+    case 40:
+      // manipulated access rights
+      {
+        char *s = strdup( "abc" );
+        DWORD prot;
+        VirtualProtect( s,4,PAGE_NOACCESS,&prot );
+        mem[1] = s[1];
+        free( s );
+      }
+      break;
   }
 
   mem = (char*)realloc( mem,30 );
