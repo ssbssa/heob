@@ -3656,6 +3656,7 @@ void mainCRTStartup( void )
       if( WaitForMultipleObjects(waitCount,handles,
             FALSE,INFINITE)==WAIT_OBJECT_0+1 )
       {
+        // control leak recording {{{
         INPUT_RECORD ir;
         if( ReadConsoleInput(in,&ir,1,&didread) &&
             ir.EventType==KEY_EVENT &&
@@ -3690,6 +3691,7 @@ void mainCRTStartup( void )
             WriteFile( controlPipe,&cmd,sizeof(int),&didread,NULL );
         }
         continue;
+        // }}}
       }
 
       if( in )
@@ -3702,6 +3704,8 @@ void mainCRTStartup( void )
 
       switch( type )
       {
+        // leaks {{{
+
         case WRITE_LEAKS:
           {
             alloc_q = 0;
@@ -3754,6 +3758,9 @@ void mainCRTStartup( void )
               &opt,tc,&ds,heap,tcXml,(uintptr_t)RETURN_ADDRESS() );
           break;
 
+          // }}}
+          // modules {{{
+
         case WRITE_MODS:
           if( !readFile(readPipe,&mi_q,sizeof(int),&ov) )
             mi_q = 0;
@@ -3780,6 +3787,9 @@ void mainCRTStartup( void )
           }
 #endif
           break;
+
+          // }}}
+          // exception {{{
 
         case WRITE_EXCEPTION:
           {
@@ -3919,6 +3929,9 @@ void mainCRTStartup( void )
           }
           break;
 
+          // }}}
+          // allocation failure {{{
+
         case WRITE_ALLOC_FAIL:
           {
             if( !readFile(readPipe,aa,sizeof(allocation),&ov) )
@@ -3950,6 +3963,9 @@ void mainCRTStartup( void )
             }
           }
           break;
+
+          // }}}
+          // free of invalid pointer {{{
 
         case WRITE_FREE_FAIL:
           {
@@ -4097,6 +4113,9 @@ void mainCRTStartup( void )
           }
           break;
 
+          // }}}
+          // double free {{{
+
         case WRITE_DOUBLE_FREE:
           {
             if( !readFile(readPipe,aa,3*sizeof(allocation),&ov) )
@@ -4150,6 +4169,9 @@ void mainCRTStartup( void )
           }
           break;
 
+          // }}}
+          // slack access {{{
+
         case WRITE_SLACK:
           {
             if( !readFile(readPipe,aa,2*sizeof(allocation),&ov) )
@@ -4200,11 +4222,17 @@ void mainCRTStartup( void )
           }
           break;
 
+          // }}}
+          // main allocation failure {{{
+
         case WRITE_MAIN_ALLOC_FAIL:
           printf( "\n$Wnot enough memory to keep track of allocations\n" );
           terminated = -1;
           heobExit = HEOB_OUT_OF_MEMORY;
           break;
+
+          // }}}
+          // mismatching allocation/release method {{{
 
         case WRITE_WRONG_DEALLOC:
           {
@@ -4249,6 +4277,9 @@ void mainCRTStartup( void )
           }
           break;
 
+          // }}}
+          // exception of allocation # {{{
+
         case WRITE_RAISE_ALLOCATION:
           {
             size_t id;
@@ -4262,6 +4293,9 @@ void mainCRTStartup( void )
                 id,funcnames[ft] );
           }
           break;
+
+          // }}}
+          // thread names {{{
 
 #ifndef NO_THREADNAMES
         case WRITE_THREAD_NAMES:
@@ -4286,6 +4320,9 @@ void mainCRTStartup( void )
           }
           break;
 #endif
+
+          // }}}
+          // exit information {{{
 
         case WRITE_EXIT:
           if( !readFile(readPipe,&exitCode,sizeof(UINT),&ov) )
@@ -4320,6 +4357,9 @@ void mainCRTStartup( void )
           heobExitData = exitCode;
           break;
 
+          // }}}
+          // leak recording {{{
+
         case WRITE_RECORDING:
           {
             int cmd;
@@ -4341,6 +4381,8 @@ void mainCRTStartup( void )
             }
           }
           break;
+
+          // }}}
       }
     }
     CloseHandle( ov.hEvent );

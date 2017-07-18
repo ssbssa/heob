@@ -453,6 +453,7 @@ static NOINLINE void trackFree(
 
     int i;
     for( i=sa->alloc_q-1; i>=0 && sa->alloc_a[i].ptr!=free_ptr; i-- );
+    // successful free {{{
     if( LIKELY(i>=0 && (sa->alloc_a[i].frameCount || enable)) )
     {
       freed f;
@@ -470,6 +471,7 @@ static NOINLINE void trackFree(
 
       freeSize = f.a.size;
 
+      // freed memory information {{{
       if( rd->opt.protectFree && !failed_realloc )
       {
         f.a.ftFreed = ft;
@@ -514,7 +516,9 @@ static NOINLINE void trackFree(
 
         LeaveCriticalSection( &sf->cs );
       }
+      // }}}
 
+      // mismatching allocation/release method {{{
       if( UNLIKELY(rd->opt.allocMethod && f.a.at!=at) )
       {
         allocation *aa = HeapAlloc( rd->heap,0,2*sizeof(allocation) );
@@ -558,7 +562,10 @@ static NOINLINE void trackFree(
         if( rd->opt.raiseException>1 )
           DebugBreak();
       }
+      // }}}
     }
+    // }}}
+    // free of invalid pointer {{{
     else
     {
       LeaveCriticalSection( &sa->cs );
@@ -568,6 +575,7 @@ static NOINLINE void trackFree(
 
       LeaveCriticalSection( &rd->csFreedMod );
 
+      // double free {{{
       if( rd->opt.protectFree )
       {
         splitFreed *sf = rd->freeds + splitIdx;
@@ -630,6 +638,7 @@ static NOINLINE void trackFree(
         else
           LeaveCriticalSection( &sf->cs );
       }
+      // }}}
 
       if( i>=0 || !rd->crtHeap );
       else if( heap_block_size(rd->crtHeap,free_ptr)!=(size_t)-1 )
@@ -678,6 +687,8 @@ static NOINLINE void trackFree(
           int j;
           int foundAlloc = 0;
           int foundRef = 0;
+
+          // block address with offset {{{
           for( j=0; j<=SPLIT_MASK; j++ )
           {
             sa = rd->splits + j;
@@ -741,7 +752,9 @@ static NOINLINE void trackFree(
 
             if( foundAlloc && foundRef ) break;
           }
+          // }}}
 
+          // freed block address with offset {{{
           if( rd->opt.protectFree && !foundAlloc )
           {
             for( j=0; j<=SPLIT_MASK; j++ )
@@ -797,7 +810,9 @@ static NOINLINE void trackFree(
               if( foundAlloc ) break;
             }
           }
+          // }}}
 
+          // stack address {{{
           if( !foundAlloc )
           {
             TEB *teb = NtCurrentTeb();
@@ -832,8 +847,10 @@ static NOINLINE void trackFree(
               aa[1].frames[0] = prevFrame;
             }
           }
+          // }}}
         }
 
+        // block of different CRT {{{
         EnterCriticalSection( &rd->csMod );
 
         HMODULE *crt_mod_a = rd->crt_mod_a;
@@ -856,6 +873,7 @@ static NOINLINE void trackFree(
         }
 
         LeaveCriticalSection( &rd->csMod );
+        // }}}
 
         EnterCriticalSection( &rd->csWrite );
 
@@ -874,6 +892,7 @@ static NOINLINE void trackFree(
           DebugBreak();
       }
     }
+    // }}}
 
     TlsSetValue( rd->freeSizeTls,(void*)freeSize );
   }
@@ -886,6 +905,7 @@ static NOINLINE void trackAlloc(
 {
   GET_REMOTEDATA( rd );
 
+  // successful allocation {{{
   if( alloc_ptr )
   {
     uintptr_t align = rd->opt.align;
@@ -987,6 +1007,8 @@ static NOINLINE void trackAlloc(
     if( raiseException )
       DebugBreak();
   }
+  // }}}
+  // allocation failure {{{
   else if( UNLIKELY(alloc_size && alloc_size!=(size_t)-1) )
   {
     allocation a;
@@ -1037,6 +1059,7 @@ static NOINLINE void trackAlloc(
     if( raiseException )
       DebugBreak();
   }
+  // }}}
 }
 #define trackAlloc(a,s,at,ft) trackAlloc(a,s,at,ft,RETURN_ADDRESS())
 
