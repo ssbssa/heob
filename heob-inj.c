@@ -653,7 +653,7 @@ static NOINLINE void trackFree(
       else if( !inExit )
       {
         allocation *aa = HeapAlloc(
-            rd->heap,HEAP_ZERO_MEMORY,5*sizeof(allocation) );
+            rd->heap,HEAP_ZERO_MEMORY,4*sizeof(allocation) );
         if( UNLIKELY(!aa) )
         {
           EnterCriticalSection( &rd->csWrite );
@@ -679,27 +679,94 @@ static NOINLINE void trackFree(
         CAPTURE_STACK_TRACE( 2,PTRS,aa->frames,caller,rd->maxStackFrames );
 
         int protect = rd->opt.protect;
-        if( protect )
-        {
-          uintptr_t ptr = (uintptr_t)free_ptr;
-          size_t pageAdd = rd->pageAdd;
-          DWORD pageSize = rd->pageSize;
-          int j;
-          int foundAlloc = 0;
-          int foundRef = 0;
+        uintptr_t ptr = (uintptr_t)free_ptr;
+        size_t pageAdd = rd->pageAdd;
+        DWORD pageSize = rd->pageSize;
+        int j;
+        int foundAlloc = 0;
+        int foundRef = 0;
 
-          // block address with offset {{{
+        // block address with offset {{{
+        for( j=0; j<=SPLIT_MASK; j++ )
+        {
+          sa = rd->splits + j;
+
+          EnterCriticalSection( &sa->cs );
+
+          allocation *alloc_a = sa->alloc_a;
+          int alloc_q = sa->alloc_q;
+          for( i=0; i<alloc_q; i++ )
+          {
+            allocation *a = alloc_a + i;
+            uintptr_t p = (uintptr_t)a->ptr;
+            size_t s = a->size;
+
+            if( !foundAlloc )
+            {
+              uintptr_t realStart;
+              uintptr_t realEnd;
+              size_t slackSize;
+              if( protect==1 )
+              {
+                slackSize = p%pageSize;
+                realStart = p - slackSize;
+                realEnd = p + s + pageSize*pageAdd;
+              }
+              else
+              {
+                slackSize = ( pageSize - (s%pageSize) )%pageSize;
+                realStart = p - pageSize*pageAdd;
+                realEnd = p + s + slackSize;
+              }
+
+              if( ptr>=realStart && ptr<realEnd )
+              {
+                RtlMoveMemory( &aa[1],a,sizeof(allocation) );
+                foundAlloc = 1;
+                if( foundRef ) break;
+              }
+            }
+
+            if( !foundRef && a->frameCount )
+            {
+              uintptr_t *refP = a->ptr;
+              size_t refS = s/sizeof(void*);
+              size_t k;
+              for( k=0; k<refS; k++ )
+              {
+                if( refP[k]!=ptr ) continue;
+
+                RtlMoveMemory( &aa[3],a,sizeof(allocation) );
+                // in [2], because it's the only big enough unused field
+                aa[2].size = k*sizeof(void*);
+                foundRef = 1;
+                break;
+              }
+              if( foundAlloc && foundRef ) break;
+            }
+          }
+
+          LeaveCriticalSection( &sa->cs );
+
+          if( foundAlloc && foundRef ) break;
+        }
+        // }}}
+
+        // freed block address with offset {{{
+        if( rd->opt.protectFree && !foundAlloc )
+        {
           for( j=0; j<=SPLIT_MASK; j++ )
           {
-            sa = rd->splits + j;
+            splitFreed *sf = rd->freeds + j;
 
-            EnterCriticalSection( &sa->cs );
+            EnterCriticalSection( &sf->cs );
 
-            allocation *alloc_a = sa->alloc_a;
-            int alloc_q = sa->alloc_q;
-            for( i=0; i<alloc_q; i++ )
+            freed *freed_a = sf->freed_a;
+            int freed_q = sf->freed_q;
+            for( i=0; i<freed_q; i++ )
             {
-              allocation *a = alloc_a + i;
+              freed *f = freed_a + i;
+              allocation *a = &f->a;
               uintptr_t p = (uintptr_t)a->ptr;
               size_t s = a->size;
 
@@ -724,165 +791,102 @@ static NOINLINE void trackFree(
                 if( ptr>=realStart && ptr<realEnd )
                 {
                   RtlMoveMemory( &aa[1],a,sizeof(allocation) );
+                  aa[2].ptr = aa[1].ptr;
+                  RtlMoveMemory( aa[2].frames,f->frames,PTRS*sizeof(void*) );
+                  aa[2].ft = f->a.ftFreed;
+#ifndef NO_THREADNAMES
+                  aa[2].threadNameIdx = f->threadNameIdx;
+#endif
                   foundAlloc = 1;
-                  if( foundRef ) break;
-                }
-              }
-
-              if( !foundRef && a->frameCount )
-              {
-                uintptr_t *refP = a->ptr;
-                size_t refS = s/sizeof(void*);
-                size_t k;
-                for( k=0; k<refS; k++ )
-                {
-                  if( refP[k]!=ptr ) continue;
-
-                  RtlMoveMemory( &aa[3],a,sizeof(allocation) );
-                  // in [2], because it's the only big enough unused field
-                  aa[2].size = k*sizeof(void*);
-                  foundRef = 1;
                   break;
                 }
-                if( foundAlloc && foundRef ) break;
               }
             }
 
-            LeaveCriticalSection( &sa->cs );
+            LeaveCriticalSection( &sf->cs );
 
-            if( foundAlloc && foundRef ) break;
+            if( foundAlloc ) break;
           }
-          // }}}
-
-          // freed block address with offset {{{
-          if( rd->opt.protectFree && !foundAlloc )
-          {
-            for( j=0; j<=SPLIT_MASK; j++ )
-            {
-              splitFreed *sf = rd->freeds + j;
-
-              EnterCriticalSection( &sf->cs );
-
-              freed *freed_a = sf->freed_a;
-              int freed_q = sf->freed_q;
-              for( i=0; i<freed_q; i++ )
-              {
-                freed *f = freed_a + i;
-                allocation *a = &f->a;
-                uintptr_t p = (uintptr_t)a->ptr;
-                size_t s = a->size;
-
-                if( !foundAlloc )
-                {
-                  uintptr_t realStart;
-                  uintptr_t realEnd;
-                  size_t slackSize;
-                  if( protect==1 )
-                  {
-                    slackSize = p%pageSize;
-                    realStart = p - slackSize;
-                    realEnd = p + s + pageSize*pageAdd;
-                  }
-                  else
-                  {
-                    slackSize = ( pageSize - (s%pageSize) )%pageSize;
-                    realStart = p - pageSize*pageAdd;
-                    realEnd = p + s + slackSize;
-                  }
-
-                  if( ptr>=realStart && ptr<realEnd )
-                  {
-                    RtlMoveMemory( &aa[1],a,sizeof(allocation) );
-                    aa[2].ptr = aa[1].ptr;
-                    RtlMoveMemory( aa[2].frames,f->frames,PTRS*sizeof(void*) );
-                    aa[2].ft = f->a.ftFreed;
-#ifndef NO_THREADNAMES
-                    aa[2].threadNameIdx = f->threadNameIdx;
-#endif
-                    foundAlloc = 1;
-                    break;
-                  }
-                }
-              }
-
-              LeaveCriticalSection( &sf->cs );
-
-              if( foundAlloc ) break;
-            }
-          }
-          // }}}
-
-          // stack address {{{
-          if( !foundAlloc )
-          {
-            TEB *teb = NtCurrentTeb();
-            if( free_ptr>=teb->StackLimit && free_ptr<teb->StackBase )
-            {
-              // is otherwise unused since !foundAlloc
-              aa[1].id = 1;
-
-              if( ptr%sizeof(uintptr_t) )
-                ptr -= ptr%sizeof(uintptr_t);
-              void **frame = FRAME_ADDRESS();
-              void **endFrame = (void**)ptr;
-              int frameIdx = 0;
-              void *prevFrame = NULL;
-              void *curFrame = aa[0].frames[frameIdx];
-              while( curFrame && frame<endFrame )
-              {
-                if( *frame==curFrame )
-                {
-                  frameIdx++;
-                  if( frameIdx==PTRS )
-                  {
-                    prevFrame = NULL;
-                    break;
-                  }
-                  prevFrame = curFrame;
-                  curFrame = aa[0].frames[frameIdx];
-                }
-                frame++;
-              }
-              if( !curFrame ) prevFrame = NULL;
-              aa[1].frames[0] = prevFrame;
-            }
-          }
-          // }}}
         }
+        // }}}
+
+        // stack address {{{
+        if( !foundAlloc )
+        {
+          TEB *teb = NtCurrentTeb();
+          if( free_ptr>=teb->StackLimit && free_ptr<teb->StackBase )
+          {
+            // is otherwise unused since !foundAlloc
+            aa[1].id = 1;
+
+            if( ptr%sizeof(uintptr_t) )
+              ptr -= ptr%sizeof(uintptr_t);
+            void **frame = FRAME_ADDRESS();
+            void **endFrame = (void**)ptr;
+            int frameIdx = 0;
+            void *prevFrame = NULL;
+            void *curFrame = aa[0].frames[frameIdx];
+            while( curFrame && frame<endFrame )
+            {
+              if( *frame==curFrame )
+              {
+                frameIdx++;
+                if( frameIdx==PTRS )
+                {
+                  prevFrame = NULL;
+                  break;
+                }
+                prevFrame = curFrame;
+                curFrame = aa[0].frames[frameIdx];
+              }
+              frame++;
+            }
+            if( !curFrame ) prevFrame = NULL;
+            aa[1].frames[0] = prevFrame;
+
+            foundAlloc = 1;
+          }
+        }
+        // }}}
 
         // block of different CRT {{{
-        EnterCriticalSection( &rd->csMod );
-
-        HMODULE *crt_mod_a = rd->crt_mod_a;
-        int crt_mod_q = rd->crt_mod_q;
-        for( i=0; i<crt_mod_q; i++ )
+        if( !foundAlloc )
         {
-          HANDLE (*fget_heap_handle)( void ) =
-            rd->fGetProcAddress( crt_mod_a[i],"_get_heap_handle" );
-          HANDLE crtHeap = fget_heap_handle();
-          if( crtHeap==rd->crtHeap ) continue;
+          EnterCriticalSection( &rd->csMod );
 
-          size_t s = heap_block_size( crtHeap,free_ptr );
-          if( s==(size_t)-1 ) continue;
+          HMODULE *crt_mod_a = rd->crt_mod_a;
+          int crt_mod_q = rd->crt_mod_q;
+          for( i=0; i<crt_mod_q; i++ )
+          {
+            HANDLE (*fget_heap_handle)( void ) =
+              rd->fGetProcAddress( crt_mod_a[i],"_get_heap_handle" );
+            HANDLE crtHeap = fget_heap_handle();
+            if( crtHeap==rd->crtHeap ) continue;
 
-          aa[4].ptr = crt_mod_a[i];
-          aa[4].size = s;
-          // send info of this CRT module
-          aa[4].frames[0] = fget_heap_handle;
-          break;
+            size_t s = heap_block_size( crtHeap,free_ptr );
+            if( s==(size_t)-1 ) continue;
+
+            aa[1].id = 2;
+            aa[1].size = s;
+            // send info of this CRT module
+            aa[1].frames[0] = fget_heap_handle;
+
+            foundAlloc = 1;
+            break;
+          }
+
+          LeaveCriticalSection( &rd->csMod );
         }
-
-        LeaveCriticalSection( &rd->csMod );
         // }}}
 
         EnterCriticalSection( &rd->csWrite );
 
-        writeMods( aa,5 );
+        writeMods( aa,4 );
 
         DWORD written;
         int type = WRITE_FREE_FAIL;
         WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-        WriteFile( rd->master,aa,5*sizeof(allocation),&written,NULL );
+        WriteFile( rd->master,aa,4*sizeof(allocation),&written,NULL );
 
         LeaveCriticalSection( &rd->csWrite );
 
