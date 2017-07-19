@@ -29,6 +29,7 @@ extern "C" __declspec(dllimport) int *dll_int( void );
 extern "C" __declspec(dllimport) int *dll_arr( void );
 extern "C" __declspec(dllimport) DWORD dll_thread_id( void );
 extern "C" __declspec(dllimport) void do_nothing( void* );
+extern "C" __declspec(dllimport) char *dll_static_char( void );
 
 
 static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
@@ -628,12 +629,13 @@ void choose( int arg )
       {
         int d = 8/sizeof(void*);
         unsigned char **ref = (unsigned char**)malloc(
-            d*4*sizeof(void*) );
+            100*d*sizeof(void*) );
         ref[0*d] = (unsigned char*)malloc( 10 ) + 1;
         ref[1*d] = (unsigned char*)malloc( 20 ) - 2;
         unsigned char *noref = (unsigned char*)malloc( 30 );
         ref[2*d] = (unsigned char*)(size_t)0xabcdef01;
         ref[3*d] = (unsigned char*)&ref;
+        ref[4*d] = (unsigned char*)dll_static_char();
         do_nothing( ref );
         mem[1] = ref[3*d]!=NULL;
         mem[2] = noref[0];
@@ -643,6 +645,7 @@ void choose( int arg )
         free( noref-1 );
         free( ref[2*d] );
         free( ref[3*d] );
+        free( ref[4*d] );
         free( ref );
       }
       break;

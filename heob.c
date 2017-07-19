@@ -3977,7 +3977,7 @@ void mainCRTStartup( void )
               break;
 
             modInfo *allocMi = NULL;
-            if( !aa[1].ptr && aa[1].id==2 )
+            if( !aa[1].ptr && (aa[1].id==2 || aa[1].id==3) )
             {
               uintptr_t frame = (uintptr_t)aa[1].frames[0];
               int k;
@@ -4030,6 +4030,13 @@ void mainCRTStartup( void )
             else if( aa[1].id==2 )
             {
               printf( "$I  allocated (size %U) from:\n",aa[1].size );
+              if( allocMi )
+                locOut( tc,allocMi->base,allocMi->path,
+                    DWST_BASE_ADDR,0,NULL,ds.opt,0 );
+            }
+            else if( aa[1].id==3 )
+            {
+              printf( "$I  pointing to global area of:\n" );
               if( allocMi )
                 locOut( tc,allocMi->base,allocMi->path,
                     DWST_BASE_ADDR,0,NULL,ds.opt,0 );
@@ -4097,6 +4104,16 @@ void mainCRTStartup( void )
               {
                 printf( "  <auxwhat>allocated (size %U) from</auxwhat>\n",
                     aa[1].size );
+                if( allocMi )
+                {
+                  printf( "  <stack>\n" );
+                  locXml( tc,0,NULL,0,NULL,allocMi );
+                  printf( "  </stack>\n" );
+                }
+              }
+              else if( aa[1].id==3 )
+              {
+                printf( "  <auxwhat>pointing to global area of</auxwhat>\n" );
                 if( allocMi )
                 {
                   printf( "  <stack>\n" );

@@ -46,6 +46,12 @@ extern "C" __declspec(dllexport) void do_nothing( void* )
 {
 }
 
+static char dll_text[10] = "something";
+extern "C" __declspec(dllexport) char *dll_static_char( void )
+{
+  return( dll_text );
+}
+
 extern "C" BOOL WINAPI DllMain(
     HINSTANCE hinstDLL,DWORD fdwReason,LPVOID lpvReserved )
 {

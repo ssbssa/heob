@@ -6,7 +6,7 @@ deallocation of invalid pointer 0xPTR
   pointing to block 0xPTR (size 16, offset +1)
   allocated on: (#3)
     [malloc]
-  referenced by block 0xPTR (size 32, offset +0)
+  referenced by block 0xPTR (size 800, offset +0)
   allocated on: (#2)
     [malloc]
 
@@ -18,7 +18,7 @@ deallocation of invalid pointer 0xPTR
     [malloc]
   freed on:
     [free]
-  referenced by block 0xPTR (size 32, offset +8)
+  referenced by block 0xPTR (size 800, offset +8)
   allocated on: (#2)
     [malloc]
 
@@ -32,7 +32,7 @@ deallocation of invalid pointer 0xPTR
 deallocation of invalid pointer 0xPTR
   called on:
     [free]
-  referenced by block 0xPTR (size 32, offset +16)
+  referenced by block 0xPTR (size 800, offset +16)
   allocated on: (#2)
     [malloc]
 
@@ -41,7 +41,15 @@ deallocation of invalid pointer 0xPTR
     [free]
   pointing to stack
   possibly same frame as:
-  referenced by block 0xPTR (size 32, offset +24)
+  referenced by block 0xPTR (size 800, offset +24)
+  allocated on: (#2)
+    [malloc]
+
+deallocation of invalid pointer 0xPTR
+  called on:
+    [free]
+  pointing to global area of:
+  referenced by block 0xPTR (size 800, offset +32)
   allocated on: (#2)
     [malloc]
 

@@ -879,6 +879,41 @@ static NOINLINE void trackFree(
         }
         // }}}
 
+        // global area address {{{
+        if( !foundAlloc )
+        {
+          EnterCriticalSection( &rd->csMod );
+
+          modMemType *mod_mem_a = rd->mod_mem_a;
+          int mod_mem_q = rd->mod_mem_q;
+          for( i=0; i<mod_mem_q; i++ )
+          {
+            if( free_ptr>=(void*)mod_mem_a[i].start &&
+                free_ptr<(void*)mod_mem_a[i].end )
+            {
+              MEMORY_BASIC_INFORMATION mbi;
+              if( VirtualQuery(free_ptr,&mbi,
+                    sizeof(MEMORY_BASIC_INFORMATION)) )
+              {
+                HMODULE mod = mbi.AllocationBase;
+                PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)mod;
+                PIMAGE_NT_HEADERS inh =
+                  (PIMAGE_NT_HEADERS)REL_PTR( idh,idh->e_lfanew );
+
+                aa[1].id = 3;
+                aa[1].frames[0] =
+                  REL_PTR( idh,inh->OptionalHeader.BaseOfCode );
+
+                foundAlloc = 1;
+              }
+              break;
+            }
+          }
+
+          LeaveCriticalSection( &rd->csMod );
+        }
+        // }}}
+
         EnterCriticalSection( &rd->csWrite );
 
         writeMods( aa,4 );
@@ -3037,7 +3072,7 @@ static void replaceModFuncs( void )
       }
     }
 
-    if( rd->opt.leakDetails>1 && dll_msvcrt )
+    if( dll_msvcrt )
     {
       PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)mod;
       PIMAGE_NT_HEADERS inh = (PIMAGE_NT_HEADERS)REL_PTR( idh,idh->e_lfanew );
