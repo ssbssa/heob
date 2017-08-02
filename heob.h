@@ -242,6 +242,7 @@ typedef struct
   int leakRecording;
   int attached;
   int children;
+  int leakErrorExitCode;
 }
 options;
 

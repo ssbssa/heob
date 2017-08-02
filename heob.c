@@ -2774,6 +2774,7 @@ void mainCRTStartup( void )
     0,                              // control leak recording
     0,                              // attach to thread
     0,                              // hook children
+    0,                              // use leak and error count for exit code
   };
   options opt = defopt;
   HANDLE heap = GetProcessHeap();
@@ -2892,6 +2893,10 @@ void mainCRTStartup( void )
 
           opt.attached = 1;
         }
+        break;
+
+      case 'E':
+        opt.leakErrorExitCode = atoi( args+2 );
         break;
 
       case 'O':
@@ -3170,6 +3175,9 @@ void mainCRTStartup( void )
           defopt.sourceCode );
       printf( "    $I-e$BX$N    show exit trace [$I%d$N]\n",
           defopt.exitTrace );
+      printf( "    $I-E$BX$N    "
+          "use leak and error count for exit code [$I%d$N]\n",
+          defopt.leakErrorExitCode );
       printf( "    $I-O$BA$I:$BO$I; a$Npplication specific $Io$Nptions\n" );
       printf( "    $I-\"$BM$I\"$BB$N  trace mode:"
           " load $Im$Nodule on $Ib$Nase address\n" );
@@ -3273,6 +3281,7 @@ void mainCRTStartup( void )
       {
         printf( "$Wcan't create process for 'heob'\n" );
         TerminateProcess( pi.hProcess,1 );
+        exitCode = -1;
       }
       else if( !(opt.newConsole&1) )
       {
@@ -3627,6 +3636,8 @@ void mainCRTStartup( void )
     int terminated = -2;
     unsigned char *contents = NULL;
     unsigned char **content_ptrs = NULL;
+    int alloc_show_q = 0;
+    int error_q = 0;
 #ifndef NO_THREADNAMES
     int threadName_q = 0;
     threadNameInfo *threadName_a = NULL;
@@ -3719,6 +3730,7 @@ void mainCRTStartup( void )
             contents = NULL;
             if( content_ptrs ) HeapFree( heap,0,content_ptrs );
             content_ptrs = NULL;
+            alloc_show_q = 0;
 
             if( !readFile(readPipe,&alloc_q,sizeof(int),&ov) )
               break;
@@ -3732,6 +3744,17 @@ void mainCRTStartup( void )
             size_t content_size;
             if( !readFile(readPipe,&content_size,sizeof(size_t),&ov) )
               break;
+
+            int lc;
+            int lDetails = opt.leakDetails ?
+              ( (opt.leakDetails&1) ? LT_COUNT : LT_REACHABLE ) : 0;
+            for( lc=0; lc<alloc_q; lc++ )
+            {
+              allocation *a = alloc_a + lc;
+              if( a->lt>=lDetails ) continue;
+              alloc_show_q++;
+            }
+
             if( content_size )
             {
               contents = HeapAlloc( heap,0,content_size );
@@ -3739,11 +3762,8 @@ void mainCRTStartup( void )
                 break;
               content_ptrs =
                 HeapAlloc( heap,0,alloc_q*sizeof(unsigned char*) );
-              int lc;
               size_t leakContents = opt.leakContents;
               size_t content_pos = 0;
-              int lDetails = opt.leakDetails ?
-                ( (opt.leakDetails&1) ? LT_COUNT : LT_REACHABLE ) : 0;
               for( lc=0; lc<alloc_q; lc++ )
               {
                 content_ptrs[lc] = contents + content_pos;
@@ -3965,6 +3985,8 @@ void mainCRTStartup( void )
 
               ds.tc = tc = tcOut;
             }
+
+            error_q++;
           }
           break;
 
@@ -4138,6 +4160,8 @@ void mainCRTStartup( void )
 
               ds.tc = tc = tcOut;
             }
+
+            error_q++;
           }
           break;
 
@@ -4194,6 +4218,8 @@ void mainCRTStartup( void )
 
               ds.tc = tc = tcOut;
             }
+
+            error_q++;
           }
           break;
 
@@ -4247,6 +4273,8 @@ void mainCRTStartup( void )
 
               ds.tc = tc = tcOut;
             }
+
+            error_q++;
           }
           break;
 
@@ -4302,6 +4330,8 @@ void mainCRTStartup( void )
 
               ds.tc = tc = tcOut;
             }
+
+            error_q++;
           }
           break;
 
@@ -4383,6 +4413,8 @@ void mainCRTStartup( void )
             printf( "\n$Stermination code: %u (%x)\n",exitCode,exitCode );
           }
           heobExitData = exitCode;
+          if( opt.leakErrorExitCode )
+            exitCode = alloc_show_q + error_q;
           break;
 
           // }}}
