@@ -255,11 +255,7 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
           case 'W': color = ATT_WARN;    break;
           case 'B': color = ATT_BASE;    break;
         }
-        if( tc->color!=color )
-        {
-          tc->fTextColor( tc,color );
-          tc->color = color;
-        }
+        tc->fTextColor( tc,color );
       }
       ptr += 2;
       format = ptr;
@@ -270,7 +266,6 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
       if( ptr>format )
         tc->fWriteText( tc,format,ptr-format );
       tc->fTextColor( tc,ATT_NORMAL );
-      tc->color = ATT_NORMAL;
       format = ptr;
     }
     ptr++;
@@ -488,16 +483,24 @@ static void WriteTextConsoleW( textColor *tc,const wchar_t *t,size_t l )
 
 static void TextColorConsole( textColor *tc,textColorAtt color )
 {
+  if( tc->color==color ) return;
+
   SetConsoleTextAttribute( tc->out,tc->colors[color] );
+
+  tc->color = color;
 }
 
 static void TextColorTerminal( textColor *tc,textColorAtt color )
 {
+  if( tc->color==color ) return;
+
   int c = tc->colors[color];
   char text[] = { 27,'[',(c/10000)%10+'0',(c/1000)%10+'0',(c/100)%10+'0',';',
     (c/10)%10+'0',c%10+'0','m' };
   DWORD written;
   WriteFile( tc->out,text,sizeof(text),&written,NULL );
+
+  tc->color = color;
 }
 
 static void WriteTextHtml( textColor *tc,const char *ts,size_t l )
@@ -579,6 +582,8 @@ static void WriteTextHtmlW( textColor *tc,const wchar_t *ts,size_t l )
 
 static void TextColorHtml( textColor *tc,textColorAtt color )
 {
+  if( tc->color==color ) return;
+
   DWORD written;
   if( tc->color )
   {
@@ -594,6 +599,8 @@ static void TextColorHtml( textColor *tc,textColorAtt color )
     WriteFile( tc->out,style,lstrlen(style),&written,NULL );
     WriteFile( tc->out,span2,lstrlen(span2),&written,NULL );
   }
+
+  tc->color = color;
 }
 
 static void setTextColorTerminal( textColor *tc )
