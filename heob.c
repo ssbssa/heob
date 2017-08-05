@@ -209,7 +209,14 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
             int indent = va_arg( vl,int );
             int i;
             for( i=0; i<indent; i++ )
+            {
+              if( tc->fTextColor )
+                tc->fTextColor( tc,i%ATT_BASE );
+
               tc->fWriteText( tc,"| ",2 );
+            }
+            if( tc->fTextColor )
+              tc->fTextColor( tc,ATT_NORMAL );
           }
           break;
 
