@@ -148,6 +148,7 @@ typedef struct localData
   options opt;
   options globalopt;
   char *specificOptions;
+  uint64_t slackInit64;
 
   int recording;
 
@@ -1959,7 +1960,7 @@ int heobSubProcess(
         lstrcat( heobCmd,num );
         lstrcat( heobCmd,":8" );
       }
-      ADD_OPTION( " -s",slackInit&0xff,0xcc );
+      ADD_OPTION( " -s",slackInit,0xcc );
       ADD_OPTION( " -f",protectFree,0 );
       ADD_OPTION( " -h",handleException,1 );
       ADD_OPTION( " -F",fullPath,0 );
@@ -2210,11 +2211,18 @@ static void *protect_alloc_m( size_t s )
   if( pages>pageAdd )
     VirtualAlloc( b,(pages-pageAdd)*pageSize,MEM_COMMIT,PAGE_READWRITE );
 
-  if( slackSize && rd->opt.slackInit )
+  if( slackSize && rd->opt.slackInit>0 )
   {
     unsigned char *slackStart = b;
     if( rd->opt.protect>1 ) slackStart += s;
-    RtlFillMemory( slackStart,slackSize,(UCHAR)rd->opt.slackInit );
+    size_t count = slackSize>>3;
+    ASSUME( count>0 );
+    uint64_t *u64 = ASSUME_ALIGNED( (uint64_t*)slackStart,
+        MEMORY_ALLOCATION_ALIGNMENT );
+    size_t i;
+    uint64_t slackInit64 = rd->slackInit64;
+    for( i=0; i<count; i++ )
+      u64[i] = slackInit64;
   }
 
   if( rd->opt.protect==1 )
@@ -2252,13 +2260,20 @@ static NOINLINE void protect_free_m( void *b,funcType ft )
     p -= pageSize*pageAdd;
   }
 
-  if( slackSize )
+  if( slackSize && rd->opt.slackInit>=0 )
   {
+    size_t count = slackSize>>3;
+    ASSUME( count>0 );
+    uint64_t *u64 = ASSUME_ALIGNED( (uint64_t*)slackStart,
+        MEMORY_ALLOCATION_ALIGNMENT );
     size_t i;
-    int slackInit = rd->opt.slackInit;
-    for( i=0; i<slackSize && slackStart[i]==slackInit; i++ );
-    if( UNLIKELY(i<slackSize) )
+    uint64_t slackInit64 = rd->slackInit64;
+    for( i=0; i<count && u64[i]==slackInit64; i++ );
+    if( UNLIKELY(i<count) )
     {
+      int slackInit = rd->opt.slackInit;
+      for( i*=8; i<slackSize && slackStart[i]==slackInit; i++ );
+
       int splitIdx = (((uintptr_t)b)>>rd->ptrShift)&SPLIT_MASK;
       splitAllocation *sa = rd->splits + splitIdx;
 
@@ -3814,6 +3829,10 @@ DWORD WINAPI heob( LPVOID arg )
     ld->specificOptions = HeapAlloc( heap,0,lstrlen(rd->specificOptions)+1 );
     lstrcpy( ld->specificOptions,rd->specificOptions );
   }
+  ld->slackInit64 = rd->opt.slackInit;
+  ld->slackInit64 |= ld->slackInit64<<8;
+  ld->slackInit64 |= ld->slackInit64<<16;
+  ld->slackInit64 |= ld->slackInit64<<32;
   ld->fLoadLibraryA = rd->fLoadLibraryA;
   ld->fLoadLibraryW = rd->fLoadLibraryW;
   ld->fFreeLibrary = rd->fFreeLibrary;

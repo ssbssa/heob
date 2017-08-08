@@ -2645,7 +2645,8 @@ char *readOption( char *args,options *opt,int *raq,size_t **raa,HANDLE heap )
       break;
 
     case 's':
-      opt->slackInit = atoi( args+2 );
+      opt->slackInit = args[2]=='-' ? -atoi( args+3 ) : atoi( args+2 );
+      if( opt->slackInit>0xff ) opt->slackInit &= 0xff;
       break;
 
     case 'f':
@@ -2981,7 +2982,11 @@ void mainCRTStartup( void )
     }
     while( args && args[0] && args[0]!=' ' ) args++;
   }
-  if( opt.align<MEMORY_ALLOCATION_ALIGNMENT ) opt.init = 0;
+  if( opt.align<MEMORY_ALLOCATION_ALIGNMENT )
+  {
+    opt.init = 0;
+    opt.slackInit = -1;
+  }
   HANDLE out = GetStdHandle( STD_OUTPUT_HANDLE );
   if( opt.protect<1 ) opt.protectFree = 0;
   textColor *tcOut = HeapAlloc( heap,0,sizeof(textColor) );
@@ -3152,7 +3157,8 @@ void mainCRTStartup( void )
           defopt.minProtectSize );
       printf( "    $I-i$BX$N    initial value [$I%d$N]\n",
           (int)(defopt.init&0xff) );
-      printf( "    $I-s$BX$N    initial value for slack [$I%d$N]\n",
+      printf( "    $I-s$BX$N    initial value for slack"
+          " ($I-1$N = off) [$I%d$N]\n",
           defopt.slackInit );
     }
     printf( "    $I-h$BX$N    handle exceptions [$I%d$N]\n",
