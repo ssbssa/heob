@@ -2768,7 +2768,7 @@ void mainCRTStartup( void )
     1,                              // page protection
     MEMORY_ALLOCATION_ALIGNMENT,    // alignment
     0xffffffffffffffffULL,          // initial value
-    0xcc,                           // initial value for slack
+    -1,                             // initial value for slack
     0,                              // freed memory protection
     1,                              // handle exceptions
     0,                              // create new console

@@ -1960,7 +1960,7 @@ int heobSubProcess(
         lstrcat( heobCmd,num );
         lstrcat( heobCmd,":8" );
       }
-      ADD_OPTION( " -s",slackInit,0xcc );
+      ADD_OPTION( " -s",slackInit,-1 );
       ADD_OPTION( " -f",protectFree,0 );
       ADD_OPTION( " -h",handleException,1 );
       ADD_OPTION( " -F",fullPath,0 );
