@@ -3522,6 +3522,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 #endif
 
   RtlMoveMemory( &ei.er,ep->ExceptionRecord,sizeof(EXCEPTION_RECORD) );
+  RtlMoveMemory( &ei.c,ep->ContextRecord,sizeof(CONTEXT) );
 
   EnterCriticalSection( &rd->csWrite );
 

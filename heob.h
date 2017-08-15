@@ -243,6 +243,7 @@ typedef struct
   int attached;
   int children;
   int leakErrorExitCode;
+  int exceptionDetails;
 }
 options;
 
@@ -346,6 +347,7 @@ modInfo;
 typedef struct
 {
   EXCEPTION_RECORD er;
+  CONTEXT c;
   allocation aa[3];
   int aq;
   int nearest;

@@ -172,6 +172,7 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
           }
           break;
 
+        case 'w': // unsigned short (word)
         case 'x': // unsigned int
         case 'X': // uintptr_t
         case 'p': // void*
@@ -190,6 +191,11 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
               bytes = sizeof(uintptr_t);
             }
 #endif
+            else if( ptr[1]=='w' )
+            {
+              arg = (unsigned short)va_arg( vl,unsigned int );
+              bytes = sizeof(unsigned short);
+            }
             else
             {
               arg = va_arg( vl,unsigned int );
@@ -2738,6 +2744,10 @@ char *readOption( char *args,options *opt,int *raq,size_t **raa,HANDLE heap )
       }
       break;
 
+    case 'D':
+      opt->exceptionDetails = atoi( args+2 );
+      break;
+
     default:
       return( NULL );
   }
@@ -2790,6 +2800,7 @@ void mainCRTStartup( void )
     0,                              // attach to thread
     0,                              // hook children
     0,                              // use leak and error count for exit code
+    0,                              // show exception details
   };
   options opt = defopt;
   HANDLE heap = GetProcessHeap();
@@ -3170,6 +3181,8 @@ void mainCRTStartup( void )
         defopt.raiseException );
     if( fullhelp )
     {
+      printf( "    $I-D$BX$N    show exception details [$I%d$N]\n",
+          defopt.exceptionDetails );
       printf( "    $I-S$BX$N    use stack pointer in exception [$I%d$N]\n",
           defopt.useSp );
       printf( "    $I-m$BX$N    compare allocation/release method [$I%d$N]\n",
@@ -3874,6 +3887,71 @@ void mainCRTStartup( void )
             }
             printf( "\n$Wunhandled exception code: %x%s\n",
                 ei.er.ExceptionCode,desc );
+
+            if( opt.exceptionDetails && tc->out )
+            {
+              printf( "$S  registers:\n" );
+#define PREG( name,reg,type,before,after ) \
+              printf( before "$I" name "$N=" type after,ei.c.reg )
+              if( ei.c.ContextFlags&CONTEXT_INTEGER )
+              {
+#ifndef _WIN64
+                PREG( "edi"   ,Edi   ,"%X","    "           ,     );
+                PREG( "esi"   ,Esi   ,"%X","       "        ,     );
+                PREG( "ebx"   ,Ebx   ,"%X","       "        ,"\n" );
+                PREG( "edx"   ,Edx   ,"%X","    "           ,     );
+                PREG( "ecx"   ,Ecx   ,"%X","       "        ,     );
+                PREG( "eax"   ,Eax   ,"%X","       "        ,"\n" );
+#else
+                PREG( "rax"   ,Rax   ,"%X","    "           ,     );
+                PREG( "rcx"   ,Rcx   ,"%X","  "             ,     );
+                PREG( "rdx"   ,Rdx   ,"%X","  "             ,"\n" );
+                PREG( "rbx"   ,Rbx   ,"%X","    "           ,     );
+                PREG( "rbp"   ,Rbp   ,"%X","  "             ,     );
+                PREG( "rsi"   ,Rsi   ,"%X","  "             ,"\n" );
+                PREG( "rdi"   ,Rdi   ,"%X","    "           ,     );
+                PREG( "r8"    ,R8    ,"%X","  "             ,     );
+                PREG( "r9"    ,R9    ,"%X","   "            ,"\n" );
+                PREG( "r10"   ,R10   ,"%X","    "           ,     );
+                PREG( "r11"   ,R11   ,"%X","  "             ,     );
+                PREG( "r12"   ,R12   ,"%X","  "             ,"\n" );
+                PREG( "r13"   ,R13   ,"%X","    "           ,     );
+                PREG( "r14"   ,R14   ,"%X","  "             ,     );
+                PREG( "r15"   ,R15   ,"%X","  "             ,"\n" );
+#endif
+              }
+              if( ei.c.ContextFlags&CONTEXT_CONTROL )
+              {
+#ifndef _WIN64
+                PREG( "ebp"   ,Ebp   ,"%X","    "           ,     );
+                PREG( "eip"   ,Eip   ,"%X","       "        ,     );
+                PREG( "cs"    ,SegCs ,"%w","       "        ,"\n" );
+                PREG( "eflags",EFlags,"%x","    "           ,     );
+                PREG( "esp"   ,Esp   ,"%X","    "           ,     );
+                PREG( "ss"    ,SegSs ,"%w","       "        ,"\n" );
+#else
+                PREG( "ss"    ,SegSs ,"%w","    "           ,     );
+                PREG( "rsp"   ,Rsp   ,"%X","               ", );
+                PREG( "cs"    ,SegCs ,"%w","  "             ,"\n" );
+                PREG( "rip"   ,Rip   ,"%X","    "           ,     );
+                PREG( "eflags",EFlags,"%x","  "             ,"\n" );
+#endif
+              }
+              if( ei.c.ContextFlags&CONTEXT_SEGMENTS )
+              {
+#ifndef _WIN64
+                PREG( "gs"    ,SegGs ,"%w","    "           ,     );
+                PREG( "fs"    ,SegFs ,"%w","     "          ,     );
+                PREG( "es"    ,SegEs ,"%w","     "          ,     );
+                PREG( "ds"    ,SegDs ,"%w","     "          ,"\n" );
+#else
+                PREG( "ds"    ,SegDs ,"%w","    "           ,     );
+                PREG( "es"    ,SegEs ,"%w","       "        ,     );
+                PREG( "fs"    ,SegFs ,"%w","       "        ,     );
+                PREG( "gs"    ,SegGs ,"%w","       "        ,"\n" );
+#endif
+              }
+            }
 
             printf( "$S  exception on:" );
             printThreadName( ei.aa[0].threadNameIdx );
