@@ -3479,9 +3479,8 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
         break;
 
       uintptr_t frame = (uintptr_t)stack.AddrPC.Offset;
-      if( !frame ) break;
-
       if( !count ) frame++;
+      else if( !frame ) break;
       frames[count++] = (void*)frame;
 
       if( count==1 && rd->opt.useSp )

@@ -799,6 +799,14 @@ void choose( int arg )
         free( s );
       }
       break;
+
+    case 41:
+      // NULL function call
+      {
+        void (*null_function)( void ) = NULL;
+        null_function();
+      }
+      break;
   }
 
   mem = (char*)realloc( mem,30 );
