@@ -16,6 +16,10 @@
 #define DWST_NO_DBG_SYM -1
 #endif
 
+#ifndef NO_DBGENG
+#include <dbgeng.h>
+#endif
+
 // }}}
 // output variant declarations {{{
 
@@ -834,6 +838,9 @@ static CODE_SEG(".text$2") HANDLE inject(
     HANDLE process,HANDLE thread,options *opt,options *globalopt,
     const char *specificOptions,wchar_t *exePath,textColor *tc,
     int raise_alloc_q,size_t *raise_alloc_a,HANDLE *controlPipe,
+#ifndef NO_DBGENG
+    HANDLE *exceptionWait,
+#endif
     HANDLE in,HANDLE err,attachedProcessInfo **api,
     const char *subOutName,const char *subXmlName,const char *subCurDir,
     unsigned *heobExit )
@@ -934,6 +941,16 @@ static CODE_SEG(".text$2") HANDLE inject(
   DuplicateHandle( GetCurrentProcess(),startMain,
       process,&data->startMain,0,FALSE,
       DUPLICATE_SAME_ACCESS );
+
+#ifndef NO_DBGENG
+  if( opt->exceptionDetails>1 && opt->handleException )
+  {
+    *exceptionWait = CreateEvent( NULL,FALSE,FALSE,NULL );
+    DuplicateHandle( GetCurrentProcess(),*exceptionWait,
+        process,&data->exceptionWait,0,FALSE,
+        DUPLICATE_SAME_ACCESS );
+  }
+#endif
 
   RtlMoveMemory( &data->opt,opt,sizeof(options) );
   RtlMoveMemory( &data->globalopt,globalopt,sizeof(options) );
@@ -2760,6 +2777,86 @@ char *readOption( char *args,options *opt,int *raq,size_t **raa,HANDLE heap )
 }
 
 // }}}
+// disassembler {{{
+
+#ifndef NO_DBGENG
+static char *disassemble( DWORD pid,void *addr,HANDLE heap )
+{
+  HMODULE dbgeng = NULL;
+  IDebugClient *dbgclient = NULL;
+  IDebugControl3 *dbgcontrol = NULL;
+  int attached = 0;
+  char *asmbuf = NULL;
+  char *dis = NULL;
+  do
+  {
+    dbgeng = LoadLibrary( "dbgeng.dll" );
+    if( !dbgeng ) break;
+
+    typedef HRESULT WINAPI func_DebugCreate( REFIID,PVOID* );
+    func_DebugCreate *fDebugCreate =
+      (func_DebugCreate*)GetProcAddress( dbgeng,"DebugCreate" );
+    if( !fDebugCreate ) break;
+
+    HRESULT res;
+
+    const GUID IID_IDebugClient =
+    { 0x27fe5639,0x8407,0x4f47,{0x83,0x64,0xee,0x11,0x8f,0xb0,0x8a,0xc8} };
+    res = fDebugCreate( &IID_IDebugClient,(void**)&dbgclient );
+    if( res!=S_OK ) break;
+
+    const GUID IID_IDebugControl3 =
+    { 0x7df74a86,0xb03f,0x407f,{0x90,0xab,0xa2,0x0d,0xad,0xce,0xad,0x08} };
+    res = dbgclient->lpVtbl->QueryInterface( dbgclient,
+        &IID_IDebugControl3,(void**)&dbgcontrol );
+    if( res!=S_OK ) break;
+
+    res = dbgcontrol->lpVtbl->SetAssemblyOptions( dbgcontrol,
+        DEBUG_ASMOPT_NO_CODE_BYTES );
+    if( res!=S_OK ) break;
+
+    res = dbgclient->lpVtbl->AttachProcess( dbgclient,
+        0,pid,
+        DEBUG_ATTACH_NONINVASIVE|DEBUG_ATTACH_NONINVASIVE_NO_SUSPEND );
+    if( res!=S_OK ) break;
+    attached = 1;
+
+    res = dbgcontrol->lpVtbl->WaitForEvent( dbgcontrol,
+        0,INFINITE );
+    if( res!=S_OK ) break;
+
+    asmbuf = HeapAlloc( heap,0,65536 );
+    ULONG64 offset = (uintptr_t)addr;
+    res = dbgcontrol->lpVtbl->Disassemble( dbgcontrol,
+        offset,0,asmbuf,65536,NULL,&offset );
+    if( res!=S_OK ) break;
+
+    char *asmc = asmbuf;
+    while( asmc[0]=='`' ||
+        (asmc[0]>='0' && asmc[0]<='9') ||
+        (asmc[0]>='a' && asmc[0]<='f') ||
+        (asmc[0]>='A' && asmc[0]<='F') )
+      asmc++;
+    while( asmc[0]==' ' ) asmc++;
+    size_t asml = lstrlen( asmc );
+    while( asml && (asmc[asml-1]=='\r' || asmc[asml-1]=='\n') )
+      asmc[--asml] = 0;
+    if( !asml || asmc[0]=='?' ) break;
+
+    dis = HeapAlloc( heap,0,asml+1 );
+    lstrcpy( dis,asmc );
+  }
+  while( 0 );
+  if( asmbuf ) HeapFree( heap,0,asmbuf );
+  if( attached ) dbgclient->lpVtbl->DetachProcesses( dbgclient );
+  if( dbgcontrol ) dbgcontrol->lpVtbl->Release( dbgcontrol );
+  if( dbgclient ) dbgclient->lpVtbl->Release( dbgclient );
+  if( dbgeng ) FreeLibrary( dbgeng );
+  return( dis );
+}
+#endif
+
+// }}}
 // main {{{
 
 void mainCRTStartup( void )
@@ -3480,6 +3577,9 @@ void mainCRTStartup( void )
 
   HANDLE readPipe = NULL;
   HANDLE controlPipe = NULL;
+#ifndef NO_DBGENG
+  HANDLE exceptionWait = NULL;
+#endif
   HANDLE err = GetStdHandle( STD_ERROR_HANDLE );
   attachedProcessInfo *api = NULL;
   unsigned heobExit = HEOB_OK;
@@ -3492,8 +3592,11 @@ void mainCRTStartup( void )
   }
   else
     readPipe = inject( pi.hProcess,pi.hThread,&opt,&defopt,specificOptions,
-        exePathW,tc,raise_alloc_q,raise_alloc_a,&controlPipe,in,err,&api,
-        subOutName,subXmlName,subCurDir,&heobExit );
+        exePathW,tc,raise_alloc_q,raise_alloc_a,&controlPipe,
+#ifndef NO_DBGENG
+        &exceptionWait,
+#endif
+        in,err,&api,subOutName,subXmlName,subCurDir,&heobExit );
   if( !readPipe )
     TerminateProcess( pi.hProcess,1 );
 
@@ -3890,6 +3993,28 @@ void mainCRTStartup( void )
 
             if( opt.exceptionDetails && tc->out )
             {
+#ifndef NO_DBGENG
+              if( exceptionWait && ei.er.ExceptionCode!=EXCEPTION_BREAKPOINT )
+              {
+                char *dis = disassemble(
+                    pi.dwProcessId,ei.aa[0].frames[0],heap );
+                if( dis )
+                {
+                  printf( "$S  assembly instruction:\n" );
+                  char *space = strchr( dis,' ' );
+                  if( space ) space[0] = 0;
+                  printf( "    $O%s",dis );
+                  if( space )
+                  {
+                    space[0] = ' ';
+                    printf( "$N%s",space );
+                  }
+                  printf( "\n" );
+                  HeapFree( heap,0,dis );
+                }
+              }
+#endif
+
               printf( "$S  registers:\n" );
 #define PREG( name,reg,type,before,after ) \
               printf( before "$I" name "$N=" type after,ei.c.reg )
@@ -3952,6 +4077,10 @@ void mainCRTStartup( void )
 #endif
               }
             }
+#ifndef NO_DBGENG
+            if( exceptionWait && ei.er.ExceptionCode!=EXCEPTION_BREAKPOINT )
+              SetEvent( exceptionWait );
+#endif
 
             printf( "$S  exception on:" );
             printThreadName( ei.aa[0].threadNameIdx );
@@ -4583,6 +4712,7 @@ void mainCRTStartup( void )
     CloseHandle( readPipe );
   }
   if( controlPipe ) CloseHandle( controlPipe );
+  if( exceptionWait ) CloseHandle( exceptionWait );
   if( attachEvent )
   {
     SetEvent( attachEvent );

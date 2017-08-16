@@ -118,6 +118,9 @@ typedef struct localData
   func_wtempnam *owtempnam;
 
   HANDLE controlPipe;
+#ifndef NO_DBGENG
+  HANDLE exceptionWait;
+#endif
   HMODULE heobMod;
   HMODULE kernel32;
   HMODULE msvcrt;
@@ -3547,6 +3550,11 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
     return( EXCEPTION_CONTINUE_EXECUTION );
   }
 
+#ifndef NO_DBGENG
+  if( rd->exceptionWait )
+    WaitForSingleObject( rd->exceptionWait,1000 );
+#endif
+
   exitWait( 1,1 );
 
   return( EXCEPTION_EXECUTE_HANDLER );
@@ -3841,6 +3849,9 @@ DWORD WINAPI heob( LPVOID arg )
   ld->fCreateProcessA = rd->fGetProcAddress( rd->kernel32,"CreateProcessA" );
   ld->master = rd->master;
   ld->controlPipe = rd->controlPipe;
+#ifndef NO_DBGENG
+  ld->exceptionWait = rd->exceptionWait;
+#endif
   ld->heobMod = rd->heobMod;
   ld->kernel32 = rd->kernel32;
   ld->recording = rd->recording;

@@ -278,6 +278,9 @@ typedef struct remoteData
   HANDLE controlPipe;
   HANDLE initFinished;
   HANDLE startMain;
+#ifndef NO_DBGENG
+  HANDLE exceptionWait;
+#endif
 
   wchar_t exePath[MAX_PATH];
 
