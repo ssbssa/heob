@@ -3841,11 +3841,13 @@ DWORD WINAPI heob( LPVOID arg )
   ld->slackInit64 |= ld->slackInit64<<8;
   ld->slackInit64 |= ld->slackInit64<<16;
   ld->slackInit64 |= ld->slackInit64<<32;
-  ld->fLoadLibraryA = rd->fLoadLibraryA;
+  ld->fLoadLibraryA = rd->fGetProcAddress( rd->kernel32,"LoadLibraryA" );
   ld->fLoadLibraryW = rd->fLoadLibraryW;
-  ld->fFreeLibrary = rd->fFreeLibrary;
+  ld->fFreeLibrary = rd->fGetProcAddress( rd->kernel32,"FreeLibrary" );
   ld->fGetProcAddress = rd->fGetProcAddress;
-  ld->fExitProcess = rd->fExitProcess;
+  ld->fExitProcess = rd->fGetProcAddress( rd->kernel32,"ExitProcess" );
+  ld->fTerminateProcess =
+    rd->fGetProcAddress( rd->kernel32,"TerminateProcess" );
   ld->fCreateProcessA = rd->fGetProcAddress( rd->kernel32,"CreateProcessA" );
   ld->master = rd->master;
   ld->controlPipe = rd->controlPipe;
@@ -3973,9 +3975,11 @@ DWORD WINAPI heob( LPVOID arg )
 
   if( rd->opt.handleException )
   {
-    rd->fSetUnhandledExceptionFilter( &exceptionWalker );
+    func_SetUnhandledExceptionFilter *fSetUnhandledExceptionFilter =
+      rd->fGetProcAddress( rd->kernel32,"SetUnhandledExceptionFilter" );
+    fSetUnhandledExceptionFilter( &exceptionWalker );
 
-    void *fp = rd->fSetUnhandledExceptionFilter;
+    void *fp = fSetUnhandledExceptionFilter;
 #ifndef _WIN64
     unsigned char doNothing[] = {
       0x31,0xc0,        // xor  %eax,%eax

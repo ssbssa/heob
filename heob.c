@@ -878,19 +878,10 @@ static CODE_SEG(".text$2") HANDLE inject(
   data->fFlushInstructionCache =
     (func_FlushInstructionCache*)GetProcAddress(
         kernel32,"FlushInstructionCache" );
-  data->fLoadLibraryA =
-    (func_LoadLibraryA*)GetProcAddress( kernel32,"LoadLibraryA" );
   data->fLoadLibraryW =
     (func_LoadLibraryW*)GetProcAddress( kernel32,"LoadLibraryW" );
-  data->fFreeLibrary =
-    (func_FreeLibrary*)GetProcAddress( kernel32,"FreeLibrary" );
   data->fGetProcAddress =
     (func_GetProcAddress*)GetProcAddress( kernel32,"GetProcAddress" );
-  data->fSetUnhandledExceptionFilter =
-    (func_SetUnhandledExceptionFilter*)GetProcAddress(
-        kernel32,"SetUnhandledExceptionFilter" );
-  data->fExitProcess =
-    (func_ExitProcess*)GetProcAddress( kernel32,"ExitProcess" );
 
   GetModuleFileNameW( NULL,data->exePath,MAX_PATH );
   func_heob *fheob = &heob;

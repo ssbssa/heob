@@ -267,12 +267,8 @@ typedef struct remoteData
   func_VirtualProtect *fVirtualProtect;
   func_GetCurrentProcess *fGetCurrentProcess;
   func_FlushInstructionCache *fFlushInstructionCache;
-  func_LoadLibraryA *fLoadLibraryA;
   func_LoadLibraryW *fLoadLibraryW;
-  func_FreeLibrary *fFreeLibrary;
   func_GetProcAddress *fGetProcAddress;
-  func_SetUnhandledExceptionFilter *fSetUnhandledExceptionFilter;
-  func_ExitProcess *fExitProcess;
 
   HANDLE master;
   HANDLE controlPipe;
