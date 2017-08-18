@@ -846,9 +846,9 @@ static CODE_SEG(".text$2") HANDLE inject(
     unsigned *heobExit )
 {
   func_inj *finj = &remoteCall;
+  size_t funcOffset = sizeof(remoteData) + raise_alloc_q*sizeof(size_t);
   size_t funcSize = (size_t)&inject - (size_t)finj;
-  size_t soOffset = funcSize + sizeof(remoteData) +
-    raise_alloc_q*sizeof(size_t);
+  size_t soOffset = funcOffset + funcSize;
   size_t soSize = ( specificOptions ? lstrlen(specificOptions) + 1 : 0 );
   size_t fullSize = soOffset + soSize;
 
@@ -857,11 +857,11 @@ static CODE_SEG(".text$2") HANDLE inject(
 
   HANDLE heap = GetProcessHeap();
   unsigned char *fullData = HeapAlloc( heap,0,fullSize );
-  RtlMoveMemory( fullData,finj,funcSize );
-  remoteData *data = (remoteData*)( fullData+funcSize );
+  RtlMoveMemory( fullData+funcOffset,finj,funcSize );
+  remoteData *data = (remoteData*)fullData;
   RtlZeroMemory( data,sizeof(remoteData) );
 
-  PAPCFUNC remoteFuncStart = (PAPCFUNC)( fullDataRemote );
+  PAPCFUNC remoteFuncStart = (PAPCFUNC)( fullDataRemote+funcOffset );
 
   HMODULE kernel32 = GetModuleHandle( "kernel32.dll" );
   data->kernel32 = kernel32;
@@ -963,7 +963,7 @@ static CODE_SEG(".text$2") HANDLE inject(
 
   WriteProcessMemory( process,fullDataRemote,fullData,fullSize,NULL );
 
-  QueueUserAPC( remoteFuncStart,thread,(ULONG_PTR)(fullDataRemote+funcSize) );
+  QueueUserAPC( remoteFuncStart,thread,(ULONG_PTR)fullDataRemote );
   ResumeThread( thread );
 
   COORD consoleCoord;
@@ -1024,8 +1024,7 @@ static CODE_SEG(".text$2") HANDLE inject(
     return( NULL );
   }
 
-  ReadProcessMemory( process,fullDataRemote+funcSize,data,
-      sizeof(remoteData),NULL );
+  ReadProcessMemory( process,fullDataRemote,data,sizeof(remoteData),NULL );
 
   if( !data->master )
   {
