@@ -3717,12 +3717,24 @@ DLLEXPORT int heob_control( int cmd )
   return( prevRecording );
 }
 
+static DWORD WINAPI controlThread( LPVOID arg )
+{
+  HANDLE controlPipe = arg;
+
+  int cmd;
+  DWORD didread;
+  while( ReadFile(controlPipe,&cmd,sizeof(int),&didread,NULL) )
+    heob_control( cmd );
+
+  return( 0 );
+}
+
 // }}}
 // injected main {{{
 
-DWORD WINAPI heob( LPVOID arg )
+VOID CALLBACK heob( ULONG_PTR arg )
 {
-  remoteData *rd = arg;
+  remoteData *rd = (remoteData*)arg;
   HMODULE app = rd->heobMod;
   PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)app;
   PIMAGE_NT_HEADERS inh = (PIMAGE_NT_HEADERS)REL_PTR( idh,idh->e_lfanew );
@@ -4027,15 +4039,17 @@ DWORD WINAPI heob( LPVOID arg )
   SetEvent( initFinished );
   CloseHandle( initFinished );
 
+  HANDLE startMain = rd->startMain;
+  WaitForSingleObject( startMain,INFINITE );
+  CloseHandle( startMain );
+
+  VirtualFree( rd,0,MEM_RELEASE );
+
   if( controlPipe )
   {
-    int cmd;
-    DWORD didread;
-    while( ReadFile(controlPipe,&cmd,sizeof(int),&didread,NULL) )
-      heob_control( cmd );
+    HANDLE thread = CreateThread( NULL,0,&controlThread,controlPipe,0,NULL );
+    CloseHandle( thread );
   }
-
-  return( 0 );
 }
 
 // }}}

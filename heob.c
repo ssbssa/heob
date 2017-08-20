@@ -818,7 +818,7 @@ enum
 // }}}
 // code injection {{{
 
-typedef DWORD WINAPI func_heob( LPVOID );
+typedef VOID CALLBACK func_heob( ULONG_PTR );
 typedef VOID CALLBACK func_inj( remoteData* );
 
 static CODE_SEG(".text$1") VOID CALLBACK remoteCall( remoteData *rd )
@@ -827,11 +827,7 @@ static CODE_SEG(".text$1") VOID CALLBACK remoteCall( remoteData *rd )
   rd->heobMod = app;
 
   func_heob *fheob = (func_heob*)( (size_t)app + rd->injOffset );
-  HANDLE heobThread = rd->fCreateThread( NULL,0,fheob,rd,0,NULL );
-  rd->fCloseHandle( heobThread );
-
-  rd->fWaitForSingleObject( rd->startMain,INFINITE );
-  rd->fCloseHandle( rd->startMain );
+  rd->fQueueUserAPC( fheob,rd->fGetCurrentThread(),(ULONG_PTR)rd );
 }
 
 static CODE_SEG(".text$2") HANDLE inject(
@@ -865,12 +861,10 @@ static CODE_SEG(".text$2") HANDLE inject(
 
   HMODULE kernel32 = GetModuleHandle( "kernel32.dll" );
   data->kernel32 = kernel32;
-  data->fCreateThread =
-    (func_CreateThread*)GetProcAddress( kernel32,"CreateThread" );
-  data->fWaitForSingleObject = (func_WaitForSingleObject*)GetProcAddress(
-      kernel32,"WaitForSingleObject" );
-  data->fCloseHandle =
-    (func_CloseHandle*)GetProcAddress( kernel32,"CloseHandle" );
+  data->fQueueUserAPC =
+    (func_QueueUserAPC*)GetProcAddress( kernel32,"QueueUserAPC" );
+  data->fGetCurrentThread =
+    (func_GetCurrentThread*)GetProcAddress( kernel32,"GetCurrentThread" );
   data->fVirtualProtect =
     (func_VirtualProtect*)GetProcAddress( kernel32,"VirtualProtect" );
   data->fGetCurrentProcess =

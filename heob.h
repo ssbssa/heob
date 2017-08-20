@@ -58,10 +58,8 @@
 // }}}
 // function definitions {{{
 
-typedef HANDLE WINAPI func_CreateThread(
-    LPSECURITY_ATTRIBUTES,SIZE_T,LPTHREAD_START_ROUTINE,LPVOID,DWORD,LPDWORD );
-typedef DWORD WINAPI func_WaitForSingleObject( HANDLE,DWORD );
-typedef BOOL WINAPI func_CloseHandle( HANDLE );
+typedef DWORD WINAPI func_QueueUserAPC( PAPCFUNC,HANDLE,ULONG_PTR );
+typedef HANDLE WINAPI func_GetCurrentThread( VOID );
 typedef BOOL WINAPI func_VirtualProtect( LPVOID,SIZE_T,DWORD,PDWORD );
 typedef HANDLE WINAPI func_GetCurrentProcess( VOID );
 typedef BOOL WINAPI func_FlushInstructionCache( HANDLE,LPCVOID,SIZE_T );
@@ -261,9 +259,8 @@ typedef struct remoteData
 {
   HMODULE heobMod;
   HMODULE kernel32;
-  func_CreateThread *fCreateThread;
-  func_WaitForSingleObject *fWaitForSingleObject;
-  func_CloseHandle *fCloseHandle;
+  func_QueueUserAPC *fQueueUserAPC;
+  func_GetCurrentThread *fGetCurrentThread;
   func_VirtualProtect *fVirtualProtect;
   func_GetCurrentProcess *fGetCurrentProcess;
   func_FlushInstructionCache *fFlushInstructionCache;
@@ -301,7 +298,7 @@ typedef struct remoteData
 }
 remoteData;
 
-DWORD WINAPI heob( LPVOID arg );
+VOID CALLBACK heob( ULONG_PTR arg );
 
 // }}}
 // extra communication declarations {{{
