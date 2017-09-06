@@ -807,6 +807,15 @@ void choose( int arg )
         null_function();
       }
       break;
+
+    case 42:
+      // children process with different bitness
+      {
+        char commandLine[20];
+        sprintf( commandLine,"allocer%d.exe 1",sizeof(void*)==4?64:32 );
+        system( commandLine );
+      }
+      break;
   }
 
   mem = (char*)realloc( mem,30 );

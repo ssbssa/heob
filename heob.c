@@ -3469,7 +3469,7 @@ void mainCRTStartup( void )
       char *nameEnd = strchr( name,':' );
       if( !nameEnd ) break;
       char *so = NULL;
-      if( strstart(name,exePath) )
+      if( strstart(name,exePath) || strstart(name,"*" BITS ":") )
         so = nameEnd + 1;
       name = strchr( nameEnd+1,';' );
       if( !name ) break;
