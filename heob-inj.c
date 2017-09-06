@@ -1944,6 +1944,8 @@ int heobSubProcess(
 #define ADD_OPTION( option,val,defVal ) \
       addOption( heobCmd,option,opt->val,defVal,numEnd )
       addOption( heobCmd," -A",processInformation->dwThreadId,0,numEnd );
+      if( heobMod )
+        addOption( heobCmd,"/",GetCurrentProcessId(),0,numEnd );
       if( subOutName && subOutName[0] )
       {
         lstrcat( heobCmd," -o" );

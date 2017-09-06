@@ -2581,7 +2581,8 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
 // information of attached process {{{
 
 static void printAttachedProcessInfo(
-    const wchar_t *exePath,attachedProcessInfo *api,textColor *tc,DWORD pid )
+    const wchar_t *exePath,attachedProcessInfo *api,textColor *tc,
+    DWORD pid,DWORD ppid )
 {
   if( !api ) return;
   printf( "\n$Iapplication: $N%S\n",exePath );
@@ -2590,6 +2591,8 @@ static void printAttachedProcessInfo(
   if( api->currentDirectory[0] )
     printf( "$Idirectory: $N%S\n",api->currentDirectory );
   printf( "$IPID: $N%u\n",pid );
+  if( ppid )
+    printf( "$Iparent PID: $N%u\n",ppid );
   if( api->stdinName[0] )
     printf( "$Istdin: $N%S\n",api->stdinName );
   if( api->stdoutName[0] )
@@ -2886,6 +2889,7 @@ void mainCRTStartup( void )
   char *xmlName = NULL;
   PROCESS_INFORMATION pi;
   RtlZeroMemory( &pi,sizeof(PROCESS_INFORMATION) );
+  DWORD ppid = 0;
   HANDLE attachEvent = NULL;
   int fakeAttached = 0;
   char *specificOptions = NULL;
@@ -2956,6 +2960,9 @@ void mainCRTStartup( void )
           if( pi.hProcess ) break;
           char *start = args + 2;
           pi.dwThreadId = (DWORD)atop( start );
+
+          while( start[0] && start[0]!=' ' && start[0]!='/' ) start++;
+          if( start[0]=='/' ) ppid = (DWORD)atop( start+1 );
 
           pi.hThread = OpenThread(
               STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0x3ff,
@@ -3500,6 +3507,10 @@ void mainCRTStartup( void )
         opt.children = 1;
       }
 
+      char *ppidName = strreplacenum( usedName,"%P",ppid,heap );
+      if( ppidName )
+        usedName = ppidName;
+
       char *replaced = strreplace( usedName,"%n",exePath,heap );
       if( replaced )
         usedName = replaced;
@@ -3509,6 +3520,7 @@ void mainCRTStartup( void )
       if( out==INVALID_HANDLE_VALUE ) out = tc->out;
 
       if( fullName ) HeapFree( heap,0,fullName );
+      if( ppidName ) HeapFree( heap,0,ppidName );
       if( replaced ) HeapFree( heap,0,replaced );
     }
     if( out!=tc->out )
@@ -3589,9 +3601,9 @@ void mainCRTStartup( void )
         RETURN_ADDRESS() );
     if( delim ) delim[0] = '\\';
 
-    printAttachedProcessInfo( exePathW,api,tc,pi.dwProcessId );
+    printAttachedProcessInfo( exePathW,api,tc,pi.dwProcessId,ppid );
     if( tcOutOrig )
-      printAttachedProcessInfo( exePathW,api,tcOutOrig,pi.dwProcessId );
+      printAttachedProcessInfo( exePathW,api,tcOutOrig,pi.dwProcessId,ppid );
 
     if( opt.pid )
     {
@@ -3624,6 +3636,13 @@ void mainCRTStartup( void )
       {
         fullName = xmlName;
         xmlName = NULL;
+      }
+
+      char *ppidName = strreplacenum( fullName,"%P",ppid,heap );
+      if( ppidName )
+      {
+        HeapFree( heap,0,fullName );
+        fullName = ppidName;
       }
 
       if( delim ) delim++;
@@ -3680,7 +3699,7 @@ void mainCRTStartup( void )
       }
       printf( "</preamble>\n\n" );
       printf( "<pid>%u</pid>\n<ppid>%u</ppid>\n<tool>heob</tool>\n\n",
-          pi.dwProcessId,GetCurrentProcessId() );
+          pi.dwProcessId,ppid );
 
       const wchar_t *argva[2] = { cmdLineW,argsW };
       if( api ) argva[1] = api->commandLine;
