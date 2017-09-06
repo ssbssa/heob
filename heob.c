@@ -142,11 +142,9 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
               case 'D':
                 {
                   intptr_t argi;
-#ifdef _WIN64
                   if( ptr[1]=='D' )
                     argi = va_arg( vl,intptr_t );
                   else
-#endif
                     argi = va_arg( vl,int );
                   if( argi<0 )
                   {
@@ -158,16 +156,11 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
                 }
                 break;
               case 'u':
-#ifndef _WIN64
-              case 'U':
-#endif
                 arg = va_arg( vl,unsigned int );
                 break;
-#ifdef _WIN64
               case 'U':
                 arg = va_arg( vl,uintptr_t );
                 break;
-#endif
             }
             char str[32];
             char *end = str + sizeof(str);
@@ -188,13 +181,11 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
               arg = (uintptr_t)va_arg( vl,void* );
               bytes = sizeof(void*);
             }
-#ifdef _WIN64
             else if( ptr[1]=='X' )
             {
               arg = va_arg( vl,uintptr_t );
               bytes = sizeof(uintptr_t);
             }
-#endif
             else if( ptr[1]=='w' )
             {
               arg = (unsigned short)va_arg( vl,unsigned int );

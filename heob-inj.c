@@ -3542,11 +3542,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 
   if( ep->ExceptionRecord->ExceptionCode==EXCEPTION_BREAKPOINT )
   {
-#ifndef _WIN64
-    ep->ContextRecord->Eip++;
-#else
-    ep->ContextRecord->Rip++;
-#endif
+    ep->ContextRecord->cip++;
     return( EXCEPTION_CONTINUE_EXECUTION );
   }
 
