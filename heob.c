@@ -3463,25 +3463,26 @@ void mainCRTStartup( void )
   {
     int nameLen = lstrlen( exePath );
     char *name = specificOptions;
-    char *so = NULL;
     lstrcpy( exePath+nameLen,":" );
     while( 1 )
     {
       char *nameEnd = strchr( name,':' );
       if( !nameEnd ) break;
+      char *so = NULL;
       if( strstart(name,exePath) )
-        so = name + nameLen + 1;
+        so = nameEnd + 1;
       name = strchr( nameEnd+1,';' );
       if( !name ) break;
       name++;
+
+      while( so )
+      {
+        while( so[0]==' ' ) so++;
+        if( so[0]!='-' ) break;
+        so = readOption( so,&opt,&raise_alloc_q,&raise_alloc_a,heap );
+      }
     }
     exePath[nameLen] = 0;
-    while( so )
-    {
-      while( so[0]==' ' ) so++;
-      if( so[0]!='-' ) break;
-      so = readOption( so,&opt,&raise_alloc_q,&raise_alloc_a,heap );
-    }
   }
 
   const char *subOutName = NULL;
