@@ -1028,7 +1028,7 @@ static CODE_SEG(".text$2") HANDLE inject(
     *heobExit = HEOB_NO_CRT;
   }
   else
-    RtlMoveMemory( exePath,data->exePath,MAX_PATH*2 );
+    GetFullPathNameW( data->exePath,MAX_PATH,exePath,NULL );
   HeapFree( heap,0,fullData );
 
   if( data->noCRT==2 )
