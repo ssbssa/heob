@@ -3098,7 +3098,7 @@ void mainCRTStartup( void )
     }
     if( specificOptions ) HeapFree( heap,0,specificOptions );
     writeCloseErrorPipe( errorPipe,HEOB_BAD_ARG,badArg );
-    ExitProcess( -1 );
+    ExitProcess( 0x7fffffff );
   }
 
   const char *funcnames[FT_COUNT] = {
@@ -3295,7 +3295,7 @@ void mainCRTStartup( void )
     if( xmlName ) HeapFree( heap,0,xmlName );
     if( specificOptions ) HeapFree( heap,0,specificOptions );
     writeCloseErrorPipe( errorPipe,HEOB_HELP,0 );
-    ExitProcess( -1 );
+    ExitProcess( 0x7fffffff );
   }
   // }}}
 
@@ -3314,7 +3314,7 @@ void mainCRTStartup( void )
       if( xmlName ) HeapFree( heap,0,xmlName );
       if( specificOptions ) HeapFree( heap,0,specificOptions );
       writeCloseErrorPipe( errorPipe,HEOB_WRONG_BITNESS,0 );
-      ExitProcess( -1 );
+      ExitProcess( 0x7fffffff );
     }
   }
 
@@ -3372,7 +3372,7 @@ void mainCRTStartup( void )
       if( xmlName ) HeapFree( heap,0,xmlName );
       if( specificOptions ) HeapFree( heap,0,specificOptions );
       writeCloseErrorPipe( errorPipe,HEOB_PROCESS_FAIL,0 );
-      ExitProcess( -1 );
+      ExitProcess( 0x7fffffff );
     }
 
     if( opt.newConsole>1 )
@@ -3386,7 +3386,7 @@ void mainCRTStartup( void )
       {
         printf( "$Wcan't create process for 'heob'\n" );
         TerminateProcess( pi.hProcess,1 );
-        exitCode = -1;
+        exitCode = 0x7fffffff;
       }
       else if( !(opt.newConsole&1) )
       {
@@ -3575,7 +3575,7 @@ void mainCRTStartup( void )
   if( !readPipe )
     TerminateProcess( pi.hProcess,1 );
 
-  UINT exitCode = -1;
+  UINT exitCode = 0x7fffffff;
   if( readPipe )
   {
     int count = WideCharToMultiByte( CP_ACP,0,
