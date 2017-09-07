@@ -449,6 +449,7 @@ static NOINLINE void trackFree(
   {
     GET_REMOTEDATA( rd );
 
+    freed f;
     int splitIdx = (((uintptr_t)free_ptr)>>rd->ptrShift)&SPLIT_MASK;
     splitAllocation *sa = rd->splits + splitIdx;
     size_t freeSize = -1;
@@ -460,7 +461,6 @@ static NOINLINE void trackFree(
     // successful free {{{
     if( LIKELY(i>=0 && (sa->alloc_a[i].frameCount || enable)) )
     {
-      freed f;
       RtlMoveMemory( &f.a,&sa->alloc_a[i],sizeof(allocation) );
 
       if( !failed_realloc )
@@ -589,7 +589,6 @@ static NOINLINE void trackFree(
         for( i=sf->freed_q-1; i>=0 && sf->freed_a[i].a.ptr!=free_ptr; i-- );
         if( i>=0 )
         {
-          freed f;
           RtlMoveMemory( &f,&sf->freed_a[i],sizeof(freed) );
 
           LeaveCriticalSection( &sf->cs );
@@ -769,8 +768,8 @@ static NOINLINE void trackFree(
             int freed_q = sf->freed_q;
             for( i=0; i<freed_q; i++ )
             {
-              freed *f = freed_a + i;
-              allocation *a = &f->a;
+              freed *ff = freed_a + i;
+              allocation *a = &ff->a;
               uintptr_t p = (uintptr_t)a->ptr;
               size_t s = a->size;
 
@@ -796,10 +795,10 @@ static NOINLINE void trackFree(
                 {
                   RtlMoveMemory( &aa[1],a,sizeof(allocation) );
                   aa[2].ptr = aa[1].ptr;
-                  RtlMoveMemory( aa[2].frames,f->frames,PTRS*sizeof(void*) );
-                  aa[2].ft = f->a.ftFreed;
+                  RtlMoveMemory( aa[2].frames,ff->frames,PTRS*sizeof(void*) );
+                  aa[2].ft = ff->a.ftFreed;
 #ifndef NO_THREADNAMES
-                  aa[2].threadNameIdx = f->threadNameIdx;
+                  aa[2].threadNameIdx = ff->threadNameIdx;
 #endif
                   foundAlloc = 1;
                   break;
