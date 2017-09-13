@@ -222,7 +222,11 @@ T_H77=-p1 -a16 -f1
 T_A77=39
 T_H78=-p1 -a16 -f1
 T_A78=40
-TESTS:=$(shell seq -w 01 78)
+T_H79=-h2
+T_A79=0
+T_H80="-Oallocer$(BITS):-X;"
+T_A80=0
+TESTS:=$(shell seq -w 01 80)
 
 testres:
 	mkdir -p $@

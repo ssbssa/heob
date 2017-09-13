@@ -1,0 +1,3 @@
+allocer: main()
+
+exit code: 0 (0xPTR)

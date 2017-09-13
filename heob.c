@@ -3291,6 +3291,8 @@ void mainCRTStartup( void )
           "use leak and error count for exit code [$I%d$N]\n",
           defopt.leakErrorExitCode );
       printf( "    $I-O$BA$I:$BO$I; a$Npplication specific $Io$Nptions\n" );
+      printf( "    $I-X$N     "
+          "disable heob via application specific options\n" );
       printf( "    $I-\"$BM$I\"$BB$N  trace mode:"
           " load $Im$Nodule on $Ib$Nase address\n" );
     }
@@ -3464,6 +3466,7 @@ void mainCRTStartup( void )
     int nameLen = lstrlen( exePath );
     char *name = specificOptions;
     lstrcpy( exePath+nameLen,":" );
+    int disable = 0;
     while( 1 )
     {
       char *nameEnd = strchr( name,':' );
@@ -3479,10 +3482,39 @@ void mainCRTStartup( void )
       {
         while( so[0]==' ' ) so++;
         if( so[0]!='-' ) break;
+        if( so[1]=='X' ) disable = 1;
         so = readOption( so,&opt,&raise_alloc_q,&raise_alloc_a,heap );
       }
     }
     exePath[nameLen] = 0;
+
+    if( disable )
+    {
+      ResumeThread( pi.hThread );
+
+      if( attachEvent )
+      {
+        SetEvent( attachEvent );
+        CloseHandle( attachEvent );
+      }
+
+      DWORD exitCode = 0;
+      if( !opt.newConsole )
+      {
+        WaitForSingleObject( pi.hProcess,INFINITE );
+        GetExitCodeProcess( pi.hProcess,&exitCode );
+      }
+
+      CloseHandle( pi.hThread );
+      CloseHandle( pi.hProcess );
+      HeapFree( heap,0,tcOut );
+      if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
+      if( outName ) HeapFree( heap,0,outName );
+      if( xmlName ) HeapFree( heap,0,xmlName );
+      if( specificOptions ) HeapFree( heap,0,specificOptions );
+      writeCloseErrorPipe( errorPipe,HEOB_OK,0 );
+      ExitProcess( exitCode );
+    }
   }
 
   const char *subOutName = NULL;
