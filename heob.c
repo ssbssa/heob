@@ -3384,7 +3384,7 @@ void mainCRTStartup( void )
       ExitProcess( 0x7fffffff );
     }
 
-    if( opt.newConsole>1 )
+    if( opt.newConsole>1 || isWrongArch(pi.hProcess) )
     {
       HMODULE kernel32 = GetModuleHandle( "kernel32.dll" );
       func_CreateProcessA *fCreateProcessA =
@@ -3397,7 +3397,7 @@ void mainCRTStartup( void )
         TerminateProcess( pi.hProcess,1 );
         exitCode = 0x7fffffff;
       }
-      else if( !(opt.newConsole&1) )
+      else if( opt.newConsole<=2 )
       {
         WaitForSingleObject( pi.hProcess,INFINITE );
         GetExitCodeProcess( pi.hProcess,&exitCode );
@@ -3416,7 +3416,7 @@ void mainCRTStartup( void )
 
     opt.attached = fakeAttached;
   }
-  else
+  else if( ppid )
     opt.newConsole = 0;
 
   char exePath[MAX_PATH];

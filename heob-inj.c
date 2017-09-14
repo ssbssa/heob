@@ -231,7 +231,7 @@ static NORETURN void exitWait( UINT c,int terminate )
 
   rd->opt.raiseException = 0;
 
-  if( rd->opt.newConsole )
+  if( rd->opt.newConsole&1 )
   {
     HANDLE in = GetStdHandle( STD_INPUT_HANDLE );
     if( FlushConsoleInputBuffer(in) )
@@ -1945,6 +1945,8 @@ int heobSubProcess(
       addOption( heobCmd," -A",processInformation->dwThreadId,0,numEnd );
       if( heobMod )
         addOption( heobCmd,"/",GetCurrentProcessId(),0,numEnd );
+      else
+        ADD_OPTION( " -c",newConsole,0 );
       if( subOutName && subOutName[0] )
       {
         lstrcat( heobCmd," -o" );
@@ -1998,9 +2000,10 @@ int heobSubProcess(
       RtlZeroMemory( &si,sizeof(STARTUPINFO) );
       si.cb = sizeof(STARTUPINFO);
       PROCESS_INFORMATION pi;
+      DWORD newConsole = heobMod || opt->newConsole>1 ? CREATE_NEW_CONSOLE : 0;
       RtlZeroMemory( &pi,sizeof(PROCESS_INFORMATION) );
       if( fCreateProcessA(heobPath,heobCmd,NULL,NULL,FALSE,
-            CREATE_SUSPENDED|CREATE_NEW_CONSOLE,NULL,subCurDir,&si,&pi) )
+            CREATE_SUSPENDED|newConsole,NULL,subCurDir,&si,&pi) )
       {
         char eventName[32] = "heob.attach.";
         char *end = num2hexstr(
@@ -2014,7 +2017,13 @@ int heobSubProcess(
 
         withHeob = 1;
         CloseHandle( pi.hThread );
-        CloseHandle( pi.hProcess );
+        if( newConsole )
+          CloseHandle( pi.hProcess );
+        else
+        {
+          CloseHandle( processInformation->hProcess );
+          processInformation->hProcess = pi.hProcess;
+        }
       }
 
       HeapFree( heap,0,heobCmd );
