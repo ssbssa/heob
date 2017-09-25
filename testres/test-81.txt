@@ -1,0 +1,11 @@
+allocer: main()
+
+deallocation of invalid pointer 0xPTR
+  called on:
+    [free]
+
+leaks:
+  16 B (#2)
+    [malloc]
+  sum: 16 B / 1
+exit code: 43 (0xPTR)

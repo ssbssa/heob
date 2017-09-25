@@ -226,7 +226,9 @@ T_H79=-h2
 T_A79=0
 T_H80="-Oallocer$(BITS):-X;"
 T_A80=0
-TESTS:=$(shell seq -w 01 80)
+T_H81=-p1 -a16 -f0
+T_A81=43
+TESTS:=$(shell seq -w 01 81)
 
 testres:
 	mkdir -p $@

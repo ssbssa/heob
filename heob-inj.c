@@ -687,7 +687,10 @@ static NOINLINE void trackFree(
         DWORD pageSize = rd->pageSize;
         int j;
         int foundAlloc = 0;
-        int foundRef = 0;
+        int foundRef = ptr==(uintptr_t)rd->opt.init;
+#ifndef _WIN64
+        foundRef |= ptr==(uintptr_t)(rd->opt.init>>32);
+#endif
 
         // block address with offset {{{
         for( j=0; j<=SPLIT_MASK; j++ )

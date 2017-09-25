@@ -816,6 +816,15 @@ void choose( int arg )
         system( commandLine );
       }
       break;
+
+    case 43:
+      // free uninitialized pointer
+      {
+        mem[4] = 0;
+        char **ptr_buf = (char**)malloc( sizeof(char*) );
+        free( *ptr_buf );
+      }
+      break;
   }
 
   mem = (char*)realloc( mem,30 );
