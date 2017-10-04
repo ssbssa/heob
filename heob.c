@@ -2844,12 +2844,33 @@ static char *disassemble( DWORD pid,void *addr,HANDLE heap )
 #endif
 
 // }}}
+// wait for key {{{
+
+static void waitForKey( textColor *tc,HANDLE in )
+{
+  printf( "press any key to continue..." );
+
+  INPUT_RECORD ir;
+  DWORD didread;
+  while( ReadConsoleInput(in,&ir,1,&didread) &&
+      (ir.EventType!=KEY_EVENT || !ir.Event.KeyEvent.bKeyDown ||
+       ir.Event.KeyEvent.wVirtualKeyCode==VK_SHIFT ||
+       ir.Event.KeyEvent.wVirtualKeyCode==VK_CAPITAL ||
+       ir.Event.KeyEvent.wVirtualKeyCode==VK_CONTROL ||
+       ir.Event.KeyEvent.wVirtualKeyCode==VK_MENU ||
+       ir.Event.KeyEvent.wVirtualKeyCode==VK_LWIN ||
+       ir.Event.KeyEvent.wVirtualKeyCode==VK_RWIN) );
+}
+
+// }}}
 // main {{{
 
 void mainCRTStartup( void )
 {
   DWORD startTicks = GetTickCount();
   HANDLE errorPipe = openErrorPipe();
+  HANDLE in = GetStdHandle( STD_INPUT_HANDLE );
+  if( !FlushConsoleInputBuffer(in) ) in = NULL;
 
   // command line arguments {{{
   char *cmdLine = GetCommandLineA();
@@ -3307,6 +3328,16 @@ void mainCRTStartup( void )
     }
     printf( "    $I-H$N     show full help\n" );
     printf( "\n$Ohe$Nap-$Oob$Nserver " HEOB_VER " ($O" BITS "$Nbit)\n" );
+    if( in )
+    {
+      DWORD conPid;
+      DWORD conPidCount = GetConsoleProcessList( &conPid,1 );
+      if( conPidCount==1 )
+      {
+        printf( "\n" );
+        waitForKey( tc,in );
+      }
+    }
     HeapFree( heap,0,tcOut );
     if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
     if( outName ) HeapFree( heap,0,outName );
@@ -3336,8 +3367,6 @@ void mainCRTStartup( void )
     }
   }
 
-  HANDLE in = GetStdHandle( STD_INPUT_HANDLE );
-  if( !FlushConsoleInputBuffer(in) ) in = NULL;
   if( !in && (opt.attached || opt.newConsole<=1) )
     opt.pid = opt.leakRecording = 0;
 
@@ -3666,18 +3695,8 @@ void mainCRTStartup( void )
       tc->out = err;
       printf( "\n-------------------- PID %u --------------------\n",
           pi.dwProcessId );
-      printf( "press any key to continue..." );
 
-      INPUT_RECORD ir;
-      DWORD didread;
-      while( ReadConsoleInput(in,&ir,1,&didread) &&
-          (ir.EventType!=KEY_EVENT || !ir.Event.KeyEvent.bKeyDown ||
-           ir.Event.KeyEvent.wVirtualKeyCode==VK_SHIFT ||
-           ir.Event.KeyEvent.wVirtualKeyCode==VK_CAPITAL ||
-           ir.Event.KeyEvent.wVirtualKeyCode==VK_CONTROL ||
-           ir.Event.KeyEvent.wVirtualKeyCode==VK_MENU ||
-           ir.Event.KeyEvent.wVirtualKeyCode==VK_LWIN ||
-           ir.Event.KeyEvent.wVirtualKeyCode==VK_RWIN) );
+      waitForKey( tc,in );
 
       printf( " done\n\n" );
       tc->out = out;
