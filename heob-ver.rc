@@ -2,6 +2,7 @@
 #include <windows.h>
 
 CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "heob.manifest"
+1 ICON "heob.ico"
 
 VS_VERSION_INFO VERSIONINFO
 #ifdef HEOB_VER_NUM
