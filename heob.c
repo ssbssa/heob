@@ -301,6 +301,15 @@ NOINLINE char *mstrrchr( const char *s,char c )
 }
 #define strrchr mstrrchr
 
+static NOINLINE wchar_t *mstrrchrW( const wchar_t *s,wchar_t c )
+{
+  wchar_t *ret = NULL;
+  for( ; *s; s++ )
+    if( *s==c ) ret = (wchar_t*)s;
+  return( ret );
+}
+#define strrchrW mstrrchrW
+
 static NOINLINE uint64_t atou64( const char *s )
 {
   uint64_t ret = 0;
@@ -3637,6 +3646,20 @@ void mainCRTStartup( void )
     printAttachedProcessInfo( exePathW,api,tc,pi.dwProcessId,ppid );
     if( tcOutOrig )
       printAttachedProcessInfo( exePathW,api,tcOutOrig,pi.dwProcessId,ppid );
+
+    // console title {{{
+    wchar_t *delimW = strrchrW( exePathW,'\\' );
+    if( delimW ) delimW++;
+    else delimW = exePathW;
+    wchar_t *lastPointW = strrchrW( delimW,'.' );
+    if( lastPointW ) lastPointW[0] = 0;
+    wchar_t *title = HeapAlloc( heap,0,(10+lstrlenW(delimW))*2 );
+    lstrcpyW( title,L"heob" BITS " - " );
+    lstrcatW( title,delimW );
+    SetConsoleTitleW( title );
+    HeapFree( heap,0,title );
+    if( lastPointW ) lastPointW[0] = '.';
+    // }}}
 
     if( opt.pid )
     {
