@@ -232,7 +232,9 @@ void heobPlugin::triggerAction()
 
     // full command line
     QString arguments = heob + heobArguments + QLatin1Char(' ') +
-            exeQuote + executable + exeQuote + QLatin1Char(' ') + commandLineArguments;
+            exeQuote + executable + exeQuote;
+    if (!commandLineArguments.isEmpty())
+        arguments += QLatin1Char(' ') + commandLineArguments;
     QByteArray argumentsCopy((const char *)arguments.utf16(), arguments.size()*2+2);
 
     // process environment
@@ -261,7 +263,7 @@ void heobPlugin::triggerAction()
     memset(&si, 0, sizeof(STARTUPINFO));
     si.cb = sizeof(STARTUPINFO);
     if (!CreateProcess((LPCWSTR)heobPath.utf16(), (LPWSTR)argumentsCopy.data(), 0, 0, FALSE,
-                       CREATE_UNICODE_ENVIRONMENT|CREATE_SUSPENDED, envPtr,
+                       CREATE_UNICODE_ENVIRONMENT|CREATE_SUSPENDED|CREATE_NEW_CONSOLE, envPtr,
                        (LPCWSTR)workingDirectory.utf16(), &si, &pi))
     {
         QMessageBox::warning(Core::ICore::mainWindow(),
@@ -278,7 +280,7 @@ void heobPlugin::triggerAction()
         hd = 0;
     }
 
-    ResumeThread (pi.hThread);
+    ResumeThread(pi.hThread);
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
 
