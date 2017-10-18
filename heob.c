@@ -3116,7 +3116,6 @@ void mainCRTStartup( void )
     opt.slackInit = -1;
   }
   HANDLE out = GetStdHandle( STD_OUTPUT_HANDLE );
-  if( opt.protect<1 ) opt.protectFree = 0;
   textColor *tcOut = HeapAlloc( heap,0,sizeof(textColor) );
   textColor *tc = tcOut;
   checkOutputVariant( tc,out );
@@ -3562,6 +3561,9 @@ void mainCRTStartup( void )
       ExitProcess( exitCode );
     }
   }
+  if( opt.protect<1 ) opt.protectFree = 0;
+  if( opt.handleException>=2 )
+    opt.protect = opt.protectFree = opt.leakDetails = 0;
 
   const char *subOutName = NULL;
   textColor *tcOutOrig = NULL;

@@ -1353,6 +1353,8 @@ static void writeLeakMods( void )
 {
   GET_REMOTEDATA( rd );
 
+  if( !rd->splits ) return;
+
   int i;
   int mi_q = 0;
   modInfo *mi_a = NULL;
@@ -1369,6 +1371,18 @@ static void writeLeakMods( void )
 static void writeLeakData( void )
 {
   GET_REMOTEDATA( rd );
+
+  if( !rd->splits )
+  {
+    DWORD written;
+    int type = WRITE_LEAKS;
+    WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+    int alloc_q = 0;
+    WriteFile( rd->master,&alloc_q,sizeof(int),&written,NULL );
+    size_t alloc_mem_sum = 0;
+    WriteFile( rd->master,&alloc_mem_sum,sizeof(size_t),&written,NULL );
+    return;
+  }
 
   int i;
   int alloc_q = 0;
@@ -1689,8 +1703,11 @@ static VOID WINAPI new_ExitProcess( UINT c )
 
   int i;
   EnterCriticalSection( &rd->csWrite );
-  for( i=0; i<=SPLIT_MASK; i++ )
-    EnterCriticalSection( &rd->splits[i].cs );
+  if( rd->splits )
+  {
+    for( i=0; i<=SPLIT_MASK; i++ )
+      EnterCriticalSection( &rd->splits[i].cs );
+  }
 
   if( rd->opt.leakDetails>1 )
     findLeakTypes();
@@ -1709,16 +1726,22 @@ static VOID WINAPI new_ExitProcess( UINT c )
 
   if( rd->freed_mod_q )
   {
-    for( i=0; i<=SPLIT_MASK; i++ )
-      LeaveCriticalSection( &rd->splits[i].cs );
+    if( rd->splits )
+    {
+      for( i=0; i<=SPLIT_MASK; i++ )
+        LeaveCriticalSection( &rd->splits[i].cs );
+    }
     LeaveCriticalSection( &rd->csWrite );
 
     for( i=0; i<rd->freed_mod_q; i++ )
       rd->fFreeLibrary( rd->freed_mod_a[i] );
 
     EnterCriticalSection( &rd->csWrite );
-    for( i=0; i<=SPLIT_MASK; i++ )
-      EnterCriticalSection( &rd->splits[i].cs );
+    if( rd->splits )
+    {
+      for( i=0; i<=SPLIT_MASK; i++ )
+        EnterCriticalSection( &rd->splits[i].cs );
+    }
   }
 
   // make sure exit trace is still the last {{{
@@ -1752,8 +1775,11 @@ static VOID WINAPI new_ExitProcess( UINT c )
   WriteFile( rd->master,&c,sizeof(UINT),&written,NULL );
   WriteFile( rd->master,&terminated,sizeof(int),&written,NULL );
 
-  for( i=0; i<=SPLIT_MASK; i++ )
-    LeaveCriticalSection( &rd->splits[i].cs );
+  if( rd->splits )
+  {
+    for( i=0; i<=SPLIT_MASK; i++ )
+      LeaveCriticalSection( &rd->splits[i].cs );
+  }
   LeaveCriticalSection( &rd->csWrite );
 
   exitWait( c,0 );
@@ -3080,7 +3106,28 @@ static void replaceModFuncs( void )
         addModule( dll_msvcrt );
       }
       else
+      {
         rd->noCRT = noCRT = 2;
+
+        rd->opt.protect = rd->opt.protectFree = rd->opt.leakDetails = 0;
+        if( rd->splits && !rd->opt.exitTrace )
+        {
+          int i;
+          for( i=0; i<=SPLIT_MASK; i++ )
+            DeleteCriticalSection( &rd->splits[i].cs );
+          HeapFree( rd->heap,0,rd->splits );
+          DeleteCriticalSection( &rd->csAllocId );
+          rd->splits = NULL;
+        }
+        if( rd->freeds )
+        {
+          int i;
+          for( i=0; i<=SPLIT_MASK; i++ )
+            DeleteCriticalSection( &rd->freeds[i].cs );
+          HeapFree( rd->heap,0,rd->freeds );
+          rd->freeds = NULL;
+        }
+      }
 
       if( dll_msvcrt && rd->opt.protect )
       {
@@ -3261,6 +3308,8 @@ static allocation *heob_find_nearest_allocation_a(
     uintptr_t addr,allocation *aa )
 {
   GET_REMOTEDATA( rd );
+
+  if( !rd->splits ) return( NULL );
 
   int i,j;
   splitAllocation *sa;
@@ -3895,8 +3944,9 @@ VOID CALLBACK heob( ULONG_PTR arg )
   lstrcpy( ld->subXmlName,rd->subXmlName );
   lstrcpy( ld->subCurDir,rd->subCurDir );
 
-  ld->splits = HeapAlloc( heap,HEAP_ZERO_MEMORY,
-      (SPLIT_MASK+1)*sizeof(splitAllocation) );
+  if( !ld->noCRT || rd->opt.exitTrace )
+    ld->splits = HeapAlloc( heap,HEAP_ZERO_MEMORY,
+        (SPLIT_MASK+1)*sizeof(splitAllocation) );
   if( rd->opt.protectFree )
     ld->freeds = HeapAlloc( heap,HEAP_ZERO_MEMORY,
         (SPLIT_MASK+1)*sizeof(splitFreed) );
@@ -3908,30 +3958,37 @@ VOID CALLBACK heob( ULONG_PTR arg )
   if( fInitCritSecEx )
   {
     fInitCritSecEx( &ld->csMod,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
-    fInitCritSecEx( &ld->csAllocId,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
     fInitCritSecEx( &ld->csWrite,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
     fInitCritSecEx( &ld->csFreedMod,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
     int i;
-    for( i=0; i<=SPLIT_MASK; i++ )
+    if( ld->splits )
     {
-      fInitCritSecEx( &ld->splits[i].cs,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
-      if( rd->opt.protectFree )
-        fInitCritSecEx( &ld->freeds[i].cs,
+      fInitCritSecEx( &ld->csAllocId,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
+      for( i=0; i<=SPLIT_MASK; i++ )
+      {
+        fInitCritSecEx( &ld->splits[i].cs,
             4000,CRITICAL_SECTION_NO_DEBUG_INFO );
+        if( rd->opt.protectFree )
+          fInitCritSecEx( &ld->freeds[i].cs,
+              4000,CRITICAL_SECTION_NO_DEBUG_INFO );
+      }
     }
   }
   else
   {
     InitializeCriticalSection( &ld->csMod );
-    InitializeCriticalSection( &ld->csAllocId );
     InitializeCriticalSection( &ld->csWrite );
     InitializeCriticalSection( &ld->csFreedMod );
     int i;
-    for( i=0; i<=SPLIT_MASK; i++ )
+    if( ld->splits )
     {
-      InitializeCriticalSection( &ld->splits[i].cs );
-      if( rd->opt.protectFree )
-        InitializeCriticalSection( &ld->freeds[i].cs );
+      InitializeCriticalSection( &ld->csAllocId );
+      for( i=0; i<=SPLIT_MASK; i++ )
+      {
+        InitializeCriticalSection( &ld->splits[i].cs );
+        if( rd->opt.protectFree )
+          InitializeCriticalSection( &ld->freeds[i].cs );
+      }
     }
   }
 
@@ -3951,9 +4008,9 @@ VOID CALLBACK heob( ULONG_PTR arg )
   ld->newArrAllocMethod = rd->opt.allocMethod>1 ? AT_NEW_ARR : AT_NEW;
 
   ld->cur_id = 0;
-  ld->raise_alloc_q = rd->raise_alloc_q;
-  if( rd->raise_alloc_q )
+  if( rd->raise_alloc_q && !ld->noCRT )
   {
+    ld->raise_alloc_q = rd->raise_alloc_q;
     ld->raise_alloc_a = HeapAlloc( heap,0,rd->raise_alloc_q*sizeof(size_t) );
     RtlMoveMemory( ld->raise_alloc_a,
         rd->raise_alloc_a,rd->raise_alloc_q*sizeof(size_t) );
