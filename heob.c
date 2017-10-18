@@ -3610,7 +3610,10 @@ void mainCRTStartup( void )
     }
   }
   else if( xmlName )
+  {
     out = tc->out = NULL;
+    tc->fTextColor = NULL;
+  }
   if( !tc->out && !tcOutOrig && opt.attached )
   {
     tcOutOrig = HeapAlloc( heap,0,sizeof(textColor) );
@@ -3708,6 +3711,16 @@ void mainCRTStartup( void )
 
       printf( " done\n\n" );
       tc->out = out;
+    }
+
+    if( opt.handleException>=2 ) opt.leakRecording = 0;
+
+    if( in && !opt.leakRecording && tc->fTextColor!=&TextColorConsole )
+    {
+      DWORD conPid;
+      DWORD conPidCount = GetConsoleProcessList( &conPid,1 );
+      if( conPidCount==1 )
+        FreeConsole();
     }
 
     // xml header {{{
@@ -3855,7 +3868,6 @@ void mainCRTStartup( void )
     int threadName_q = 0;
     threadNameInfo *threadName_a = NULL;
 #endif
-    if( opt.handleException>=2 ) opt.leakRecording = 0;
     if( !opt.leakRecording ) in = NULL;
     int recording = opt.leakRecording!=1 ? 1 : -1;
     int needData = 1;
