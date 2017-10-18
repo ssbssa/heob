@@ -109,6 +109,7 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
   {
     if( ptr[0]=='%' && ptr[1] )
     {
+      // % = argument
       if( ptr>format )
         tc->fWriteText( tc,format,ptr-format );
       switch( ptr[1] )
@@ -250,6 +251,13 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
     }
     else if( ptr[0]=='$' && ptr[1] )
     {
+      // $ = color
+      //   $N = normal
+      //   $O = ok
+      //   $S = section
+      //   $I = info
+      //   $W = warn
+      //   $B = base
       if( ptr>format )
         tc->fWriteText( tc,format,ptr-format );
       if( tc->fTextColor )
@@ -679,7 +687,7 @@ static void checkOutputVariant( textColor *tc,HANDLE out )
     int i;
     bg = bg | ( bg>>4 );
     for( i=0; i<ATT_COUNT; i++ )
-      if( tc->colors[i]==bg ) tc->colors[i] ^=0x08;
+      if( tc->colors[i]==bg ) tc->colors[i] ^= 0x08;
     return;
   }
 
