@@ -2858,6 +2858,11 @@ static void waitForKey( textColor *tc,HANDLE in )
 {
   printf( "press any key to continue..." );
 
+  DWORD flags;
+  int hasConMode;
+  if( (hasConMode=GetConsoleMode(in,&flags)) )
+    SetConsoleMode( in,flags & ~ENABLE_MOUSE_INPUT );
+
   INPUT_RECORD ir;
   DWORD didread;
   while( ReadConsoleInput(in,&ir,1,&didread) &&
@@ -2868,6 +2873,9 @@ static void waitForKey( textColor *tc,HANDLE in )
        ir.Event.KeyEvent.wVirtualKeyCode==VK_MENU ||
        ir.Event.KeyEvent.wVirtualKeyCode==VK_LWIN ||
        ir.Event.KeyEvent.wVirtualKeyCode==VK_RWIN) );
+
+  if( hasConMode )
+    SetConsoleMode( in,flags );
 }
 
 // }}}
