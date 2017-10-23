@@ -2936,6 +2936,7 @@ void mainCRTStartup( void )
   PROCESS_INFORMATION pi;
   RtlZeroMemory( &pi,sizeof(PROCESS_INFORMATION) );
   DWORD ppid = 0;
+  int keepSuspended = 0;
   HANDLE attachEvent = NULL;
   int fakeAttached = 0;
   char *specificOptions = NULL;
@@ -3007,8 +3008,15 @@ void mainCRTStartup( void )
           char *start = args + 2;
           pi.dwThreadId = (DWORD)atop( start );
 
-          while( start[0] && start[0]!=' ' && start[0]!='/' ) start++;
-          if( start[0]=='/' ) ppid = (DWORD)atop( start+1 );
+          while( start[0] && start[0]!=' ' && start[0]!='/' && start[0]!='+' )
+            start++;
+          if( start[0]=='/' )
+          {
+            ppid = (DWORD)atop( start+1 );
+            while( start[0] && start[0]!=' ' && start[0]!='+' ) start++;
+          }
+          if( start[0]=='+' )
+            keepSuspended = atoi( start+1 );
 
           pi.hThread = OpenThread(
               STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0x3ff,
@@ -3543,7 +3551,8 @@ void mainCRTStartup( void )
 
     if( disable )
     {
-      ResumeThread( pi.hThread );
+      if( !keepSuspended )
+        ResumeThread( pi.hThread );
 
       if( attachEvent )
       {
@@ -3854,7 +3863,8 @@ void mainCRTStartup( void )
     }
     // }}}
 
-    ResumeThread( pi.hThread );
+    if( !keepSuspended )
+      ResumeThread( pi.hThread );
 
     if( attachEvent )
     {

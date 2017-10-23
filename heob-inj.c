@@ -1941,14 +1941,12 @@ int heobSubProcess(
     const char *subOutName,const char *subXmlName,const char *subCurDir,
     int raise_alloc_q,size_t *raise_alloc_a,const char *specificOptions )
 {
-  if( creationFlags&CREATE_SUSPENDED )
-    SuspendThread( processInformation->hProcess );
-
   char heobPath[MAX_PATH];
   if( !GetModuleFileName(heobMod,heobPath,MAX_PATH) )
     heobPath[0] = 0;
   char *heobEnd = mstrrchr( heobPath,'\\' );
   int withHeob = 0;
+  int keepSuspended = ( creationFlags&CREATE_SUSPENDED )!=0;
   if( heobEnd )
   {
     heobEnd++;
@@ -1973,7 +1971,10 @@ int heobSubProcess(
       addOption( heobCmd,option,opt->val,defVal,numEnd )
       addOption( heobCmd," -A",processInformation->dwThreadId,0,numEnd );
       if( heobMod )
+      {
         addOption( heobCmd,"/",GetCurrentProcessId(),0,numEnd );
+        addOption( heobCmd,"+",keepSuspended,0,numEnd );
+      }
       else
         ADD_OPTION( " -c",newConsole,0 );
       if( subOutName && subOutName[0] )
@@ -2059,8 +2060,8 @@ int heobSubProcess(
     }
   }
 
-  if( !withHeob )
-    ResumeThread( processInformation->hProcess );
+  if( !withHeob && heobMod && !keepSuspended )
+    ResumeThread( processInformation->hThread );
 
   return( withHeob );
 }
