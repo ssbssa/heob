@@ -2040,12 +2040,17 @@ int heobSubProcess(
             eventName+lstrlen(eventName),pi.dwProcessId,8 );
         end[0] = 0;
         HANDLE attachEvent = CreateEvent( NULL,FALSE,FALSE,eventName );
+        HANDLE waitHandles[2] = { attachEvent,pi.hProcess };
 
         ResumeThread( pi.hThread );
-        WaitForSingleObject( attachEvent,INFINITE );
+        DWORD w = WaitForMultipleObjects( 2,waitHandles,FALSE,INFINITE );
         CloseHandle( attachEvent );
 
-        withHeob = 1;
+        if( w==WAIT_OBJECT_0 )
+          withHeob = 1;
+        else
+          newConsole = 1;
+
         CloseHandle( pi.hThread );
         if( newConsole )
           CloseHandle( pi.hProcess );
