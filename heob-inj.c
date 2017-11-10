@@ -157,7 +157,7 @@ typedef struct localData
 
   char subOutName[MAX_PATH];
   char subXmlName[MAX_PATH];
-  char subCurDir[MAX_PATH];
+  wchar_t subCurDir[MAX_PATH];
 
   CRITICAL_SECTION csMod;
   CRITICAL_SECTION csAllocId;
@@ -1937,14 +1937,14 @@ static void addOption( char *cmdLine,const char *optionStr,
 int heobSubProcess(
     DWORD creationFlags,LPPROCESS_INFORMATION processInformation,
     HMODULE heobMod,HANDLE heap,options *opt,
-    func_CreateProcessA *fCreateProcessA,
-    const char *subOutName,const char *subXmlName,const char *subCurDir,
+    func_CreateProcessW *fCreateProcessW,
+    const char *subOutName,const char *subXmlName,const wchar_t *subCurDir,
     int raise_alloc_q,size_t *raise_alloc_a,const char *specificOptions )
 {
-  char heobPath[MAX_PATH];
-  if( !GetModuleFileName(heobMod,heobPath,MAX_PATH) )
+  wchar_t heobPath[MAX_PATH];
+  if( !GetModuleFileNameW(heobMod,heobPath,MAX_PATH) )
     heobPath[0] = 0;
-  char *heobEnd = mstrrchr( heobPath,'\\' );
+  wchar_t *heobEnd = mstrrchrW( heobPath,'\\' );
   int withHeob = 0;
   int keepSuspended = ( creationFlags&CREATE_SUSPENDED )!=0;
   if( heobEnd )
@@ -1953,20 +1953,21 @@ int heobSubProcess(
     if( isWrongArch(processInformation->hProcess) )
     {
 #ifndef _WIN64
-#define OTHER_HEOB "heob64.exe"
+#define OTHER_HEOB L"heob64.exe"
 #else
-#define OTHER_HEOB "heob32.exe"
+#define OTHER_HEOB L"heob32.exe"
 #endif
-      lstrcpy( heobEnd,OTHER_HEOB );
+      lstrcpyW( heobEnd,OTHER_HEOB );
     }
 
     char *heobCmd = HeapAlloc( heap,0,32768 );
-    if( heobCmd )
+    wchar_t *heobCmdW = HeapAlloc( heap,0,32768*2 );
+    if( heobCmd && heobCmdW )
     {
       char num[32];
       char *numEnd = num + sizeof(num);
       *(--numEnd) = 0;
-      lstrcpy( heobCmd,heobEnd );
+      heobCmd[0] = 0;
 #define ADD_OPTION( option,val,defVal ) \
       addOption( heobCmd,option,opt->val,defVal,numEnd )
       addOption( heobCmd," -A",processInformation->dwThreadId,0,numEnd );
@@ -2024,15 +2025,21 @@ int heobSubProcess(
         lstrcat( heobCmd,specificOptions );
       }
 
+      lstrcpyW( heobCmdW,heobEnd );
+      char *hc = heobCmd;
+      wchar_t *hcw = heobCmdW + lstrlenW( heobCmdW );
+      while( *hc ) hcw++[0] = hc++[0];
+      hcw[0] = 0;
+
       if( subCurDir && !subCurDir[0] ) subCurDir = NULL;
 
-      STARTUPINFO si;
-      RtlZeroMemory( &si,sizeof(STARTUPINFO) );
-      si.cb = sizeof(STARTUPINFO);
+      STARTUPINFOW si;
+      RtlZeroMemory( &si,sizeof(STARTUPINFOW) );
+      si.cb = sizeof(STARTUPINFOW);
       PROCESS_INFORMATION pi;
       DWORD newConsole = heobMod || opt->newConsole>1 ? CREATE_NEW_CONSOLE : 0;
       RtlZeroMemory( &pi,sizeof(PROCESS_INFORMATION) );
-      if( fCreateProcessA(heobPath,heobCmd,NULL,NULL,FALSE,
+      if( fCreateProcessW(heobPath,heobCmdW,NULL,NULL,FALSE,
             CREATE_SUSPENDED|newConsole,NULL,subCurDir,&si,&pi) )
       {
         char eventName[32] = "heob.attach.";
@@ -2060,9 +2067,11 @@ int heobSubProcess(
           processInformation->hProcess = pi.hProcess;
         }
       }
-
-      HeapFree( heap,0,heobCmd );
     }
+    if( heobCmd )
+      HeapFree( heap,0,heobCmd );
+    if( heobCmdW )
+      HeapFree( heap,0,heobCmdW );
   }
 
   if( !withHeob && heobMod && !keepSuspended )
@@ -2087,7 +2096,7 @@ BOOL WINAPI new_CreateProcessA(
   if( !ret ) return( 0 );
 
   heobSubProcess( creationFlags,processInformation,
-      rd->heobMod,rd->heap,&rd->globalopt,rd->fCreateProcessA,
+      rd->heobMod,rd->heap,&rd->globalopt,rd->fCreateProcessW,
       rd->subOutName,rd->subXmlName,rd->subCurDir,0,NULL,rd->specificOptions );
 
   return( 1 );
@@ -2109,7 +2118,7 @@ BOOL WINAPI new_CreateProcessW(
   if( !ret ) return( 0 );
 
   heobSubProcess( creationFlags,processInformation,
-      rd->heobMod,rd->heap,&rd->globalopt,rd->fCreateProcessA,
+      rd->heobMod,rd->heap,&rd->globalopt,rd->fCreateProcessW,
       rd->subOutName,rd->subXmlName,rd->subCurDir,0,NULL,rd->specificOptions );
 
   return( 1 );
@@ -3924,7 +3933,7 @@ VOID CALLBACK heob( ULONG_PTR arg )
   ld->fExitProcess = rd->fGetProcAddress( rd->kernel32,"ExitProcess" );
   ld->fTerminateProcess =
     rd->fGetProcAddress( rd->kernel32,"TerminateProcess" );
-  ld->fCreateProcessA = rd->fGetProcAddress( rd->kernel32,"CreateProcessA" );
+  ld->fCreateProcessW = rd->fGetProcAddress( rd->kernel32,"CreateProcessW" );
   ld->master = rd->master;
   ld->controlPipe = rd->controlPipe;
 #ifndef NO_DBGENG
@@ -3948,7 +3957,7 @@ VOID CALLBACK heob( ULONG_PTR arg )
 
   lstrcpy( ld->subOutName,rd->subOutName );
   lstrcpy( ld->subXmlName,rd->subXmlName );
-  lstrcpy( ld->subCurDir,rd->subCurDir );
+  lstrcpyW( ld->subCurDir,rd->subCurDir );
 
   if( !ld->noCRT || rd->opt.exitTrace )
     ld->splits = HeapAlloc( heap,HEAP_ZERO_MEMORY,

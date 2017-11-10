@@ -289,7 +289,7 @@ typedef struct remoteData
 
   char subOutName[MAX_PATH];
   char subXmlName[MAX_PATH];
-  char subCurDir[MAX_PATH];
+  wchar_t subCurDir[MAX_PATH];
 
   int noCRT;
 
@@ -442,14 +442,14 @@ typedef LONG NTAPI func_NtQueryInformationThread(
 
 char *num2hexstr( char *str,UINT64 arg,int count );
 char *num2str( char *start,uintptr_t arg,int minus );
-char *mstrrchr( const char *s,char c );
+wchar_t *mstrrchrW( const wchar_t *s,wchar_t c );
 int strstart( const char *str,const char *start );
 int isWrongArch( HANDLE process );
 int heobSubProcess(
     DWORD creationFlags,LPPROCESS_INFORMATION processInformation,
     HMODULE heobMod,HANDLE heap,options *opt,
-    func_CreateProcessA *fCreateProcessA,
-    const char *subOutName,const char *subXmlName,const char *subCurDir,
+    func_CreateProcessW *fCreateProcessW,
+    const char *subOutName,const char *subXmlName,const wchar_t *subCurDir,
     int raise_alloc_q,size_t *raise_alloc_a,const char *specificOptions );
 
 // }}}

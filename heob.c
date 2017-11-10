@@ -300,7 +300,7 @@ static NOINLINE char *mstrchr( const char *s,char c )
 }
 #define strchr mstrchr
 
-NOINLINE char *mstrrchr( const char *s,char c )
+static NOINLINE char *mstrrchr( const char *s,char c )
 {
   char *ret = NULL;
   for( ; *s; s++ )
@@ -309,7 +309,7 @@ NOINLINE char *mstrrchr( const char *s,char c )
 }
 #define strrchr mstrrchr
 
-static NOINLINE wchar_t *mstrrchrW( const wchar_t *s,wchar_t c )
+NOINLINE wchar_t *mstrrchrW( const wchar_t *s,wchar_t c )
 {
   wchar_t *ret = NULL;
   for( ; *s; s++ )
@@ -846,7 +846,7 @@ static CODE_SEG(".text$2") HANDLE inject(
     HANDLE *exceptionWait,
 #endif
     HANDLE in,HANDLE err,attachedProcessInfo **api,
-    const char *subOutName,const char *subXmlName,const char *subCurDir,
+    const char *subOutName,const char *subXmlName,const wchar_t *subCurDir,
     unsigned *heobExit )
 {
   func_inj *finj = &remoteCall;
@@ -950,7 +950,7 @@ static CODE_SEG(".text$2") HANDLE inject(
 
   if( subOutName ) lstrcpy( data->subOutName,subOutName );
   if( subXmlName ) lstrcpy( data->subXmlName,subXmlName );
-  if( subCurDir ) lstrcpy( data->subCurDir,subCurDir );
+  if( subCurDir ) lstrcpyW( data->subCurDir,subCurDir );
 
   data->raise_alloc_q = raise_alloc_q;
   if( raise_alloc_q )
@@ -3448,10 +3448,10 @@ void mainCRTStartup( void )
     if( opt.newConsole>1 || isWrongArch(pi.hProcess) )
     {
       HMODULE kernel32 = GetModuleHandle( "kernel32.dll" );
-      func_CreateProcessA *fCreateProcessA =
-        (func_CreateProcessA*)GetProcAddress( kernel32,"CreateProcessA" );
+      func_CreateProcessW *fCreateProcessW =
+        (func_CreateProcessW*)GetProcAddress( kernel32,"CreateProcessW" );
       DWORD exitCode = 0;
-      if( !heobSubProcess(0,&pi,NULL,heap,&opt,fCreateProcessA,
+      if( !heobSubProcess(0,&pi,NULL,heap,&opt,fCreateProcessW,
             outName,xmlName,NULL,raise_alloc_q,raise_alloc_a,specificOptions) )
       {
         printf( "$Wcan't create process for 'heob'\n" );
@@ -3648,11 +3648,11 @@ void mainCRTStartup( void )
     opt.children = 1;
   }
 
-  char *subCurDir = NULL;
+  wchar_t *subCurDir = NULL;
   if( opt.children )
   {
-    subCurDir = HeapAlloc( heap,0,MAX_PATH );
-    if( !GetCurrentDirectory(MAX_PATH,subCurDir) )
+    subCurDir = HeapAlloc( heap,0,MAX_PATH*2 );
+    if( !GetCurrentDirectoryW(MAX_PATH,subCurDir) )
       subCurDir[0] = 0;
   }
 
