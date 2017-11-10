@@ -4100,8 +4100,8 @@ VOID CALLBACK heob( ULONG_PTR arg )
 
   if( ld->master && rd->opt.attached )
   {
-    attachedProcessInfo *api = rd->api = VirtualAlloc(
-        NULL,sizeof(attachedProcessInfo),MEM_COMMIT,PAGE_READWRITE );
+    attachedProcessInfo *api = rd->api =
+      HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(attachedProcessInfo) );
     lstrcpyW( api->commandLine,GetCommandLineW() );
     if( !GetCurrentDirectoryW(MAX_PATH,api->currentDirectory) )
       api->currentDirectory[0] = 0;
@@ -4124,6 +4124,8 @@ VOID CALLBACK heob( ULONG_PTR arg )
   WaitForSingleObject( startMain,INFINITE );
   CloseHandle( startMain );
 
+  if( rd->api )
+    HeapFree( heap,0,rd->api );
   VirtualFree( rd,0,MEM_RELEASE );
 
   if( controlPipe )

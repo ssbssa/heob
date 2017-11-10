@@ -856,8 +856,8 @@ static CODE_SEG(".text$2") HANDLE inject(
   size_t soSize = ( specificOptions ? lstrlen(specificOptions) + 1 : 0 );
   size_t fullSize = soOffset + soSize;
 
-  unsigned char *fullDataRemote =
-    VirtualAllocEx( process,NULL,fullSize,MEM_COMMIT,PAGE_EXECUTE_READWRITE );
+  unsigned char *fullDataRemote = VirtualAllocEx( process,NULL,
+      fullSize,MEM_RESERVE|MEM_COMMIT,PAGE_EXECUTE_READWRITE );
 
   HANDLE heap = GetProcessHeap();
   unsigned char *fullData = HeapAlloc( heap,0,fullSize );
@@ -1050,7 +1050,6 @@ static CODE_SEG(".text$2") HANDLE inject(
     *api = HeapAlloc( heap,0,sizeof(attachedProcessInfo) );
     ReadProcessMemory( process,data->api,*api,
         sizeof(attachedProcessInfo),NULL );
-    VirtualFreeEx( process,data->api,0,MEM_RELEASE );
   }
 
   SuspendThread( thread );
