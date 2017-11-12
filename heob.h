@@ -247,6 +247,8 @@ options;
 
 typedef struct
 {
+  int type;
+  int cyg_argc;
   wchar_t commandLine[32768];
   wchar_t currentDirectory[MAX_PATH];
   wchar_t stdinName[32768];

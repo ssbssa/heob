@@ -2602,8 +2602,25 @@ static void printAttachedProcessInfo(
 {
   if( !api ) return;
   printf( "\n$Iapplication: $N%S\n",exePath );
-  if( api->commandLine[0] )
-    printf( "$Icommand line: $N%S\n",api->commandLine );
+  if( api->type>=0 && api->type<=3 )
+  {
+    const char *types[4] = {
+      "$Icommand line: $N%S\n",
+      "$Icygwin exec:\n",
+      "$Icygwin spawn:\n",
+      "$Icygwin fork\n",
+    };
+    const wchar_t *cmdLine = api->commandLine;
+    printf( types[api->type],cmdLine );
+
+    int i;
+    int cyg_argc = api->cyg_argc;
+    for( i=0; i<cyg_argc; i++ )
+    {
+      printf( "$I  argv$N[$O%d$N]: %S\n",i,cmdLine );
+      cmdLine += lstrlenW( cmdLine ) + 1;
+    }
+  }
   if( api->currentDirectory[0] )
     printf( "$Idirectory: $N%S\n",api->currentDirectory );
   printf( "$IPID: $N%u\n",pid );
@@ -3800,8 +3817,25 @@ void mainCRTStartup( void )
       if( api )
       {
         printf( "  <line>application: %S</line>\n",exePathW );
-        if( api->commandLine[0] )
-          printf( "  <line>command line: %S</line>\n",api->commandLine );
+        if( api->type>=0 && api->type<=3 )
+        {
+          const char *types[4] = {
+            "  <line>command line: %S</line>\n",
+            "  <line>cygwin exec:</line>\n",
+            "  <line>cygwin spawn:</line>\n",
+            "  <line>cygwin fork</line>\n",
+          };
+          const wchar_t *cl = api->commandLine;
+          printf( types[api->type],cl );
+
+          int i;
+          int cyg_argc = api->cyg_argc;
+          for( i=0; i<cyg_argc; i++ )
+          {
+            printf( "  <line>  argv[%d]: %S</line>\n",i,cl );
+            cl += lstrlenW( cl ) + 1;
+          }
+        }
         if( api->currentDirectory[0] )
           printf( "  <line>directory: %S</line>\n",api->currentDirectory );
         if( api->stdinName[0] )
@@ -3827,6 +3861,30 @@ void mainCRTStartup( void )
         const wchar_t *argv = argva[l];
         int argl = argvl[l];
         printf( "  <%s>\n",argvstr );
+        if( l && api && api->type>0 )
+        {
+          const wchar_t *cl = api->commandLine;
+          int i;
+          int cyg_argc = api->cyg_argc;
+          if( api->type==3 )
+          {
+            wchar_t *lastDelim = strrchrW( exePathW,'\\' );
+            if( lastDelim ) lastDelim++;
+            else lastDelim = exePathW;
+            lstrcpyW( api->commandLine,lastDelim );
+            wchar_t *lastPoint = strrchrW( cl,'.' );
+            if( lastPoint ) lastPoint[0] = 0;
+            cyg_argc = 1;
+          }
+          for( i=0; i<cyg_argc; i++ )
+          {
+            const char *argstr = i ? "arg" : "exe";
+            printf( "    <%s>%S</%s>\n",argstr,cl,argstr );
+            cl += lstrlenW( cl ) + 1;
+          }
+          printf( "  </%s>\n",argvstr );
+          break;
+        }
         int i = 0;
         while( i<argl )
         {

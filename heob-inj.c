@@ -117,6 +117,8 @@ typedef struct localData
   func_tempnam *otempnam;
   func_wtempnam *owtempnam;
 
+  int is_cygwin;
+
   HANDLE controlPipe;
 #ifndef NO_DBGENG
   HANDLE exceptionWait;
@@ -2914,6 +2916,10 @@ static HMODULE replaceFuncs( HMODULE app,
 
     if( msvcrt && curModule!=msvcrt ) continue;
 
+    if( rd->opt.handleException>=2 && !rd->is_cygwin && !rd->mod_d &&
+        rd->fGetProcAddress(curModule,"cygwin_stackdump")!=NULL )
+      rd->is_cygwin = 1;
+
     PIMAGE_THUNK_DATA thunk =
       (PIMAGE_THUNK_DATA)REL_PTR( idh,iid[i].FirstThunk );
     PIMAGE_THUNK_DATA originalThunk =
@@ -2954,7 +2960,10 @@ static HMODULE replaceFuncs( HMODULE app,
       if( findCRT )
       {
         if( rd->fGetProcAddress(curModule,"cygwin_stackdump")!=NULL )
+        {
+          rd->is_cygwin = 1;
           break;
+        }
 
         ucrtbase = GetModuleHandle( "ucrtbase.dll" );
         if( ucrtbase )
@@ -4102,7 +4111,59 @@ VOID CALLBACK heob( ULONG_PTR arg )
   {
     attachedProcessInfo *api = rd->api =
       HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(attachedProcessInfo) );
-    lstrcpyW( api->commandLine,GetCommandLineW() );
+    // cygwin command line {{{
+    if( ld->is_cygwin )
+    {
+      STARTUPINFO startup;
+      RtlZeroMemory( &startup,sizeof(STARTUPINFO) );
+      startup.cb = sizeof(STARTUPINFO);
+      GetStartupInfo( &startup );
+      typedef struct
+      {
+        int argc;
+        const char **argv;
+      }
+      cygheap_exec_info;
+      typedef struct
+      {
+        uint32_t padding1[4];
+        unsigned short type;
+        void *padding2[9];
+        uint32_t padding3[6];
+        cygheap_exec_info *moreinfo;
+      }
+      cyg_child_info;
+      cyg_child_info *ci = (cyg_child_info*)startup.lpReserved2;
+      int type = 0;
+      if( startup.cbReserved2>=sizeof(cyg_child_info) &&
+          ci && (ci->type>=1 || ci->type<=3) )
+        type = ci->type;
+      if( (type==1 || type==2) &&
+          ci->moreinfo && ci->moreinfo->argc && ci->moreinfo->argv )
+      {
+        int argc = ci->moreinfo->argc;
+        const char **argv = ci->moreinfo->argv;
+        wchar_t *cmdLine = api->commandLine;
+        wchar_t *cmdLineEnd = cmdLine + 32768 - 1;
+        int i;
+        for( i=0; i<argc && cmdLine<cmdLineEnd; i++ )
+        {
+          const char *arg_i = argv[i];
+          int arglen = lstrlen( arg_i );
+          arglen = MultiByteToWideChar(
+              CP_UTF8,0,arg_i,arglen,cmdLine,(int)(cmdLineEnd-cmdLine) );
+          cmdLine += arglen;
+          cmdLine++[0] = 0;
+        }
+        api->type = type;
+        api->cyg_argc = i;
+      }
+      else if( type==3 )
+        api->type = type;
+    }
+    // }}}
+    if( !api->commandLine[0] )
+      lstrcpyW( api->commandLine,GetCommandLineW() );
     if( !GetCurrentDirectoryW(MAX_PATH,api->currentDirectory) )
       api->currentDirectory[0] = 0;
     if( !getHandleName(GetStdHandle(STD_INPUT_HANDLE),
