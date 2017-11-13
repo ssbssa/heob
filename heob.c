@@ -1037,7 +1037,6 @@ static CODE_SEG(".text$2") HANDLE inject(
   }
   else
     GetFullPathNameW( data->exePath,MAX_PATH,exePath,NULL );
-  HeapFree( heap,0,fullData );
 
   if( data->noCRT==2 )
   {
@@ -1051,6 +1050,8 @@ static CODE_SEG(".text$2") HANDLE inject(
     ReadProcessMemory( process,data->api,*api,
         sizeof(attachedProcessInfo),NULL );
   }
+
+  HeapFree( heap,0,fullData );
 
   SuspendThread( thread );
   SetEvent( startMain );
