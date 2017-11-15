@@ -2194,6 +2194,15 @@ static BOOL WINAPI new_FreeLibrary( HMODULE mod )
 {
   GET_REMOTEDATA( rd );
 
+  EnterCriticalSection( &rd->csMod );
+
+  int m;
+  for( m=rd->mod_q-1; m>=0 && rd->mod_a[m]!=mod; m-- );
+
+  LeaveCriticalSection( &rd->csMod );
+
+  if( m<0 ) return( rd->fFreeLibrary(mod) );
+
   if( rd->opt.dlls<=2 ) return( TRUE );
 
   EnterCriticalSection( &rd->csFreedMod );
