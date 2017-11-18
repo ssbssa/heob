@@ -55,6 +55,14 @@
 #define USE_STACKWALK 0
 #endif
 
+#ifndef _WIN64
+#define IL_INT LONG
+#define IL_INC(var) InterlockedIncrement(var)
+#else
+#define IL_INT LONGLONG
+#define IL_INC(var) InterlockedIncrement64(var)
+#endif
+
 // }}}
 // function definitions {{{
 

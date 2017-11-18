@@ -186,7 +186,6 @@ typedef struct localData
 
   size_t cur_id;
   size_t raise_id;
-  int raise_alloc_q;
   size_t *raise_alloc_a;
 
   // }}}
@@ -966,6 +965,7 @@ static NOINLINE void trackAlloc(
     a.lt = LT_LOST;
     a.ft = ft;
     a.frameCount = 1; // is 0 while realloc() is called (state unknown)
+    a.id = IL_INC( (IL_INT*)&rd->cur_id );
 #ifndef NO_THREADNAMES
     a.threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
     if( UNLIKELY(!a.threadNameIdx) )
@@ -989,16 +989,18 @@ static NOINLINE void trackAlloc(
 
     CAPTURE_STACK_TRACE( 2,PTRS,a.frames,caller,rd->maxStackFrames );
 
-    EnterCriticalSection( &rd->csAllocId );
+    int is_next_raise = 0;
+    if( rd->raise_id )
+    {
+      EnterCriticalSection( &rd->csAllocId );
 
-    size_t id = a.id = ++rd->cur_id;
-    size_t next_raise_id = rd->raise_id;
-    int is_next_raise = id==next_raise_id && id;
+      is_next_raise = a.id==rd->raise_id && a.id;
 
-    if( UNLIKELY(is_next_raise) )
-      rd->raise_id = rd->raise_alloc_q-- ? *(rd->raise_alloc_a++) : 0;
+      if( UNLIKELY(is_next_raise) )
+        rd->raise_id = *(rd->raise_alloc_a++);
 
-    LeaveCriticalSection( &rd->csAllocId );
+      LeaveCriticalSection( &rd->csAllocId );
+    }
 
     int raiseException = 0;
     if( UNLIKELY(is_next_raise) )
@@ -1008,7 +1010,7 @@ static NOINLINE void trackAlloc(
       DWORD written;
       int type = WRITE_RAISE_ALLOCATION;
       WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-      WriteFile( rd->master,&id,sizeof(size_t),&written,NULL );
+      WriteFile( rd->master,&a.id,sizeof(size_t),&written,NULL );
       WriteFile( rd->master,&ft,sizeof(funcType),&written,NULL );
 
       LeaveCriticalSection( &rd->csWrite );
@@ -1064,22 +1066,25 @@ static NOINLINE void trackAlloc(
     a.at = at;
     a.lt = LT_LOST;
     a.ft = ft;
+    a.id = IL_INC( (IL_INT*)&rd->cur_id );
 #ifndef NO_THREADNAMES
     a.threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
 #endif
 
     CAPTURE_STACK_TRACE( 2,PTRS,a.frames,caller,rd->maxStackFrames );
 
-    EnterCriticalSection( &rd->csAllocId );
+    int is_next_raise = 0;
+    if( rd->raise_id )
+    {
+      EnterCriticalSection( &rd->csAllocId );
 
-    size_t id = a.id = ++rd->cur_id;
-    size_t next_raise_id = rd->raise_id;
-    int is_next_raise = id==next_raise_id && id;
+      is_next_raise = a.id==rd->raise_id && a.id;
 
-    if( UNLIKELY(is_next_raise) )
-      rd->raise_id = rd->raise_alloc_q-- ? *(rd->raise_alloc_a++) : 0;
+      if( UNLIKELY(is_next_raise) )
+        rd->raise_id = *(rd->raise_alloc_a++);
 
-    LeaveCriticalSection( &rd->csAllocId );
+      LeaveCriticalSection( &rd->csAllocId );
+    }
 
     EnterCriticalSection( &rd->csWrite );
 
@@ -1095,7 +1100,7 @@ static NOINLINE void trackAlloc(
     {
       type = WRITE_RAISE_ALLOCATION;
       WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-      WriteFile( rd->master,&id,sizeof(size_t),&written,NULL );
+      WriteFile( rd->master,&a.id,sizeof(size_t),&written,NULL );
       WriteFile( rd->master,&ft,sizeof(funcType),&written,NULL );
 
       raiseException = 1;
@@ -4040,15 +4045,16 @@ VOID CALLBACK heob( ULONG_PTR arg )
 
   ld->newArrAllocMethod = rd->opt.allocMethod>1 ? AT_NEW_ARR : AT_NEW;
 
-  ld->cur_id = 0;
+  ld->cur_id = ld->raise_id = 0;
   if( rd->raise_alloc_q && !ld->noCRT )
   {
-    ld->raise_alloc_q = rd->raise_alloc_q;
-    ld->raise_alloc_a = HeapAlloc( heap,0,rd->raise_alloc_q*sizeof(size_t) );
+    ld->raise_alloc_a = HeapAlloc(
+        heap,0,(rd->raise_alloc_q+1)*sizeof(size_t) );
     RtlMoveMemory( ld->raise_alloc_a,
         rd->raise_alloc_a,rd->raise_alloc_q*sizeof(size_t) );
+    ld->raise_alloc_a[rd->raise_alloc_q] = 0;
+    ld->raise_id = *(ld->raise_alloc_a++);
   }
-  ld->raise_id = ld->raise_alloc_q-- ? *(ld->raise_alloc_a++) : 0;
 
 #ifndef NO_THREADNAMES
   HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
