@@ -2374,6 +2374,8 @@ static void freeStackGroup( stackGroup *sg,HANDLE heap )
 }
 
 static void printLeaks( allocation *alloc_a,int alloc_q,
+    int alloc_ignore_q,size_t alloc_ignore_sum,
+    int alloc_ignore_ind_q,size_t alloc_ignore_ind_sum,
     unsigned char **content_ptrs,modInfo *mi_a,int mi_q,
 #ifndef NO_THREADNAMES
     threadNameInfo *threadName_a,int threadName_q,
@@ -2390,7 +2392,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
   if( alloc_q>0 && alloc_a[alloc_q-1].at==AT_EXIT )
     alloc_q--;
 
-  if( !alloc_q )
+  if( !alloc_q && !alloc_ignore_q && !alloc_ignore_ind_q )
   {
     printf( "$Ono leaks found\n" );
     return;
@@ -2398,13 +2400,11 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
 
   int i;
   int leakDetails = opt->leakDetails;
-  size_t sumSize = 0;
   int combined_q = alloc_q;
   int *alloc_idxs =
     leakDetails ? HeapAlloc( heap,0,alloc_q*sizeof(int) ) : NULL;
   for( i=0; i<alloc_q; i++ )
   {
-    sumSize += alloc_a[i].size;
     alloc_a[i].count = 1;
     if( alloc_idxs )
       alloc_idxs[i] = i;
@@ -2545,18 +2545,17 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
   }
   cacheSymbolData( alloc_a,alloc_idxs,i,mi_a,mi_q,ds,0 );
 
-  for( l=lDetails,i=0; l<lMax; l++ )
+  if( lMax==1 )
   {
-    stackGroup *sg = sg_a + l;
-    for( ; i<combined_q; i++ )
-    {
-      int idx = alloc_idxs ? alloc_idxs[i] : i;
-      allocation *a = alloc_a + idx;
-      if( l>a->lt ) continue;
-      if( l<a->lt ) break;
-      sg->allocSum += a->count;
-      sg->allocSumSize += a->size*a->count;
-    }
+    sg_a[LT_LOST].allocSum += alloc_ignore_q;
+    sg_a[LT_LOST].allocSumSize += alloc_ignore_sum;
+  }
+  else
+  {
+    sg_a[LT_REACHABLE].allocSum += alloc_ignore_q;
+    sg_a[LT_REACHABLE].allocSumSize += alloc_ignore_sum;
+    sg_a[LT_INDIRECTLY_REACHABLE].allocSum += alloc_ignore_ind_q;
+    sg_a[LT_INDIRECTLY_REACHABLE].allocSumSize += alloc_ignore_ind_sum;
   }
   int xmlRecordNum = 0;
   for( l=0; l<lMax; l++ )
@@ -4026,6 +4025,11 @@ void mainCRTStartup( void )
 
         case WRITE_LEAKS:
           {
+            int alloc_ignore_q = 0;
+            size_t alloc_ignore_sum = 0;
+            int alloc_ignore_ind_q = 0;
+            size_t alloc_ignore_ind_sum = 0;
+
             alloc_q = 0;
             if( alloc_a ) HeapFree( heap,0,alloc_a );
             alloc_a = NULL;
@@ -4036,6 +4040,14 @@ void mainCRTStartup( void )
             alloc_show_q = 0;
 
             if( !readFile(readPipe,&alloc_q,sizeof(int),&ov) )
+              break;
+            if( !readFile(readPipe,&alloc_ignore_q,sizeof(int),&ov) )
+              break;
+            if( !readFile(readPipe,&alloc_ignore_sum,sizeof(size_t),&ov) )
+              break;
+            if( !readFile(readPipe,&alloc_ignore_ind_q,sizeof(int),&ov) )
+              break;
+            if( !readFile(readPipe,&alloc_ignore_ind_sum,sizeof(size_t),&ov) )
               break;
             if( alloc_q )
             {
@@ -4076,13 +4088,16 @@ void mainCRTStartup( void )
                 content_pos += s<leakContents ? s : leakContents;
               }
             }
-          }
 
-          printLeaks( alloc_a,alloc_q,content_ptrs,mi_a,mi_q,
+            printLeaks( alloc_a,alloc_q,
+                alloc_ignore_q,alloc_ignore_sum,
+                alloc_ignore_ind_q,alloc_ignore_ind_sum,
+                content_ptrs,mi_a,mi_q,
 #ifndef NO_THREADNAMES
-              threadName_a,threadName_q,
+                threadName_a,threadName_q,
 #endif
-              &opt,tc,&ds,heap,tcXml,(uintptr_t)RETURN_ADDRESS() );
+                &opt,tc,&ds,heap,tcXml,(uintptr_t)RETURN_ADDRESS() );
+          }
           break;
 
           // }}}

@@ -1384,15 +1384,31 @@ static void writeLeakData( void )
     DWORD written;
     int type = WRITE_LEAKS;
     WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-    int alloc_q = 0;
-    WriteFile( rd->master,&alloc_q,sizeof(int),&written,NULL );
-    size_t alloc_mem_sum = 0;
-    WriteFile( rd->master,&alloc_mem_sum,sizeof(size_t),&written,NULL );
+    int i = 0;
+    size_t s = 0;
+    // alloc_q
+    WriteFile( rd->master,&i,sizeof(int),&written,NULL );
+    // alloc_ignore_q
+    WriteFile( rd->master,&i,sizeof(int),&written,NULL );
+    // alloc_ignore_sum
+    WriteFile( rd->master,&s,sizeof(size_t),&written,NULL );
+    // alloc_ignore_ind_q
+    WriteFile( rd->master,&i,sizeof(int),&written,NULL );
+    // alloc_ignore_ind_sum
+    WriteFile( rd->master,&s,sizeof(size_t),&written,NULL );
+    // alloc_mem_sum
+    WriteFile( rd->master,&s,sizeof(size_t),&written,NULL );
     return;
   }
 
   int i;
   int alloc_q = 0;
+  int alloc_ignore_q = 0;
+  size_t alloc_ignore_sum = 0;
+  int alloc_ignore_ind_q = 0;
+  size_t alloc_ignore_ind_sum = 0;
+  int lDetails = rd->opt.leakDetails ?
+    ( (rd->opt.leakDetails&1) ? LT_COUNT : LT_REACHABLE ) : 0;
   for( i=0; i<=SPLIT_MASK; i++ )
   {
     splitAllocation *sa = rd->splits + i;
@@ -1401,17 +1417,33 @@ static void writeLeakData( void )
     for( j=0; j<part_q; j++ )
     {
       allocation *a = sa->alloc_a + j;
-      if( a->recording && a->frameCount ) alloc_q++;
+      if( a->recording && a->frameCount )
+      {
+        if( a->lt<lDetails )
+          alloc_q++;
+        else if( a->lt!=LT_INDIRECTLY_REACHABLE )
+        {
+          alloc_ignore_q++;
+          alloc_ignore_sum += a->size;
+        }
+        else
+        {
+          alloc_ignore_ind_q++;
+          alloc_ignore_ind_sum += a->size;
+        }
+      }
     }
   }
   DWORD written;
   int type = WRITE_LEAKS;
   WriteFile( rd->master,&type,sizeof(int),&written,NULL );
   WriteFile( rd->master,&alloc_q,sizeof(int),&written,NULL );
+  WriteFile( rd->master,&alloc_ignore_q,sizeof(int),&written,NULL );
+  WriteFile( rd->master,&alloc_ignore_sum,sizeof(size_t),&written,NULL );
+  WriteFile( rd->master,&alloc_ignore_ind_q,sizeof(int),&written,NULL );
+  WriteFile( rd->master,&alloc_ignore_ind_sum,sizeof(size_t),&written,NULL );
   size_t alloc_mem_sum = 0;
   size_t leakContents = rd->opt.leakContents;
-  int lDetails = rd->opt.leakDetails ?
-    ( (rd->opt.leakDetails&1) ? LT_COUNT : LT_REACHABLE ) : 0;
   for( i=0; i<=SPLIT_MASK; i++ )
   {
     splitAllocation *sa = rd->splits + i;
@@ -1422,7 +1454,7 @@ static void writeLeakData( void )
     for( j=0; j<alloc_q; j++ )
     {
       allocation *a = sa->alloc_a + j;
-      if( a->recording && a->frameCount )
+      if( a->recording && a->frameCount && a->lt<lDetails )
         WriteFile( rd->master,a,sizeof(allocation),&written,NULL );
     }
 

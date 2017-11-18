@@ -825,6 +825,20 @@ void choose( int arg )
         free( *ptr_buf );
       }
       break;
+
+    case 44:
+      // benchmark: many memory leaks
+      {
+        int i;
+        int sum = 0;
+        for( i=0; i<100000; i++ )
+        {
+          char *leak = (char*)malloc( 16 );
+          sum += leak[0];
+        }
+        mem[1] = sum;
+      }
+      break;
   }
 
   mem = (char*)realloc( mem,30 );
