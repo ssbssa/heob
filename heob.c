@@ -2868,7 +2868,7 @@ static char *disassemble( DWORD pid,void *addr,HANDLE heap )
 #endif
 
 // }}}
-// wait for key {{{
+// console functions {{{
 
 static void waitForKey( textColor *tc,HANDLE in )
 {
@@ -2892,6 +2892,19 @@ static void waitForKey( textColor *tc,HANDLE in )
 
   if( hasConMode )
     SetConsoleMode( in,flags );
+}
+
+static void showConsole( void )
+{
+  HMODULE user32 = LoadLibrary( "user32.dll" );
+  if( !user32 ) return;
+
+  typedef BOOL WINAPI func_ShowWindow( HWND,int );
+  func_ShowWindow *fShowWindow =
+    (func_ShowWindow*)GetProcAddress( user32,"ShowWindow" );
+  if( fShowWindow )
+    fShowWindow( GetConsoleWindow(),SW_RESTORE );
+  FreeLibrary( user32 );
 }
 
 // }}}
@@ -3742,6 +3755,7 @@ void mainCRTStartup( void )
       printf( "\n-------------------- PID %u --------------------\n",
           pi.dwProcessId );
 
+      showConsole();
       waitForKey( tc,in );
 
       printf( " done\n\n" );
@@ -3957,6 +3971,7 @@ void mainCRTStartup( void )
     COORD consoleCoord = { 0,0 };
     allocation *aa = HeapAlloc( heap,0,4*sizeof(allocation) );
     exceptionInfo *eiPtr = HeapAlloc( heap,0,sizeof(exceptionInfo) );
+    if( in ) showConsole();
     while( 1 )
     {
       if( needData )

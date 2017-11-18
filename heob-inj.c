@@ -2075,6 +2075,8 @@ int heobSubProcess(
       STARTUPINFOW si;
       RtlZeroMemory( &si,sizeof(STARTUPINFOW) );
       si.cb = sizeof(STARTUPINFOW);
+      si.dwFlags = STARTF_USESHOWWINDOW;
+      si.wShowWindow = SW_SHOWMINNOACTIVE;
       PROCESS_INFORMATION pi;
       DWORD newConsole = heobMod || opt->newConsole>1 ? CREATE_NEW_CONSOLE : 0;
       RtlZeroMemory( &pi,sizeof(PROCESS_INFORMATION) );
