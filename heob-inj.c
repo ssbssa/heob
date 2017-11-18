@@ -1056,7 +1056,7 @@ static NOINLINE void trackAlloc(
   }
   // }}}
   // allocation failure {{{
-  else if( UNLIKELY(alloc_size && alloc_size!=(size_t)-1) )
+  else if( UNLIKELY(alloc_size) )
   {
     allocation a;
     a.ptr = NULL;
