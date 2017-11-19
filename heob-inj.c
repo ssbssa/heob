@@ -1379,6 +1379,7 @@ static void writeLeakData( void )
 {
   GET_REMOTEDATA( rd );
 
+  // no leak data available {{{
   if( !rd->splits )
   {
     DWORD written;
@@ -1400,7 +1401,9 @@ static void writeLeakData( void )
     WriteFile( rd->master,&s,sizeof(size_t),&written,NULL );
     return;
   }
+  // }}}
 
+  // leak count {{{
   int i;
   int alloc_q = 0;
   int alloc_ignore_q = 0;
@@ -1442,6 +1445,9 @@ static void writeLeakData( void )
   WriteFile( rd->master,&alloc_ignore_sum,sizeof(size_t),&written,NULL );
   WriteFile( rd->master,&alloc_ignore_ind_q,sizeof(int),&written,NULL );
   WriteFile( rd->master,&alloc_ignore_ind_sum,sizeof(size_t),&written,NULL );
+  // }}}
+
+  // leak data {{{
   size_t alloc_mem_sum = 0;
   size_t leakContents = rd->opt.leakContents;
   for( i=0; i<=SPLIT_MASK; i++ )
@@ -1470,7 +1476,9 @@ static void writeLeakData( void )
       }
     }
   }
+  // }}}
 
+  // leak contents {{{
   WriteFile( rd->master,&alloc_mem_sum,sizeof(size_t),&written,NULL );
   if( alloc_mem_sum )
   {
@@ -1491,6 +1499,7 @@ static void writeLeakData( void )
       }
     }
   }
+  // }}}
 }
 
 // }}}
@@ -1763,6 +1772,7 @@ static VOID WINAPI new_ExitProcess( UINT c )
 
   writeLeakMods();
 
+  // free modules {{{
   if( rd->freed_mod_q )
   {
     if( rd->splits )
@@ -1782,6 +1792,7 @@ static VOID WINAPI new_ExitProcess( UINT c )
         EnterCriticalSection( &rd->splits[i].cs );
     }
   }
+  // }}}
 
   // make sure exit trace is still the last {{{
   int alloc_q;
@@ -1876,6 +1887,7 @@ static VOID WINAPI new_RaiseException(
     {
       EnterCriticalSection( &rd->csWrite );
 
+      // thread name index {{{
       int newNameIdx = 0;
       if( tni->szName && tni->szName[0] )
       {
@@ -1918,7 +1930,9 @@ static VOID WINAPI new_RaiseException(
           newNameIdx = rd->threadName_q;
         }
       }
+      // }}}
 
+      // attach name to thread {{{
       DWORD threadId = tni->dwThreadID;
       DWORD threadNameTls = rd->threadNameTls;
       if( threadId==(DWORD)-1 || threadId==GetCurrentThreadId() )
@@ -1951,6 +1965,7 @@ static VOID WINAPI new_RaiseException(
           CloseHandle( thread );
         }
       }
+      // }}}
 
       LeaveCriticalSection( &rd->csWrite );
     }
@@ -2003,6 +2018,7 @@ int heobSubProcess(
     wchar_t *heobCmdW = HeapAlloc( heap,0,32768*2 );
     if( heobCmd && heobCmdW )
     {
+      // heob command line {{{
       char num[32];
       char *numEnd = num + sizeof(num);
       *(--numEnd) = 0;
@@ -2069,6 +2085,7 @@ int heobSubProcess(
       wchar_t *hcw = heobCmdW + lstrlenW( heobCmdW );
       while( *hc ) hcw++[0] = hc++[0];
       hcw[0] = 0;
+      // }}}
 
       if( subCurDir && !subCurDir[0] ) subCurDir = NULL;
 
@@ -2318,6 +2335,7 @@ static void *protect_alloc_m( size_t s )
   if( pages>pageAdd )
     VirtualAlloc( b,(pages-pageAdd)*pageSize,MEM_COMMIT,PAGE_READWRITE );
 
+  // initialize slack {{{
   if( slackSize && rd->opt.slackInit>0 )
   {
     unsigned char *slackStart = b;
@@ -2331,6 +2349,7 @@ static void *protect_alloc_m( size_t s )
     for( i=0; i<count; i++ )
       u64[i] = slackInit64;
   }
+  // }}}
 
   if( rd->opt.protect==1 )
     b += slackSize;
@@ -2367,6 +2386,7 @@ static NOINLINE void protect_free_m( void *b,funcType ft )
     p -= pageSize*pageAdd;
   }
 
+  // check slack {{{
   if( slackSize && rd->opt.slackInit>=0 )
   {
     size_t count = slackSize>>3;
@@ -2420,6 +2440,7 @@ static NOINLINE void protect_free_m( void *b,funcType ft )
         LeaveCriticalSection( &sa->cs );
     }
   }
+  // }}}
 
   b = (void*)p;
 
@@ -2845,6 +2866,7 @@ static void addModule( HMODULE mod )
 
   rd->mod_a[rd->mod_q++] = mod;
 
+  // crt module {{{
   HANDLE (*fget_heap_handle)( void ) =
     rd->fGetProcAddress( mod,"_get_heap_handle" );
   if( fget_heap_handle )
@@ -2876,6 +2898,7 @@ static void addModule( HMODULE mod )
 
     rd->crt_mod_a[rd->crt_mod_q++] = mod;
   }
+  // }}}
 
   // modules of forwarded functions {{{
   if( rd->opt.dlls )
@@ -3033,7 +3056,7 @@ static HMODULE replaceFuncs( HMODULE app,
       if( !repModule )
         repModule = curModule;
 
-      // look for, but don't actually replace the function
+      // look for, but don't actually replace the function;
       // used with "exit" to help identify CRT
       if( !myFunc ) continue;
 
@@ -3222,6 +3245,7 @@ static void replaceModFuncs( void )
       }
     }
 
+    // global data sections {{{
     if( dll_msvcrt )
     {
       PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)mod;
@@ -3245,6 +3269,7 @@ static void replaceModFuncs( void )
         addModMem( sectionStart,sectionEnd );
       }
     }
+    // }}}
 
     unsigned int i;
     for( i=0; i<rep2count; i++ )
@@ -3529,6 +3554,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   ei.aq = 1;
   ei.nearest = 0;
 
+  // access violation {{{
   if( ep->ExceptionRecord->ExceptionCode==EXCEPTION_ACCESS_VIOLATION &&
       ep->ExceptionRecord->NumberParameters==2 )
   {
@@ -3564,6 +3590,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
       }
     }
   }
+  // }}}
 
   int count = 0;
   void **frames = ei.aa[0].frames;
@@ -3571,6 +3598,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   ei.aa[0].threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
 #endif
 
+  // stackwalk with dbghelp {{{
 #if USE_STACKWALK
   HMODULE symMod = NULL;
   if( ep->ExceptionRecord->ExceptionCode!=EXCEPTION_STACK_OVERFLOW )
@@ -3631,6 +3659,8 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   }
   else
 #endif
+  // }}}
+  // manual stackwalk {{{
   {
     frames[count++] = (void*)( ep->ContextRecord->cip+1 );
     if( rd->opt.useSp )
@@ -3650,6 +3680,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
       sp = np;
     }
   }
+  // }}}
   if( count<PTRS )
     RtlZeroMemory( frames+count,(PTRS-count)*sizeof(void*) );
 
@@ -3761,11 +3792,14 @@ DLLEXPORT int heob_control( int cmd )
 
   switch( cmd )
   {
+    // stop/start {{{
     case LEAK_RECORDING_STOP:
     case LEAK_RECORDING_START:
       rd->recording = cmd;
       break;
+      // }}}
 
+      // clear {{{
     case LEAK_RECORDING_CLEAR:
       {
         int i;
@@ -3785,7 +3819,9 @@ DLLEXPORT int heob_control( int cmd )
         }
       }
       break;
+      // }}}
 
+      // show {{{
     case LEAK_RECORDING_SHOW:
       {
         int i;
@@ -3811,7 +3847,9 @@ DLLEXPORT int heob_control( int cmd )
         }
       }
       break;
+      // }}}
 
+      // count {{{
     case LEAK_COUNT:
       {
         int i,j;
@@ -3830,6 +3868,7 @@ DLLEXPORT int heob_control( int cmd )
         }
         return( count );
       }
+      // }}}
   }
 
   if( cmd>=LEAK_RECORDING_STOP && cmd<=LEAK_RECORDING_SHOW )
@@ -4023,6 +4062,7 @@ VOID CALLBACK heob( ULONG_PTR arg )
     ld->freeds = HeapAlloc( heap,HEAP_ZERO_MEMORY,
         (SPLIT_MASK+1)*sizeof(splitFreed) );
 
+  // initialize critical sections {{{
   typedef BOOL WINAPI func_InitializeCriticalSectionEx(
       LPCRITICAL_SECTION,DWORD,DWORD );
   func_InitializeCriticalSectionEx *fInitCritSecEx =
@@ -4063,6 +4103,7 @@ VOID CALLBACK heob( ULONG_PTR arg )
       }
     }
   }
+  // }}}
 
   ld->ptrShift = 5;
   if( rd->opt.protect )
@@ -4100,6 +4141,7 @@ VOID CALLBACK heob( ULONG_PTR arg )
 
   ld->freeSizeTls = TlsAlloc();
 
+  // page protection {{{
   if( rd->opt.protect )
   {
     ld->fmalloc = &protect_malloc;
@@ -4123,7 +4165,9 @@ VOID CALLBACK heob( ULONG_PTR arg )
     ld->ffree_dbg = &protect_free_dbg;
     ld->frecalloc = &protect_recalloc;
   }
+  // }}}
 
+  // handle exceptions {{{
   if( rd->opt.handleException )
   {
     func_SetUnhandledExceptionFilter *fSetUnhandledExceptionFilter =
@@ -4148,6 +4192,7 @@ VOID CALLBACK heob( ULONG_PTR arg )
     VirtualProtect( fp,sizeof(doNothing),prot,&prot );
     rd->fFlushInstructionCache( rd->fGetCurrentProcess(),NULL,0 );
   }
+  // }}}
 
   addModule( GetModuleHandle(NULL) );
   replaceModFuncs();
@@ -4156,6 +4201,7 @@ VOID CALLBACK heob( ULONG_PTR arg )
   rd->master = ld->master;
   rd->noCRT = ld->noCRT;
 
+  // attached process info {{{
   if( ld->master && rd->opt.attached )
   {
     attachedProcessInfo *api = rd->api =
@@ -4225,6 +4271,7 @@ VOID CALLBACK heob( ULONG_PTR arg )
           api->stderrName,32768,heap) )
       api->stderrName[0] = 0;
   }
+  // }}}
 
   HANDLE initFinished = rd->initFinished;
   SetEvent( initFinished );

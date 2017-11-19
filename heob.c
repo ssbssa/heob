@@ -667,7 +667,7 @@ static void checkOutputVariant( textColor *tc,HANDLE out )
       return;
     }
 
-    // windows console
+    // windows console {{{
     CONSOLE_SCREEN_BUFFER_INFO csbi;
     GetConsoleScreenBufferInfo( tc->out,&csbi );
     int bg = csbi.wAttributes&0xf0;
@@ -688,6 +688,7 @@ static void checkOutputVariant( textColor *tc,HANDLE out )
     bg = bg | ( bg>>4 );
     for( i=0; i<ATT_COUNT; i++ )
       if( tc->colors[i]==bg ) tc->colors[i] ^= 0x08;
+    // }}}
     return;
   }
 
@@ -727,7 +728,7 @@ static void checkOutputVariant( textColor *tc,HANDLE out )
           (size_t)oni->Name.Length/2>hl &&
           !memcmp(oni->Name.Buffer+(oni->Name.Length/2-hl),html,hl*2) )
       {
-        // html file
+        // html file {{{
         const char *styleInit =
           "<head>\n"
           "<style type=\"text/css\">\n"
@@ -761,6 +762,7 @@ static void checkOutputVariant( textColor *tc,HANDLE out )
         tc->styles[ATT_INFO]    = "info";
         tc->styles[ATT_WARN]    = "warn";
         tc->styles[ATT_BASE]    = "base";
+        // }}}
       }
     }
     HeapFree( heap,0,oni );
@@ -849,6 +851,7 @@ static CODE_SEG(".text$2") HANDLE inject(
     const char *subOutName,const char *subXmlName,const wchar_t *subCurDir,
     unsigned *heobExit )
 {
+  // injection data {{{
   func_inj *finj = &remoteCall;
   size_t funcOffset = sizeof(remoteData) + raise_alloc_q*sizeof(size_t);
   size_t funcSize = (size_t)&inject - (size_t)finj;
@@ -962,12 +965,16 @@ static CODE_SEG(".text$2") HANDLE inject(
     data->specificOptions = (char*)fullDataRemote + soOffset;
     RtlMoveMemory( fullData+soOffset,specificOptions,soSize );
   }
+  // }}}
 
+  // injection {{{
   WriteProcessMemory( process,fullDataRemote,fullData,fullSize,NULL );
 
   QueueUserAPC( remoteFuncStart,thread,(ULONG_PTR)fullDataRemote );
   ResumeThread( thread );
+  // }}}
 
+  // wait for finished injection {{{
   COORD consoleCoord;
   int errColor;
   if( in )
@@ -1025,7 +1032,9 @@ static CODE_SEG(".text$2") HANDLE inject(
     *heobExit = HEOB_PROCESS_KILLED;
     return( NULL );
   }
+  // }}}
 
+  // data of injected process {{{
   ReadProcessMemory( process,fullDataRemote,data,sizeof(remoteData),NULL );
 
   if( !data->master )
@@ -1050,6 +1059,7 @@ static CODE_SEG(".text$2") HANDLE inject(
     ReadProcessMemory( process,data->api,*api,
         sizeof(attachedProcessInfo),NULL );
   }
+  // }}}
 
   HeapFree( heap,0,fullData );
 
@@ -1351,9 +1361,11 @@ static void locFuncCache(
   dbgsym *ds = context;
   uintptr_t printAddr = (uintptr_t)addr;
 
+  // MSVC debug info {{{
 #ifndef NO_DBGHELP
   if( lineno==DWST_NO_DBG_SYM && ds->fSymGetLineFromAddr64 )
   {
+    // inlined functions {{{
     int inlineTrace;
     if( ds->fSymAddrIncludeInlineTrace &&
         (inlineTrace=ds->fSymAddrIncludeInlineTrace(ds->process,addr)) )
@@ -1389,7 +1401,9 @@ static void locFuncCache(
         }
       }
     }
+    // }}}
 
+    // source file/line info {{{
     IMAGEHLP_LINE64 *il = ds->il;
     RtlZeroMemory( il,sizeof(IMAGEHLP_LINE64) );
     il->SizeOfStruct = sizeof(IMAGEHLP_LINE64);
@@ -1399,7 +1413,9 @@ static void locFuncCache(
       filename = il->FileName;
       lineno = il->LineNumber;
     }
+    // }}}
 
+    // function name {{{
     if( ds->fSymFromAddr )
     {
       SYMBOL_INFO *si = ds->si;
@@ -1431,8 +1447,10 @@ static void locFuncCache(
         }
       }
     }
+    // }}}
   }
 #endif
+  // }}}
 
   stackSourceLocation *ssl = ds->ssl;
   int sslIdx = ds->sslIdx;
@@ -1488,6 +1506,7 @@ static void cacheSymbolData( allocation *alloc_a,int *alloc_idxs,int alloc_q,
 {
   cacheClear( ds );
 
+  // initialize frames {{{
   int i;
   int fc = 0;
   uintptr_t threadInitAddr = ds->threadInitAddr;
@@ -1517,7 +1536,9 @@ static void cacheSymbolData( allocation *alloc_a,int *alloc_idxs,int alloc_q,
     RtlMoveMemory( frame_a+fc,a->frames,a->frameCount*sizeof(void*) );
     fc += a->frameCount;
   }
+  // }}}
 
+  // find unique frames {{{
   int *frame_idxs = sort_allocations(
       frame_a,NULL,fc,sizeof(uintptr_t),ds->heap,cmp_ptr );
   int unique_frames = 0;
@@ -1542,7 +1563,9 @@ static void cacheSymbolData( allocation *alloc_a,int *alloc_idxs,int alloc_q,
   HeapFree( ds->heap,0,frame_a );
   HeapFree( ds->heap,0,frame_idxs );
   fc = unique_frames;
+  // }}}
 
+  // get symbol data for frames {{{
   ds->sslCount = fc;
   ds->sslIdx = -1;
   ds->ssl = HeapAlloc(
@@ -1561,11 +1584,13 @@ static void cacheSymbolData( allocation *alloc_a,int *alloc_idxs,int alloc_q,
     for( l=j+1; l<fc && frames[l]>=mi->base &&
         frames[l]<mi->base+mi->size; l++ );
 
+    // GCC debug info {{{
 #ifndef NO_DWARFSTACK
     if( ds->fdwstOfFile )
       ds->fdwstOfFile( mi->path,mi->base,frames+j,l-j,locFuncCache,ds );
     else
 #endif
+    // }}}
     {
       for( i=j; i<l; i++ )
         locFuncCache( frames[i],mi->path,DWST_NO_DBG_SYM,NULL,ds,0 );
@@ -1574,6 +1599,7 @@ static void cacheSymbolData( allocation *alloc_a,int *alloc_idxs,int alloc_q,
     j = l - 1;
   }
   ds->sslCount = ds->sslIdx + 1;
+  // }}}
 
   HeapFree( ds->heap,0,frames );
 }
@@ -1620,6 +1646,7 @@ static void locOut( textColor *tc,uintptr_t addr,
         printf( " [$I%s$N]",funcname );
       printf( "\n" );
 
+      // show source code {{{
       if( opt->sourceCode )
       {
         HANDLE file = CreateFile( filename,GENERIC_READ,FILE_SHARE_READ,
@@ -1696,6 +1723,7 @@ static void locOut( textColor *tc,uintptr_t addr,
           CloseHandle( file );
         }
       }
+      // }}}
       break;
   }
 }
@@ -2232,6 +2260,7 @@ static void printStackGroup( stackGroup *sg,
             sg->stackCount,mi_a,mi_q,ds,a->ft,stackIndent );
         stackIsPrinted = 1;
       }
+      // leak contents {{{
       if( content_ptrs && a->size )
       {
         int s = a->size<(size_t)opt->leakContents ?
@@ -2271,6 +2300,7 @@ static void printStackGroup( stackGroup *sg,
           printf( "\n" );
         }
       }
+      // }}}
     }
   }
   if( allocCount>1 )
@@ -2409,6 +2439,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
     if( alloc_idxs )
       alloc_idxs[i] = i;
   }
+  // merge identical leaks {{{
   if( opt->groupLeaks && leakDetails )
   {
     sort_allocations( alloc_a,alloc_idxs,alloc_q,sizeof(allocation),
@@ -2433,6 +2464,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
       i = j;
     }
   }
+  // }}}
   int l;
   int lMax = leakDetails>1 ? LT_COUNT : 1;
   int lDetails = leakDetails>1 ? ( leakDetails&1 ? LT_COUNT : LT_REACHABLE ) :
@@ -2449,6 +2481,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
   const char **leakTypeNamesRef = leakDetails>1 ? leakTypeNames : NULL;
   if( leakDetails )
   {
+    // leak sorting {{{
     for( i=0; i<combined_q; i++ )
     {
       allocation *a = alloc_a + alloc_idxs[i];
@@ -2468,7 +2501,9 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
           heap,cmp_type_allocation );
     for( i=0; i<combined_q; i++ )
       alloc_a[alloc_idxs[i]].size /= alloc_a[alloc_idxs[i]].count;
+    // }}}
 
+    // group leaks with partially identical stack {{{
     if( opt->groupLeaks>1 )
     {
       for( l=0,i=0; l<lDetails; l++ )
@@ -2498,6 +2533,8 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
         sortStackGroup( sg,heap );
       }
     }
+    // }}}
+    // grouping for merged leaks {{{
     else
     {
       for( l=0,i=0; l<lDetails; l++ )
@@ -2531,8 +2568,10 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
         i = startI + countI;
       }
     }
+    // }}}
   }
 
+  // cache symbol data {{{
   if( lDetails==lMax )
     i = combined_q;
   else
@@ -2544,7 +2583,9 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
     }
   }
   cacheSymbolData( alloc_a,alloc_idxs,i,mi_a,mi_q,ds,0 );
+  // }}}
 
+  // print leaks {{{
   if( lMax==1 )
   {
     sg_a[LT_LOST].allocSum += alloc_ignore_q;
@@ -2588,6 +2629,8 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
     }
     freeStackGroup( sg,heap );
   }
+  // }}}
+
   if( alloc_idxs )
     HeapFree( heap,0,alloc_idxs );
   HeapFree( heap,0,sg_a );
@@ -2924,6 +2967,7 @@ void mainCRTStartup( void )
     args++;
   else
     args = strchr( cmdLine,' ' );
+  // default values {{{
   options defopt = {
     1,                              // page protection
     MEMORY_ALLOCATION_ALIGNMENT,    // alignment
@@ -2952,6 +2996,7 @@ void mainCRTStartup( void )
     0,                              // use leak and error count for exit code
     0,                              // show exception details
   };
+  // }}}
   options opt = defopt;
   HANDLE heap = GetProcessHeap();
   int raise_alloc_q = 0;
@@ -2969,6 +3014,7 @@ void mainCRTStartup( void )
   HANDLE attachEvent = NULL;
   int fakeAttached = 0;
   char *specificOptions = NULL;
+  // permanent options {{{
   while( args )
   {
     while( args[0]==' ' ) args++;
@@ -3155,6 +3201,7 @@ void mainCRTStartup( void )
     }
     while( args && args[0] && args[0]!=' ' ) args++;
   }
+  // }}}
   if( opt.align<MEMORY_ALLOCATION_ALIGNMENT )
   {
     opt.init = 0;
@@ -3165,6 +3212,7 @@ void mainCRTStartup( void )
   textColor *tc = tcOut;
   checkOutputVariant( tc,out );
 
+  // bad argument {{{
   if( badArg )
   {
     char arg0[2] = { badArg,0 };
@@ -3189,6 +3237,7 @@ void mainCRTStartup( void )
     writeCloseErrorPipe( errorPipe,HEOB_BAD_ARG,badArg );
     ExitProcess( 0x7fffffff );
   }
+  // }}}
 
   const char *funcnames[FT_COUNT] = {
     "malloc",
@@ -3213,6 +3262,7 @@ void mainCRTStartup( void )
     "recalloc",
   };
 
+  // trace mode {{{
   if( a2l_mi_a )
   {
     allocation *a = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(allocation) );
@@ -3289,7 +3339,9 @@ void mainCRTStartup( void )
     }
     args = NULL;
   }
+  // }}}
 
+  // help text {{{
   if( (!args || !args[0]) && !opt.attached )
   {
     char exePath[MAX_PATH];
@@ -3399,7 +3451,9 @@ void mainCRTStartup( void )
     ExitProcess( 0x7fffffff );
   }
   // }}}
+  // }}}
 
+  // wine detection {{{
   HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
   if( ntdll )
   {
@@ -3418,6 +3472,7 @@ void mainCRTStartup( void )
       ExitProcess( 0x7fffffff );
     }
   }
+  // }}}
 
   if( !in && (opt.attached || opt.newConsole<=1) )
     opt.pid = opt.leakRecording = 0;
@@ -3425,6 +3480,7 @@ void mainCRTStartup( void )
   if( opt.leakRecording && !opt.newConsole )
     opt.newConsole = 1;
 
+  // create target application {{{
   wchar_t *cmdLineW = GetCommandLineW();
   wchar_t *argsW = cmdLineW;
   if( argsW[0]=='"' )
@@ -3508,9 +3564,10 @@ void mainCRTStartup( void )
   }
   else if( ppid )
     opt.newConsole = 0;
+  // }}}
 
-  char exePath[MAX_PATH];
   // executable name {{{
+  char exePath[MAX_PATH];
   exePath[0] = 0;
   if( specificOptions ||
       (outName && strstr(outName,"%n")) ||
@@ -3550,6 +3607,7 @@ void mainCRTStartup( void )
   }
   // }}}
 
+  // application specific options {{{
   defopt = opt;
   if( specificOptions )
   {
@@ -3610,7 +3668,9 @@ void mainCRTStartup( void )
   if( opt.protect<1 ) opt.protectFree = 0;
   if( opt.handleException>=2 )
     opt.protect = opt.protectFree = opt.leakDetails = 0;
+  // }}}
 
+  // output destination {{{
   const char *subOutName = NULL;
   textColor *tcOutOrig = NULL;
   if( outName )
@@ -3669,6 +3729,7 @@ void mainCRTStartup( void )
   }
   if( !out )
     opt.sourceCode = opt.leakContents = 0;
+  // }}}
 
   const char *subXmlName = NULL;
   if( xmlName && strstr(xmlName,"%p") )
@@ -4156,6 +4217,7 @@ void mainCRTStartup( void )
 
             cacheSymbolData( ei.aa,NULL,ei.aq,mi_a,mi_q,&ds,1 );
 
+            // exception code {{{
             const char *desc = NULL;
             switch( ei.er.ExceptionCode )
             {
@@ -4187,9 +4249,11 @@ void mainCRTStartup( void )
             }
             printf( "\n$Wunhandled exception code: %x%s\n",
                 ei.er.ExceptionCode,desc );
+            // }}}
 
             if( opt.exceptionDetails && tc->out )
             {
+              // assembly instruction {{{
 #ifndef NO_DBGENG
               if( exceptionWait && ei.er.ExceptionCode!=EXCEPTION_BREAKPOINT )
               {
@@ -4211,7 +4275,9 @@ void mainCRTStartup( void )
                 }
               }
 #endif
+              // }}}
 
+              // registers {{{
               printf( "$S  registers:\n" );
 #define PREG( name,reg,type,before,after ) \
               printf( before "$I" name "$N=" type after,ei.c.reg )
@@ -4273,6 +4339,7 @@ void mainCRTStartup( void )
                 PREG( "gs"    ,SegGs ,"%w","       "        ,"\n" );
 #endif
               }
+              // }}}
             }
 #ifndef NO_DBGENG
             if( exceptionWait && ei.er.ExceptionCode!=EXCEPTION_BREAKPOINT )
@@ -4288,6 +4355,7 @@ void mainCRTStartup( void )
             const char *violationType = NULL;
             const char *nearBlock = NULL;
             const char *blockType = NULL;
+            // access violation {{{
             if( ei.er.ExceptionCode==EXCEPTION_ACCESS_VIOLATION &&
                 ei.er.NumberParameters==2 )
             {
@@ -4323,7 +4391,9 @@ void mainCRTStartup( void )
                 }
               }
             }
+            // }}}
 
+            // xml {{{
             if( tcXml )
             {
               ds.tc = tc = tcXml;
@@ -4369,6 +4439,7 @@ void mainCRTStartup( void )
 
               ds.tc = tc = tcOut;
             }
+            // }}}
 
             terminated = -1;
             heobExit = HEOB_EXCEPTION;
@@ -4444,6 +4515,7 @@ void mainCRTStartup( void )
             printStackCount( aa->frames,aa->frameCount,
                 mi_a,mi_q,&ds,aa->ft,0 );
 
+            // type of invalid pointer {{{
             if( aa[1].ptr )
             {
               char *ptr = aa->ptr;
@@ -4487,6 +4559,7 @@ void mainCRTStartup( void )
                 locOut( tc,allocMi->base,allocMi->path,
                     DWST_BASE_ADDR,0,NULL,ds.opt,0 );
             }
+            // }}}
 
             if( aa[3].ptr )
             {
@@ -4498,6 +4571,7 @@ void mainCRTStartup( void )
                   mi_a,mi_q,&ds,aa[3].ft,0 );
             }
 
+            // xml {{{
             if( tcXml )
             {
               ds.tc = tc = tcXml;
@@ -4584,6 +4658,7 @@ void mainCRTStartup( void )
 
               ds.tc = tc = tcOut;
             }
+            // }}}
 
             error_q++;
           }
