@@ -1457,12 +1457,28 @@ static void writeLeakData( void )
     if( !alloc_q ) continue;
 
     int j;
+    allocation *a_send = NULL;
+    int a_count = 0;
     for( j=0; j<alloc_q; j++ )
     {
       allocation *a = sa->alloc_a + j;
       if( a->recording && a->frameCount && a->lt<lDetails )
-        WriteFile( rd->master,a,sizeof(allocation),&written,NULL );
+      {
+        if( a_send!=a )
+        {
+          if( a_send )
+            WriteFile( rd->master,
+                a_send-a_count,a_count*sizeof(allocation),&written,NULL );
+          a_send = a;
+          a_count = 0;
+        }
+        a_send++;
+        a_count++;
+      }
     }
+    if( a_send )
+      WriteFile( rd->master,
+          a_send-a_count,a_count*sizeof(allocation),&written,NULL );
 
     if( leakContents )
     {
