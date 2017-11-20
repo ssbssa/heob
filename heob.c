@@ -4006,11 +4006,7 @@ void mainCRTStartup( void )
     int type;
     modInfo *mi_a = NULL;
     int mi_q = 0;
-    allocation *alloc_a = NULL;
-    int alloc_q = 0;
     int terminated = -2;
-    unsigned char *contents = NULL;
-    unsigned char **content_ptrs = NULL;
     int alloc_show_q = 0;
     int error_q = 0;
 #ifndef NO_THREADNAMES
@@ -4098,18 +4094,15 @@ void mainCRTStartup( void )
 
         case WRITE_LEAKS:
           {
+            allocation *alloc_a = NULL;
+            int alloc_q = 0;
+            unsigned char *contents = NULL;
+            unsigned char **content_ptrs = NULL;
             int alloc_ignore_q = 0;
             size_t alloc_ignore_sum = 0;
             int alloc_ignore_ind_q = 0;
             size_t alloc_ignore_ind_sum = 0;
 
-            alloc_q = 0;
-            if( alloc_a ) HeapFree( heap,0,alloc_a );
-            alloc_a = NULL;
-            if( contents ) HeapFree( heap,0,contents );
-            contents = NULL;
-            if( content_ptrs ) HeapFree( heap,0,content_ptrs );
-            content_ptrs = NULL;
             alloc_show_q = 0;
 
             if( !readFile(readPipe,&alloc_q,sizeof(int),&ov) )
@@ -4170,6 +4163,10 @@ void mainCRTStartup( void )
                 threadName_a,threadName_q,
 #endif
                 &opt,tc,&ds,heap,tcXml,(uintptr_t)RETURN_ADDRESS() );
+
+            if( alloc_a ) HeapFree( heap,0,alloc_a );
+            if( contents ) HeapFree( heap,0,contents );
+            if( content_ptrs ) HeapFree( heap,0,content_ptrs );
           }
           break;
 
@@ -4975,10 +4972,7 @@ void mainCRTStartup( void )
     // }}}
 
     dbgsym_close( &ds );
-    if( alloc_a ) HeapFree( heap,0,alloc_a );
     if( mi_a ) HeapFree( heap,0,mi_a );
-    if( contents ) HeapFree( heap,0,contents );
-    if( content_ptrs ) HeapFree( heap,0,content_ptrs );
 #ifndef NO_THREADNAMES
     if( threadName_a ) HeapFree( heap,0,threadName_a );
 #endif
