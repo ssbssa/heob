@@ -153,7 +153,6 @@ typedef enum
   AT_MALLOC,
   AT_NEW,
   AT_NEW_ARR,
-  AT_EXIT,
 }
 allocType;
 
@@ -328,6 +327,7 @@ enum
 #ifndef NO_THREADNAMES
   WRITE_THREAD_NAMES,
 #endif
+  WRITE_EXIT_TRACE,
   WRITE_EXIT,
   WRITE_RECORDING,
 };

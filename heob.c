@@ -2419,9 +2419,6 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
   if( opt->handleException>=2 )
     return;
 
-  if( alloc_q>0 && alloc_a[alloc_q-1].at==AT_EXIT )
-    alloc_q--;
-
   if( !alloc_q && !alloc_ignore_q && !alloc_ignore_ind_q )
   {
     printf( "$Ono leaks found\n" );
@@ -4879,6 +4876,23 @@ void mainCRTStartup( void )
 #endif
 
           // }}}
+          // exit trace {{{
+
+        case WRITE_EXIT_TRACE:
+          {
+            allocation *exitTrace = eiPtr->aa;
+            if( !readFile(readPipe,exitTrace,sizeof(allocation),&ov) )
+              break;
+
+            cacheSymbolData( exitTrace,NULL,1,mi_a,mi_q,&ds,1 );
+            printf( "$Sexit on:" );
+            printThreadName( exitTrace->threadNameIdx );
+            printStackCount( exitTrace->frames,exitTrace->frameCount,
+                mi_a,mi_q,&ds,FT_COUNT,0 );
+          }
+          break;
+
+          // }}}
           // exit information {{{
 
         case WRITE_EXIT:
@@ -4894,23 +4908,10 @@ void mainCRTStartup( void )
           }
 
           if( !terminated )
-          {
-            if( alloc_q>0 && alloc_a[alloc_q-1].at==AT_EXIT )
-            {
-              allocation *exitTrace = &alloc_a[alloc_q-1];
-              cacheSymbolData( exitTrace,NULL,1,mi_a,mi_q,&ds,1 );
-              printf( "$Sexit on:" );
-              printThreadName( exitTrace->threadNameIdx );
-              printStackCount( exitTrace->frames,exitTrace->frameCount,
-                  mi_a,mi_q,&ds,FT_COUNT,0 );
-            }
-
             printf( "$Sexit code: %u (%x)\n",exitCode,exitCode );
-          }
           else
-          {
             printf( "\n$Stermination code: %u (%x)\n",exitCode,exitCode );
-          }
+
           heobExitData = exitCode;
           if( opt.leakErrorExitCode )
             exitCode = alloc_show_q + error_q;

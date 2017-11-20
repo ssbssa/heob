@@ -1356,20 +1356,23 @@ static void *new_recalloc( void *b,size_t n,size_t s )
 // }}}
 // transfer leak data {{{
 
-static void writeLeakMods( void )
+static void writeLeakMods( allocation *exitTrace )
 {
   GET_REMOTEDATA( rd );
-
-  if( !rd->splits ) return;
 
   int i;
   int mi_q = 0;
   modInfo *mi_a = NULL;
-  for( i=0; i<=SPLIT_MASK; i++ )
+  if( rd->splits )
   {
-    splitAllocation *sa = rd->splits + i;
-    writeModsFind( sa->alloc_a,sa->alloc_q,&mi_a,&mi_q );
+    for( i=0; i<=SPLIT_MASK; i++ )
+    {
+      splitAllocation *sa = rd->splits + i;
+      writeModsFind( sa->alloc_a,sa->alloc_q,&mi_a,&mi_q );
+    }
   }
+  if( exitTrace )
+    writeModsFind( exitTrace,1,&mi_a,&mi_q );
   writeModsSend( mi_a,mi_q );
   if( mi_a )
     HeapFree( rd->heap,0,mi_a );
@@ -1482,7 +1485,6 @@ static void writeLeakData( void )
 
     if( leakContents )
     {
-      if( sa->alloc_a[alloc_q-1].at==AT_EXIT ) alloc_q--;
       for( j=0; j<alloc_q; j++ )
       {
         allocation *a = sa->alloc_a + j;
@@ -1502,7 +1504,6 @@ static void writeLeakData( void )
     {
       splitAllocation *sa = rd->splits + i;
       alloc_q = sa->alloc_q;
-      if( alloc_q>0 && sa->alloc_a[alloc_q-1].at==AT_EXIT ) alloc_q--;
       int j;
       for( j=0; j<alloc_q; j++ )
       {
@@ -1765,6 +1766,22 @@ static VOID WINAPI new_ExitProcess( UINT c )
   rd->inExit = 1;
   LeaveCriticalSection( &rd->csFreedMod );
 
+  // exit trace {{{
+  allocation exitTrace;
+  allocation *exitTracePtr = NULL;
+  if( rd->opt.exitTrace )
+  {
+#ifndef NO_THREADNAMES
+    exitTrace.threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
+#endif
+
+    CAPTURE_STACK_TRACE( 1,PTRS,exitTrace.frames,RETURN_ADDRESS(),
+        rd->maxStackFrames );
+
+    exitTracePtr = &exitTrace;
+  }
+  // }}}
+
   int i;
   EnterCriticalSection( &rd->csWrite );
   if( rd->splits )
@@ -1776,17 +1793,7 @@ static VOID WINAPI new_ExitProcess( UINT c )
   if( rd->opt.leakDetails>1 )
     findLeakTypes();
 
-  if( rd->opt.exitTrace )
-  {
-    int save_recording = rd->recording;
-    rd->recording = 1;
-
-    trackAlloc( (void*)-1,0,AT_EXIT,FT_COUNT );
-
-    rd->recording = save_recording;
-  }
-
-  writeLeakMods();
+  writeLeakMods( exitTracePtr );
 
   // free modules {{{
   if( rd->freed_mod_q )
@@ -1810,29 +1817,15 @@ static VOID WINAPI new_ExitProcess( UINT c )
   }
   // }}}
 
-  // make sure exit trace is still the last {{{
-  int alloc_q;
-  if( rd->freed_mod_q && rd->opt.exitTrace )
-  {
-    splitAllocation *sa = rd->splits + SPLIT_MASK;
-    alloc_q = sa->alloc_q;
-    allocation *alloc_a = sa->alloc_a;
-    if( alloc_q>1 && alloc_a[alloc_q-1].at!=AT_EXIT )
-    {
-      for( i=alloc_q-2; i>=0; i-- )
-      {
-        if( alloc_a[i].at!=AT_EXIT ) continue;
-
-        allocation exitTrace = alloc_a[i];
-        alloc_a[i] = alloc_a[alloc_q-1];
-        alloc_a[alloc_q-1] = exitTrace;
-        break;
-      }
-    }
-  }
-  // }}}
-
   writeLeakData();
+
+  if( exitTracePtr )
+  {
+    int type = WRITE_EXIT_TRACE;
+    DWORD written;
+    WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+    WriteFile( rd->master,exitTracePtr,sizeof(allocation),&written,NULL );
+  }
 
   int type = WRITE_EXIT;
   int terminated = 0;
@@ -3221,7 +3214,7 @@ static void replaceModFuncs( void )
         rd->noCRT = noCRT = 2;
 
         rd->opt.protect = rd->opt.protectFree = rd->opt.leakDetails = 0;
-        if( rd->splits && !rd->opt.exitTrace )
+        if( rd->splits )
         {
           int i;
           for( i=0; i<=SPLIT_MASK; i++ )
@@ -3845,7 +3838,7 @@ DLLEXPORT int heob_control( int cmd )
         for( i=0; i<=SPLIT_MASK; i++ )
           EnterCriticalSection( &rd->splits[i].cs );
 
-        writeLeakMods();
+        writeLeakMods( NULL );
         writeLeakData();
 
         LeaveCriticalSection( &rd->csWrite );
@@ -4071,7 +4064,7 @@ VOID CALLBACK heob( ULONG_PTR arg )
   lstrcpy( ld->subXmlName,rd->subXmlName );
   lstrcpyW( ld->subCurDir,rd->subCurDir );
 
-  if( !ld->noCRT || rd->opt.exitTrace )
+  if( !ld->noCRT )
     ld->splits = HeapAlloc( heap,HEAP_ZERO_MEMORY,
         (SPLIT_MASK+1)*sizeof(splitAllocation) );
   if( rd->opt.protectFree )
