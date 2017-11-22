@@ -2156,11 +2156,17 @@ BOOL WINAPI new_CreateProcessA(
 {
   GET_REMOTEDATA( rd );
 
+  DWORD suspend = (creationFlags&(DEBUG_PROCESS|DEBUG_ONLY_THIS_PROCESS)) ?
+    0 : CREATE_SUSPENDED;
+
   BOOL ret = rd->fCreateProcessA(
       applicationName,commandLine,processAttributes,threadAttributes,
-      inheritHandles,creationFlags|CREATE_SUSPENDED,environment,
+      inheritHandles,creationFlags|suspend,environment,
       currentDirectory,startupInfo,processInformation );
   if( !ret ) return( 0 );
+
+  // no heob injection for debugged child processes
+  if( !suspend ) return( 1 );
 
   heobSubProcess( creationFlags,processInformation,
       rd->heobMod,rd->heap,&rd->globalopt,rd->fCreateProcessW,
@@ -2178,11 +2184,17 @@ BOOL WINAPI new_CreateProcessW(
 {
   GET_REMOTEDATA( rd );
 
+  DWORD suspend = (creationFlags&(DEBUG_PROCESS|DEBUG_ONLY_THIS_PROCESS)) ?
+    0 : CREATE_SUSPENDED;
+
   BOOL ret = rd->fCreateProcessW(
       applicationName,commandLine,processAttributes,threadAttributes,
-      inheritHandles,creationFlags|CREATE_SUSPENDED,environment,
+      inheritHandles,creationFlags|suspend,environment,
       currentDirectory,startupInfo,processInformation );
   if( !ret ) return( 0 );
+
+  // no heob injection for debugged child processes
+  if( !suspend ) return( 1 );
 
   heobSubProcess( creationFlags,processInformation,
       rd->heobMod,rd->heap,&rd->globalopt,rd->fCreateProcessW,
