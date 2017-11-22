@@ -3176,11 +3176,12 @@ void mainCRTStartup( void )
           mi->base = base;
           mi->size = 0;
           size_t len = end - start;
-          char localName[MAX_PATH];
+          char *localName = HeapAlloc( heap,0,MAX_PATH );
           RtlMoveMemory( localName,start,len );
           localName[len] = 0;
           if( !SearchPath(NULL,localName,NULL,MAX_PATH,mi->path,NULL) )
             RtlMoveMemory( mi->path,localName,len+1 );
+          HeapFree( heap,0,localName );
 
           args = end;
         }
@@ -3341,7 +3342,7 @@ void mainCRTStartup( void )
   // help text {{{
   if( (!args || !args[0]) && !opt.attached )
   {
-    char exePath[MAX_PATH];
+    char *exePath = HeapAlloc( heap,HEAP_ZERO_MEMORY,MAX_PATH );
     GetModuleFileName( NULL,exePath,MAX_PATH );
     char *delim = strrchr( exePath,'\\' );
     if( delim ) delim++;
@@ -3440,6 +3441,7 @@ void mainCRTStartup( void )
       }
     }
     HeapFree( heap,0,tcOut );
+    HeapFree( heap,0,exePath );
     if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
     if( outName ) HeapFree( heap,0,outName );
     if( xmlName ) HeapFree( heap,0,xmlName );
@@ -3564,8 +3566,7 @@ void mainCRTStartup( void )
   // }}}
 
   // executable name {{{
-  char exePath[MAX_PATH];
-  exePath[0] = 0;
+  char *exePath = HeapAlloc( heap,HEAP_ZERO_MEMORY,MAX_PATH );
   if( specificOptions ||
       (outName && strstr(outName,"%n")) ||
       (xmlName && strstr(xmlName,"%n")) )
@@ -3654,6 +3655,7 @@ void mainCRTStartup( void )
       CloseHandle( pi.hThread );
       CloseHandle( pi.hProcess );
       HeapFree( heap,0,tcOut );
+      HeapFree( heap,0,exePath );
       if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
       if( outName ) HeapFree( heap,0,outName );
       if( xmlName ) HeapFree( heap,0,xmlName );
@@ -4989,6 +4991,7 @@ void mainCRTStartup( void )
   CloseHandle( pi.hProcess );
 
   HeapFree( heap,0,tcOut );
+  HeapFree( heap,0,exePath );
   if( tcOutOrig ) HeapFree( heap,0,tcOutOrig );
   if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
   if( outName ) HeapFree( heap,0,outName );
