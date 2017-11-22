@@ -2819,7 +2819,7 @@ char *readOption( char *args,options *opt,int *raq,size_t **raa,HANDLE heap )
     default:
       return( NULL );
   }
-  while( args[0] && args[0]!=' ' ) args++;
+  while( args[0] && args[0]!=' ' && args[0]!=';' ) args++;
 
   *raq = raise_alloc_q;
   *raa = raise_alloc_a;
