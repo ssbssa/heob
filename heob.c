@@ -2947,6 +2947,15 @@ static void showConsole( void )
   FreeLibrary( user32 );
 }
 
+static void setHeobConsoleTitle( HANDLE heap,const wchar_t *prog )
+{
+  wchar_t *title = HeapAlloc( heap,0,(10+lstrlenW(prog))*2 );
+  lstrcpyW( title,L"heob" BITS " - " );
+  lstrcatW( title,prog );
+  SetConsoleTitleW( title );
+  HeapFree( heap,0,title );
+}
+
 // }}}
 // main {{{
 
@@ -3567,7 +3576,7 @@ void mainCRTStartup( void )
 
   // executable name {{{
   char *exePath = HeapAlloc( heap,HEAP_ZERO_MEMORY,MAX_PATH );
-  if( specificOptions ||
+  if( specificOptions || opt.attached ||
       (outName && strstr(outName,"%n")) ||
       (xmlName && strstr(xmlName,"%n")) )
   {
@@ -3585,19 +3594,17 @@ void mainCRTStartup( void )
               oni,sizeof(OBJECT_NAME_INFORMATION),&len) )
         {
           oni->Name.Buffer[oni->Name.Length/2] = 0;
-          wchar_t *lastDelim = NULL;
-          wchar_t *pathPos;
-          for( pathPos=oni->Name.Buffer; *pathPos; pathPos++ )
-            if( *pathPos=='\\' ) lastDelim = pathPos;
+          wchar_t *lastDelim = strrchrW( oni->Name.Buffer,'\\' );
           if( lastDelim ) lastDelim++;
           else lastDelim = oni->Name.Buffer;
+          wchar_t *lastPoint = strrchrW( lastDelim,'.' );
+          if( lastPoint ) lastPoint[0] = 0;
+          setHeobConsoleTitle( heap,lastDelim );
           int count = WideCharToMultiByte( CP_ACP,0,
               lastDelim,-1,exePath,MAX_PATH,NULL,NULL );
           if( count<0 || count>=MAX_PATH )
             count = 0;
           exePath[count] = 0;
-          char *lastPoint = strrchr( exePath,'.' );
-          if( lastPoint ) lastPoint[0] = 0;
         }
         HeapFree( heap,0,oni );
       }
@@ -3801,11 +3808,7 @@ void mainCRTStartup( void )
     else delimW = exePathW;
     wchar_t *lastPointW = strrchrW( delimW,'.' );
     if( lastPointW ) lastPointW[0] = 0;
-    wchar_t *title = HeapAlloc( heap,0,(10+lstrlenW(delimW))*2 );
-    lstrcpyW( title,L"heob" BITS " - " );
-    lstrcatW( title,delimW );
-    SetConsoleTitleW( title );
-    HeapFree( heap,0,title );
+    setHeobConsoleTitle( heap,delimW );
     if( lastPointW ) lastPointW[0] = '.';
     // }}}
 
