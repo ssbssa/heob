@@ -3966,6 +3966,16 @@ void mainCRTStartup( void )
         while( i<argl )
         {
           int startI = i;
+          if( !l && i+1<argl && argv[i]=='-' && argv[i+1]=='O' )
+          {
+            i += 2;
+            while( i<argl && argv[i]!=' ' )
+            {
+              while( i<argl && argv[i]!=':' ) i++;
+              while( i<argl && argv[i]!=';' ) i++;
+              if( i<argl ) i++;
+            }
+          }
           while( i<argl && argv[i]!=' ' )
           {
             wchar_t c = argv[i];
