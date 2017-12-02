@@ -1,0 +1,5 @@
+allocer: main()
+
+unhandled exception code: 0xPTR (VC_CPP_EXCEPTION)
+  exception on:
+  VC c++ exception: class heob::fake_exception

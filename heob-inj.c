@@ -3557,6 +3557,8 @@ DLLEXPORT VOID heob_exit( UINT c )
 #if USE_STACKWALK
 #define MACH_TYPE IMAGE_FILE_MACHINE_AMD64
 #endif
+#define THROW_ARGS 4
+#define CALC_THROW_ARG(mod,ofs) ((char*)(mod)+(ofs))
 #else
 #define csp Esp
 #define cip Eip
@@ -3564,6 +3566,8 @@ DLLEXPORT VOID heob_exit( UINT c )
 #if USE_STACKWALK
 #define MACH_TYPE IMAGE_FILE_MACHINE_I386
 #endif
+#define THROW_ARGS 3
+#define CALC_THROW_ARG(mod,ofs) (ofs)
 #endif
 static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 {
@@ -3607,6 +3611,36 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
         {
           ei.aq += 2;
           ei.nearest = 2;
+        }
+      }
+    }
+  }
+  // }}}
+  // VC c++ exception {{{
+  else if( ep->ExceptionRecord->ExceptionCode==EXCEPTION_VC_CPP_EXCEPTION &&
+      ep->ExceptionRecord->NumberParameters==THROW_ARGS )
+  {
+    DWORD *ptr = (DWORD*)ep->ExceptionRecord->ExceptionInformation[2];
+#ifdef _WIN64
+    char *mod = (char*)ep->ExceptionRecord->ExceptionInformation[3];
+#endif
+    if( !IsBadReadPtr(ptr,4*sizeof(DWORD)) )
+    {
+      ptr = (DWORD*)CALC_THROW_ARG( mod,ptr[3] );
+      if( !IsBadReadPtr(ptr,2*sizeof(DWORD)) )
+      {
+        ptr = (DWORD*)CALC_THROW_ARG( mod,ptr[1] );
+        if( !IsBadReadPtr(ptr,2*sizeof(DWORD)) )
+        {
+          char *exception_type =
+            (char*)CALC_THROW_ARG( mod,ptr[1] ) + 2*sizeof(void*);
+          if( !IsBadReadPtr(exception_type,sizeof(void*)) )
+          {
+            size_t l = lstrlen( exception_type );
+            if( l>=sizeof(ei.throwName) ) l = sizeof(ei.throwName) - 1;
+            RtlMoveMemory( ei.throwName,exception_type,l );
+            ei.throwName[l] = 0;
+          }
         }
       }
     }

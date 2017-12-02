@@ -63,6 +63,8 @@
 #define IL_INC(var) InterlockedIncrement64(var)
 #endif
 
+#define EXCEPTION_VC_CPP_EXCEPTION 0xe06d7363
+
 // }}}
 // function definitions {{{
 
@@ -357,6 +359,7 @@ typedef struct
   allocation aa[3];
   int aq;
   int nearest;
+  char throwName[1024];
 }
 exceptionInfo;
 

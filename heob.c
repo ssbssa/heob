@@ -1854,6 +1854,33 @@ static void printStackCount( void **framesV,int fc,
   }
 }
 
+static char *undecorateVCsymbol( dbgsym *ds,char *decorName )
+{
+  if( decorName[0]!='.' || !ds->fUnDecorateSymbolName )
+    return( decorName );
+
+  int decorLen = lstrlen( decorName );
+  char *decor = HeapAlloc( ds->heap,0,decorLen+9 );
+  lstrcpy( decor,"?X@@YK" );
+  lstrcat( decor,decorName+1 );
+  lstrcat( decor,"XZ" );
+  if( ds->fUnDecorateSymbolName(decor,
+        ds->undname,MAX_SYM_NAME,UNDNAME_NO_MS_KEYWORDS) )
+  {
+    ds->undname[MAX_SYM_NAME] = 0;
+    int undecorLen = lstrlen( ds->undname );
+    if( undecorLen>8 &&
+        !lstrcmp(ds->undname+undecorLen-8," X(void)") )
+    {
+      ds->undname[undecorLen-8] = 0;
+      decorName = ds->undname;
+    }
+  }
+  HeapFree( ds->heap,0,decor );
+
+  return( decorName );
+}
+
 // }}}
 // thread name {{{
 
@@ -4255,6 +4282,7 @@ void mainCRTStartup( void )
               EX_DESC( SINGLE_STEP );
               EX_DESC( STACK_OVERFLOW );
               EX_DESC( FATAL_APP_EXIT );
+              EX_DESC( VC_CPP_EXCEPTION );
             }
             printf( "\n$Wunhandled exception code: %x%s\n",
                 ei.er.ExceptionCode,desc );
@@ -4401,6 +4429,13 @@ void mainCRTStartup( void )
               }
             }
             // }}}
+            // VC c++ exception {{{
+            else if( ei.throwName[0] )
+            {
+              char *throwName = undecorateVCsymbol( &ds,ei.throwName );
+              printf( "$I  VC c++ exception: $N%s\n",throwName );
+            }
+            // }}}
 
             // xml {{{
             if( tcXml )
@@ -4443,6 +4478,14 @@ void mainCRTStartup( void )
                       mi_a,mi_q,&ds,ei.aa[2].ft,-1 );
                   printf( "  </stack>\n" );
                 }
+              }
+              else if( ei.throwName[0] )
+              {
+                char *throwName = undecorateVCsymbol( &ds,ei.throwName );
+                printf( "  <auxwhat>VC c++ exception: %s</auxwhat>\n",
+                    throwName );
+                printf( "  <stack>\n" );
+                printf( "  </stack>\n" );
               }
               printf( "</error>\n\n" );
 

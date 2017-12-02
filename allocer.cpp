@@ -839,6 +839,38 @@ void choose( int arg )
         mem[1] = sum;
       }
       break;
+
+    case 45:
+      // fake uncaught VC c++ exception
+      {
+        static DWORD ofsBuffer[8];
+        static struct {
+          void *ptrs[2];
+          char decoratedName[32];
+        } exceptionType;
+        strcpy( exceptionType.decoratedName,".?AVfake_exception@heob@@" );
+#ifndef _WIN64
+#define MOD_REL(ptr) ((DWORD)ptr)
+#else
+        ULONG_PTR mod = (ULONG_PTR)GetModuleHandle( NULL );
+#define MOD_REL(ptr) ((ULONG_PTR)ptr-mod)
+#endif
+        ofsBuffer[3] = MOD_REL( &ofsBuffer[4] );
+        ofsBuffer[5] = MOD_REL( &ofsBuffer[6] );
+        ofsBuffer[7] = MOD_REL( &exceptionType );
+        char exceptionObject[] = "fake exception";
+        ULONG_PTR exceptionParams[] = {
+          0x19930520,
+          (ULONG_PTR)exceptionObject,
+          (ULONG_PTR)ofsBuffer,
+#ifdef _WIN64
+          mod,
+#endif
+        };
+        RaiseException( 0xe06d7363,EXCEPTION_NONCONTINUABLE,
+            sizeof(exceptionParams)/sizeof(ULONG_PTR),exceptionParams );
+      }
+      break;
   }
 
   mem = (char*)realloc( mem,30 );
