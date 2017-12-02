@@ -1431,7 +1431,7 @@ static void locFuncCache(
         {
           if( si->Name[0]=='?' && ds->fUnDecorateSymbolName &&
               ds->fUnDecorateSymbolName(si->Name,
-                ds->undname,MAX_SYM_NAME,UNDNAME_NAME_ONLY) )
+                ds->undname,MAX_SYM_NAME,UNDNAME_NO_MS_KEYWORDS) )
           {
             ds->undname[MAX_SYM_NAME] = 0;
             funcname = ds->undname;
