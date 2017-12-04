@@ -76,6 +76,7 @@ public:
 private:
     QLineEdit *xmlEdit;
     QCheckBox *pidWaitCheck;
+    QComboBox *handleExceptionCombo;
     QComboBox *pageProtectionCombo;
     QCheckBox *freedProtectionCheck;
     QCheckBox *breakpointCheck;

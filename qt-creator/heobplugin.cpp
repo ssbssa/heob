@@ -467,6 +467,17 @@ HeobDialog::HeobDialog(QWidget *parent) :
     pidWaitCheck = new QCheckBox(tr("show process ID and wait"));
     layout->addWidget(pidWaitCheck);
 
+    QHBoxLayout *handleExceptionLayout = new QHBoxLayout;
+    QLabel *handleExceptionLabel = new QLabel(tr("handle exceptions:"));
+    handleExceptionLayout->addWidget(handleExceptionLabel);
+    handleExceptionCombo = new QComboBox;
+    handleExceptionCombo->addItem(tr("off"));
+    handleExceptionCombo->addItem(tr("on"));
+    handleExceptionCombo->addItem(tr("only"));
+    handleExceptionCombo->setCurrentIndex(1);
+    handleExceptionLayout->addWidget(handleExceptionCombo);
+    layout->addLayout(handleExceptionLayout);
+
     QHBoxLayout *pageProtectionLayout = new QHBoxLayout;
     QLabel *pageProtectionLabel = new QLabel(tr("page protection:"));
     pageProtectionLayout->addWidget(pageProtectionLabel);
@@ -554,6 +565,9 @@ QString HeobDialog::getArguments()
 
     int pidWait = pidWaitCheck->isChecked() ? 1 : 0;
     args += QString::fromLatin1(" -P%1").arg(pidWait);
+
+    int handleException = handleExceptionCombo->currentIndex();
+    args += QString::fromLatin1(" -h%1").arg(handleException);
 
     int pageProtection = pageProtectionCombo->currentIndex();
     args += QString::fromLatin1(" -p%1").arg(pageProtection);
