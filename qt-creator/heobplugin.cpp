@@ -475,6 +475,7 @@ HeobDialog::HeobDialog(QWidget *parent) :
     handleExceptionCombo->addItem(tr("on"));
     handleExceptionCombo->addItem(tr("only"));
     handleExceptionCombo->setCurrentIndex(1);
+    connect(handleExceptionCombo, SIGNAL(currentIndexChanged(int)), this, SLOT(updateEnabled()));
     handleExceptionLayout->addWidget(handleExceptionCombo);
     layout->addLayout(handleExceptionLayout);
 
@@ -485,6 +486,7 @@ HeobDialog::HeobDialog(QWidget *parent) :
     pageProtectionCombo->addItem(tr("off"));
     pageProtectionCombo->addItem(tr("after"));
     pageProtectionCombo->addItem(tr("before"));
+    connect(pageProtectionCombo, SIGNAL(currentIndexChanged(int)), this, SLOT(updateEnabled()));
     pageProtectionLayout->addWidget(pageProtectionCombo);
     layout->addLayout(pageProtectionLayout);
 
@@ -505,6 +507,7 @@ HeobDialog::HeobDialog(QWidget *parent) :
     leakDetailCombo->addItem(tr("fuzzy detect leak types"));
     leakDetailCombo->addItem(tr("fuzzy detect leak types (show reachable)"));
     leakDetailCombo->setCurrentIndex(1);
+    connect(leakDetailCombo, SIGNAL(currentIndexChanged(int)), this, SLOT(updateEnabled()));
     leakDetailLayout->addWidget(leakDetailCombo);
     layout->addLayout(leakDetailLayout);
 
@@ -546,6 +549,8 @@ HeobDialog::HeobDialog(QWidget *parent) :
     layout->addLayout(okLayout);
 
     setLayout(layout);
+
+    updateEnabled();
 
     setWindowTitle(tr("heob"));
 
@@ -591,4 +596,20 @@ QString HeobDialog::getArguments()
     if (!extraArgs.isEmpty()) args += QLatin1Char(' ') + extraArgs;
 
     return args;
+}
+
+void HeobDialog::updateEnabled()
+{
+    bool enableHeob = handleExceptionCombo->currentIndex() < 2;
+    bool enableLeakDetection = enableHeob && leakDetailCombo->currentIndex() > 0;
+    bool enablePageProtection = enableHeob && pageProtectionCombo->currentIndex() > 0;
+
+    leakDetailCombo->setEnabled(enableHeob);
+    pageProtectionCombo->setEnabled(enableHeob);
+    breakpointCheck->setEnabled(enableHeob);
+
+    leakSizeSpin->setEnabled(enableLeakDetection);
+    leakRecordingCombo->setEnabled(enableLeakDetection);
+
+    freedProtectionCheck->setEnabled(enablePageProtection);
 }

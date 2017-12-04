@@ -73,6 +73,9 @@ public:
 
     QString getArguments();
 
+private slots:
+    void updateEnabled();
+
 private:
     QLineEdit *xmlEdit;
     QCheckBox *pidWaitCheck;
