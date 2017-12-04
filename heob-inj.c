@@ -3180,7 +3180,7 @@ static void replaceModFuncs( void )
     { fname_CreateProcessW   ,&rd->fCreateProcessW   ,&new_CreateProcessW   },
   };
   unsigned int rep2count = sizeof(rep2)/sizeof(replaceData);
-  if( !rd->opt.children ) rep2count -= 2;
+  if( rd->opt.children<1 ) rep2count -= 2;
 
   const char *fname_LoadLibraryA = "LoadLibraryA";
   const char *fname_LoadLibraryW = "LoadLibraryW";
@@ -4249,7 +4249,10 @@ VOID CALLBACK heob( ULONG_PTR arg )
   }
   // }}}
 
-  addModule( GetModuleHandle(NULL) );
+  HMODULE appMod = GetModuleHandle( NULL );
+  if( appMod==rd->heobMod && ld->opt.children )
+    ld->opt.children = -1;
+  addModule( appMod );
   replaceModFuncs();
 
   GetModuleFileNameW( NULL,rd->exePath,MAX_PATH );
