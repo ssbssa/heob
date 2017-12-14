@@ -783,16 +783,25 @@ int isWrongArch( HANDLE process )
 // }}}
 // error pipe {{{
 
-static HANDLE openErrorPipe( void )
+static HANDLE openErrorPipe( int *writeProcessPid )
 {
   char errorPipeName[32] = "\\\\.\\Pipe\\heob.error.";
   char *end = num2hexstr( errorPipeName+lstrlen(errorPipeName),
       GetCurrentProcessId(),8 );
   end[0] = 0;
 
-  HANDLE errorPipe = CreateFile( errorPipeName,
-      GENERIC_WRITE,0,NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL );
-  if( errorPipe==INVALID_HANDLE_VALUE ) errorPipe = NULL;
+  *writeProcessPid = 0;
+  HANDLE errorPipe = CreateFile( errorPipeName,GENERIC_READ|GENERIC_WRITE,
+      0,NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL );
+  if( errorPipe==INVALID_HANDLE_VALUE )
+  {
+    errorPipe = CreateFile( errorPipeName,GENERIC_WRITE,
+        0,NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL );
+    if( errorPipe==INVALID_HANDLE_VALUE )
+      errorPipe = NULL;
+  }
+  else
+    *writeProcessPid = 1;
 
   return( errorPipe );
 }
@@ -823,6 +832,14 @@ enum
   HEOB_UNEXPECTED_END,
   HEOB_TRACE,
   HEOB_CONSOLE,
+  // special values which signal the start of the program
+  HEOB_PID_ATTACH=0x10000000,
+};
+
+enum
+{
+  HEOB_CONTROL_NONE,
+  HEOB_CONTROL_ATTACH,
 };
 
 // }}}
@@ -2675,7 +2692,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
 
 static void printAttachedProcessInfo(
     const wchar_t *exePath,attachedProcessInfo *api,textColor *tc,
-    DWORD pid,DWORD ppid )
+    DWORD pid,DWORD ppid,DWORD dpid )
 {
   if( !api ) return;
   printf( "\n$Iapplication: $N%S\n",exePath );
@@ -2709,6 +2726,8 @@ static void printAttachedProcessInfo(
     printf( "$Istdout: $N%S\n",api->stdoutName );
   if( api->stderrName[0] )
     printf( "$Istderr: $N%S\n",api->stderrName );
+  if( dpid )
+    printf( "$Idebugger PID: $N%u\n",dpid );
   printf( "\n" );
 }
 
@@ -2999,7 +3018,8 @@ static void setHeobConsoleTitle( HANDLE heap,const wchar_t *prog )
 void mainCRTStartup( void )
 {
   DWORD startTicks = GetTickCount();
-  HANDLE errorPipe = openErrorPipe();
+  int writeProcessPid = 0;
+  HANDLE errorPipe = openErrorPipe( &writeProcessPid );
   HANDLE in = GetStdHandle( STD_INPUT_HANDLE );
   if( !FlushConsoleInputBuffer(in) ) in = NULL;
 
@@ -3835,9 +3855,27 @@ void mainCRTStartup( void )
         RETURN_ADDRESS() );
     if( delim ) delim[0] = '\\';
 
-    printAttachedProcessInfo( exePathW,api,tc,pi.dwProcessId,ppid );
+    // debugger PID {{{
+    DWORD dbgPid = 0;
+    if( writeProcessPid )
+    {
+      unsigned data[2] = { HEOB_PID_ATTACH,pi.dwProcessId };
+      DWORD didreadwrite;
+      WriteFile( errorPipe,data,sizeof(data),&didreadwrite,NULL );
+      if( !ReadFile(errorPipe,&data,sizeof(data),&didreadwrite,NULL) ||
+          didreadwrite!=sizeof(data) )
+      {
+        data[0] = HEOB_CONTROL_NONE;
+        data[1] = 0;
+      }
+      dbgPid = data[1];
+    }
+    // }}}
+
+    printAttachedProcessInfo( exePathW,api,tc,pi.dwProcessId,ppid,dbgPid );
     if( tcOutOrig )
-      printAttachedProcessInfo( exePathW,api,tcOutOrig,pi.dwProcessId,ppid );
+      printAttachedProcessInfo( exePathW,api,tcOutOrig,pi.dwProcessId,ppid,
+          dbgPid );
 
     // console title {{{
     wchar_t *delimW = strrchrW( exePathW,'\\' );
@@ -3959,6 +3997,8 @@ void mainCRTStartup( void )
         if( api->stderrName[0] )
           printf( "  <line>stderr: %S</line>\n",api->stderrName );
       }
+      if( dbgPid )
+        printf( "  <line>debugger PID: %u</line>\n",dbgPid );
       printf( "</preamble>\n\n" );
       printf( "<pid>%u</pid>\n<ppid>%u</ppid>\n<tool>heob</tool>\n\n",
           pi.dwProcessId,ppid );
