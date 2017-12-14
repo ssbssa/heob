@@ -1765,7 +1765,17 @@ static void locXml( textColor *tc,uintptr_t addr,
     if( sep )
     {
       printf( "      <dir>" );
-      tc->fWriteSubText( tc,filename,sep-filename );
+      const char *p = filename;
+      char slash[2] = "/";
+      while( 1 )
+      {
+        const char *backslash = strchr( p,'\\' );
+        if( backslash>p )
+          tc->fWriteSubText( tc,p,backslash-p );
+        p = backslash + 1;
+        if( p>sep ) break;
+        tc->fWriteSubText( tc,slash,1 );
+      }
       printf( "</dir>\n" );
       filepart = sep + 1;
     }
