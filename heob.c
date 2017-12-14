@@ -1748,7 +1748,7 @@ static void locXml( textColor *tc,uintptr_t addr,
     modInfo *mi )
 {
   printf( "    <frame>\n" );
-  if( addr )
+  if( addr || (!mi && !funcname && lineno<=0) )
     printf( "      <ip>%X</ip>\n",addr );
   if( mi )
   {
@@ -4454,17 +4454,20 @@ void mainCRTStartup( void )
 
               printf( "<error>\n" );
               printf( "  <kind>InvalidRead</kind>\n" );
-              printf( "  <what>unhandled exception code: %x%s</what>",
+              printf( "  <what>unhandled exception code: %x%s</what>\n",
                   ei.er.ExceptionCode,desc );
-              printf( "  <auxwhat>" );
-              if( violationType )
-                printf( "%s violation at %p</auxwhat>\n  <auxwhat>\n",
-                    violationType,addr );
-              printf( "exception on</auxwhat>\n" );
+              printf( "  <auxwhat>exception on</auxwhat>\n" );
               printf( "  <stack>\n" );
               printStackCount( ei.aa[0].frames,ei.aa[0].frameCount,
                   mi_a,mi_q,&ds,FT_COUNT,-1 );
               printf( "  </stack>\n" );
+              if( violationType )
+              {
+                printf( "  <auxwhat>%s violation at %p</auxwhat>\n",
+                    violationType,addr );
+                printf( "  <stack>\n" );
+                printf( "  </stack>\n" );
+              }
 
               if( ei.aq>1 )
               {
@@ -4474,7 +4477,9 @@ void mainCRTStartup( void )
                     "  <auxwhat>%s%s %p (size %U, offset %s%D)</auxwhat>\n",
                     nearBlock,blockType,
                     ptr,size,addr>ptr?"+":"",addr-ptr );
-                printf( "  <auxwhat>\nallocated on</auxwhat>\n" );
+                printf( "  <stack>\n" );
+                printf( "  </stack>\n" );
+                printf( "  <auxwhat>allocated on</auxwhat>\n" );
                 printf( "  <stack>\n" );
                 printStackCount( ei.aa[1].frames,ei.aa[1].frameCount,
                     mi_a,mi_q,&ds,ei.aa[1].ft,-1 );
@@ -4640,9 +4645,8 @@ void mainCRTStartup( void )
 
               printf( "<error>\n" );
               printf( "  <kind>InvalidFree</kind>\n" );
-              printf( "  <what>deallocation of invalid pointer %p",
+              printf( "  <what>deallocation of invalid pointer %p</what>\n",
                   aa->ptr );
-              printf( "</what>\n" );
               printf( "  <stack>\n" );
               printStackCount( aa->frames,aa->frameCount,
                   mi_a,mi_q,&ds,aa->ft,-1 );
@@ -4658,7 +4662,9 @@ void mainCRTStartup( void )
                     "  <auxwhat>pointing to %sblock %p"
                     " (size %U, offset %s%D)</auxwhat>\n",
                     block,addr,size,ptr>addr?"+":"",ptr-addr );
-                printf( "  <auxwhat>\nallocated on</auxwhat>\n" );
+                printf( "  <stack>\n" );
+                printf( "  </stack>\n" );
+                printf( "  <auxwhat>allocated on</auxwhat>\n" );
                 printf( "  <stack>\n" );
                 printStackCount( aa[1].frames,aa[1].frameCount,
                     mi_a,mi_q,&ds,aa[1].ft,-1 );
@@ -4676,7 +4682,9 @@ void mainCRTStartup( void )
               else if( aa[1].id==1 )
               {
                 printf( "  <auxwhat>pointing to stack</auxwhat>\n" );
-                printf( "  <auxwhat>\npossibly same frame as</auxwhat>\n" );
+                printf( "  <stack>\n" );
+                printf( "  </stack>\n" );
+                printf( "  <auxwhat>possibly same frame as</auxwhat>\n" );
                 printf( "  <stack>\n" );
                 printStackCount( aa[1].frames,aa[1].frameCount,
                     mi_a,mi_q,&ds,FT_COUNT,-1 );
@@ -4710,7 +4718,9 @@ void mainCRTStartup( void )
                     "  <auxwhat>referenced by block %p"
                     " (size %U, offset +%U)</auxwhat>\n",
                     aa[3].ptr,aa[3].size,aa[2].size );
-                printf( "  <auxwhat>\nallocated on</auxwhat>\n" );
+                printf( "  <stack>\n" );
+                printf( "  </stack>\n" );
+                printf( "  <auxwhat>allocated on</auxwhat>\n" );
                 printf( "  <stack>\n" );
                 printStackCount( aa[3].frames,aa[3].frameCount,
                     mi_a,mi_q,&ds,aa[3].ft,-1 );
@@ -4820,7 +4830,9 @@ void mainCRTStartup( void )
                   aa[0].ptr,aa[0].size,
                   aa[1].ptr>aa[0].ptr?"+":"",
                   (char*)aa[1].ptr-(char*)aa[0].ptr );
-              printf( "  <auxwhat>\nallocated on</auxwhat>\n" );
+              printf( "  <stack>\n" );
+              printf( "  </stack>\n" );
+              printf( "  <auxwhat>allocated on</auxwhat>\n" );
               printf( "  <stack>\n" );
               printStackCount( aa[0].frames,aa[0].frameCount,
                   mi_a,mi_q,&ds,aa[0].ft,-1 );
