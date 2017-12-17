@@ -2429,8 +2429,8 @@ static int printStackGroupXml( stackGroup *sg,
       printf( "  <kind>%s</kind>\n",xmlLeakTypeNames[a->lt] );
       printf( "  <xwhat>\n" );
       printf( "    <text>%U bytes in %d blocks are %s"
-          " in loss record %d of %d</text>\n",
-          combSize,a->count,leakTypeNames[a->lt],xmlRecordNum,alloc_q );
+          " in loss record %d of %d (#%U)</text>\n",
+          combSize,a->count,leakTypeNames[a->lt],xmlRecordNum,alloc_q,a->id );
       printf( "    <leakedbytes>%U</leakedbytes>\n",a->size );
       printf( "    <leakedblocks>%d</leakedblocks>\n",a->count );
       printf( "  </xwhat>\n" );
@@ -4519,7 +4519,8 @@ void mainCRTStartup( void )
                     ptr,size,addr>ptr?"+":"",addr-ptr );
                 printf( "  <stack>\n" );
                 printf( "  </stack>\n" );
-                printf( "  <auxwhat>allocated on</auxwhat>\n" );
+                printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",
+                    ei.aa[1].id );
                 printf( "  <stack>\n" );
                 printStackCount( ei.aa[1].frames,ei.aa[1].frameCount,
                     mi_a,mi_q,&ds,ei.aa[1].ft,-1 );
@@ -4577,8 +4578,8 @@ void mainCRTStartup( void )
 
               printf( "<error>\n" );
               printf( "  <kind>UninitValue</kind>\n" );
-              printf( "  <what>allocation failed of %U bytes</what>\n",
-                  aa->size );
+              printf( "  <what>allocation failed of %U bytes (#%U)</what>\n",
+                  aa->size,aa->id );
               printf( "  <stack>\n" );
               printStackCount( aa->frames,aa->frameCount,
                   mi_a,mi_q,&ds,aa->ft,-1 );
@@ -4704,7 +4705,8 @@ void mainCRTStartup( void )
                     block,addr,size,ptr>addr?"+":"",ptr-addr );
                 printf( "  <stack>\n" );
                 printf( "  </stack>\n" );
-                printf( "  <auxwhat>allocated on</auxwhat>\n" );
+                printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",
+                    aa[1].id );
                 printf( "  <stack>\n" );
                 printStackCount( aa[1].frames,aa[1].frameCount,
                     mi_a,mi_q,&ds,aa[1].ft,-1 );
@@ -4760,7 +4762,8 @@ void mainCRTStartup( void )
                     aa[3].ptr,aa[3].size,aa[2].size );
                 printf( "  <stack>\n" );
                 printf( "  </stack>\n" );
-                printf( "  <auxwhat>allocated on</auxwhat>\n" );
+                printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",
+                    aa[3].id );
                 printf( "  <stack>\n" );
                 printStackCount( aa[3].frames,aa[3].frameCount,
                     mi_a,mi_q,&ds,aa[3].ft,-1 );
@@ -4815,7 +4818,8 @@ void mainCRTStartup( void )
               printStackCount( aa[0].frames,aa[0].frameCount,
                   mi_a,mi_q,&ds,aa[0].ft,-1 );
               printf( "  </stack>\n" );
-              printf( "  <auxwhat>allocated on</auxwhat>\n" );
+              printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",
+                  aa[1].id );
               printf( "  <stack>\n" );
               printStackCount( aa[1].frames,aa[1].frameCount,
                   mi_a,mi_q,&ds,aa[1].ft,-1 );
@@ -4872,7 +4876,8 @@ void mainCRTStartup( void )
                   (char*)aa[1].ptr-(char*)aa[0].ptr );
               printf( "  <stack>\n" );
               printf( "  </stack>\n" );
-              printf( "  <auxwhat>allocated on</auxwhat>\n" );
+              printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",
+                  aa[0].id );
               printf( "  <stack>\n" );
               printStackCount( aa[0].frames,aa[0].frameCount,
                   mi_a,mi_q,&ds,aa[0].ft,-1 );
@@ -4929,7 +4934,8 @@ void mainCRTStartup( void )
               printf( "  <kind>MismatchedFree</kind>\n" );
               printf(
                   "  <what>mismatching allocation/release method</what>\n" );
-              printf( "  <auxwhat>allocated on</auxwhat>\n" );
+              printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",
+                  aa[0].id );
               printf( "  <stack>\n" );
               printStackCount( aa[0].frames,aa[0].frameCount,
                   mi_a,mi_q,&ds,aa[0].ft,-1 );
