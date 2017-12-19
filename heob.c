@@ -2990,6 +2990,19 @@ static void waitForKey( textColor *tc,HANDLE in )
     SetConsoleMode( in,flags );
 }
 
+static void waitForKeyIfConsoleOwner( textColor *tc,HANDLE in )
+{
+  if( !in ) return;
+
+  DWORD conPid;
+  DWORD conPidCount = GetConsoleProcessList( &conPid,1 );
+  if( conPidCount==1 )
+  {
+    printf( "\n" );
+    waitForKey( tc,in );
+  }
+}
+
 static void showConsole( void )
 {
   HMODULE user32 = LoadLibrary( "user32.dll" );
@@ -3384,6 +3397,7 @@ void mainCRTStartup( void )
 
     if( fc )
     {
+      waitForKeyIfConsoleOwner( tc,in );
       HeapFree( heap,0,tcOut );
       if( outName ) HeapFree( heap,0,outName );
       if( xmlName ) HeapFree( heap,0,xmlName );
@@ -3496,16 +3510,7 @@ void mainCRTStartup( void )
     }
     printf( "    $I-H$N     show full help\n" );
     printf( "\n$Ohe$Nap-$Oob$Nserver " HEOB_VER " ($O" BITS "$Nbit)\n" );
-    if( in )
-    {
-      DWORD conPid;
-      DWORD conPidCount = GetConsoleProcessList( &conPid,1 );
-      if( conPidCount==1 )
-      {
-        printf( "\n" );
-        waitForKey( tc,in );
-      }
-    }
+    waitForKeyIfConsoleOwner( tc,in );
     HeapFree( heap,0,tcOut );
     HeapFree( heap,0,exePath );
     if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
