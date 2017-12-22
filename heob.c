@@ -1645,7 +1645,10 @@ static void locOut( textColor *tc,uintptr_t addr,
     case DWST_NO_SRC_FILE:
     case DWST_NOT_FOUND:
 #endif
-      printf( "    %X",addr );
+      if( addr || !funcname )
+        printf( "    %X",addr );
+      else
+        printf( "      " PTR_SPACES );
       if( funcname )
         printf( "   [$I%s$N]",funcname );
       printf( "\n" );
