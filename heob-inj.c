@@ -3964,7 +3964,6 @@ VOID CALLBACK heob( ULONG_PTR arg )
   PIMAGE_NT_HEADERS inh = (PIMAGE_NT_HEADERS)REL_PTR( idh,idh->e_lfanew );
 
   // base relocation {{{
-#ifndef _WIN64
   {
     PIMAGE_OPTIONAL_HEADER ioh = (PIMAGE_OPTIONAL_HEADER)REL_PTR(
         inh,sizeof(DWORD)+sizeof(IMAGE_FILE_HEADER) );
@@ -4017,7 +4016,6 @@ VOID CALLBACK heob( ULONG_PTR arg )
       }
     }
   }
-#endif
   // }}}
 
   // import functions {{{
