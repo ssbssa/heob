@@ -244,6 +244,25 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
             tc->fWriteText( tc,timestr,15 );
           }
           break;
+
+        case 'e': // last-error code
+          {
+            DWORD e = va_arg( vl,DWORD );
+            wchar_t *s = NULL;
+            FormatMessageW(
+                FORMAT_MESSAGE_ALLOCATE_BUFFER|FORMAT_MESSAGE_FROM_SYSTEM,
+                NULL,e,MAKELANGID(LANG_NEUTRAL,SUBLANG_DEFAULT),
+                (LPWSTR)&s,0,NULL );
+            if( s && s[0] )
+            {
+              int l = lstrlenW( s );
+              while( l && (s[l-1]=='\r' || s[l-1]=='\n') ) l--;
+              if( l )
+                tc->fWriteSubTextW( tc,s,l );
+            }
+            LocalFree( s );
+          }
+          break;
       }
       ptr += 2;
       format = ptr;
@@ -3593,13 +3612,14 @@ void mainCRTStartup( void )
         NULL,NULL,&si,&pi );
     if( !result )
     {
-      printf( "$Wcan't create process for '%s'\n",args );
+      DWORD e = GetLastError();
+      printf( "$Wcan't create process for '%s' (%e)\n",args,e );
       HeapFree( heap,0,tcOut );
       if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
       if( outName ) HeapFree( heap,0,outName );
       if( xmlName ) HeapFree( heap,0,xmlName );
       if( specificOptions ) HeapFree( heap,0,specificOptions );
-      writeCloseErrorPipe( errorPipe,HEOB_PROCESS_FAIL,0 );
+      writeCloseErrorPipe( errorPipe,HEOB_PROCESS_FAIL,e );
       ExitProcess( 0x7fffffff );
     }
 
