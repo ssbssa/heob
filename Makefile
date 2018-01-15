@@ -16,7 +16,11 @@ endif
 CC=$(PREF)gcc
 CXX=$(PREF)g++
 WINDRES=$(PREF)windres
+ifeq ($(wildcard dwarfstack/include/dwarfstack.h),)
 CPPFLAGS=-DNO_DWARFSTACK
+else
+CPPFLAGS=-Idwarfstack/include
+endif
 CFLAGS=-Wall -Wextra -Wshadow -fno-omit-frame-pointer -fno-optimize-sibling-calls
 CFLAGS_HEOB=$(CPPFLAGS) $(CFLAGS) -O3 -DHEOB_VER="\"$(HEOB_VERSION)\"" \
 	    -ffreestanding
