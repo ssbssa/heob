@@ -232,7 +232,7 @@ static NORETURN void exitWait( UINT c,int terminate )
 
   rd->opt.raiseException = 0;
 
-  if( rd->opt.newConsole&1 )
+  if( terminate<2 && rd->opt.newConsole&1 )
   {
     HANDLE in = GetStdHandle( STD_INPUT_HANDLE );
     if( FlushConsoleInputBuffer(in) )
@@ -243,16 +243,30 @@ static NORETURN void exitWait( UINT c,int terminate )
         "\n\n-------------------- APPLICATION EXIT --------------------\n";
       WriteFile( out,exitText,lstrlen(exitText),&written,NULL );
 
-      INPUT_RECORD ir;
-      DWORD didread;
-      while( ReadConsoleInput(in,&ir,1,&didread) &&
-          (ir.EventType!=KEY_EVENT || !ir.Event.KeyEvent.bKeyDown ||
-           ir.Event.KeyEvent.wVirtualKeyCode==VK_SHIFT ||
-           ir.Event.KeyEvent.wVirtualKeyCode==VK_CAPITAL ||
-           ir.Event.KeyEvent.wVirtualKeyCode==VK_CONTROL ||
-           ir.Event.KeyEvent.wVirtualKeyCode==VK_MENU ||
-           ir.Event.KeyEvent.wVirtualKeyCode==VK_LWIN ||
-           ir.Event.KeyEvent.wVirtualKeyCode==VK_RWIN) );
+      STARTUPINFOW si;
+      RtlZeroMemory( &si,sizeof(STARTUPINFOW) );
+      si.cb = sizeof(STARTUPINFOW);
+      PROCESS_INFORMATION pi;
+      RtlZeroMemory( &pi,sizeof(PROCESS_INFORMATION) );
+      wchar_t pause[] = L"cmd /c pause";
+      if( rd->fCreateProcessW(NULL,pause,NULL,NULL,FALSE,0,NULL,NULL,&si,&pi) )
+      {
+        CloseHandle( pi.hProcess );
+        CloseHandle( pi.hThread );
+      }
+      else
+      {
+        INPUT_RECORD ir;
+        DWORD didread;
+        while( ReadConsoleInput(in,&ir,1,&didread) &&
+            (ir.EventType!=KEY_EVENT || !ir.Event.KeyEvent.bKeyDown ||
+             ir.Event.KeyEvent.wVirtualKeyCode==VK_SHIFT ||
+             ir.Event.KeyEvent.wVirtualKeyCode==VK_CAPITAL ||
+             ir.Event.KeyEvent.wVirtualKeyCode==VK_CONTROL ||
+             ir.Event.KeyEvent.wVirtualKeyCode==VK_MENU ||
+             ir.Event.KeyEvent.wVirtualKeyCode==VK_LWIN ||
+             ir.Event.KeyEvent.wVirtualKeyCode==VK_RWIN) );
+      }
     }
   }
 
@@ -3578,9 +3592,10 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 
   ei.aq = 1;
   ei.nearest = 0;
+  DWORD ec = ep->ExceptionRecord->ExceptionCode;
 
   // access violation {{{
-  if( ep->ExceptionRecord->ExceptionCode==EXCEPTION_ACCESS_VIOLATION &&
+  if( ec==EXCEPTION_ACCESS_VIOLATION &&
       ep->ExceptionRecord->NumberParameters==2 )
   {
     uintptr_t addr = ep->ExceptionRecord->ExceptionInformation[1];
@@ -3617,7 +3632,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   }
   // }}}
   // VC c++ exception {{{
-  else if( ep->ExceptionRecord->ExceptionCode==EXCEPTION_VC_CPP_EXCEPTION &&
+  else if( ec==EXCEPTION_VC_CPP_EXCEPTION &&
       ep->ExceptionRecord->NumberParameters==THROW_ARGS )
   {
     DWORD *ptr = (DWORD*)ep->ExceptionRecord->ExceptionInformation[2];
@@ -3656,7 +3671,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   // stackwalk with dbghelp {{{
 #if USE_STACKWALK
   HMODULE symMod = NULL;
-  if( ep->ExceptionRecord->ExceptionCode!=EXCEPTION_STACK_OVERFLOW )
+  if( ec!=EXCEPTION_STACK_OVERFLOW )
     symMod = rd->fLoadLibraryA( "dbghelp.dll" );
   func_SymInitialize *fSymInitialize = NULL;
   func_StackWalk64 *fStackWalk64 = NULL;
@@ -3760,7 +3775,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 
 #undef ei
 
-  if( ep->ExceptionRecord->ExceptionCode==EXCEPTION_BREAKPOINT )
+  if( ec==EXCEPTION_BREAKPOINT )
   {
     ep->ContextRecord->cip++;
     return( EXCEPTION_CONTINUE_EXECUTION );
@@ -3771,7 +3786,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
     WaitForSingleObject( rd->exceptionWait,1000 );
 #endif
 
-  exitWait( 1,1 );
+  exitWait( 1,ec==EXCEPTION_STACK_OVERFLOW ? 2 : 1 );
 
   return( EXCEPTION_EXECUTE_HANDLER );
 }

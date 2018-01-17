@@ -21,7 +21,7 @@ CPPFLAGS=-DNO_DWARFSTACK
 else
 CPPFLAGS=-Idwarfstack/include
 endif
-CFLAGS=-Wall -Wextra -Wshadow -fno-omit-frame-pointer -fno-optimize-sibling-calls
+CFLAGS=-Wall -Wextra -Wshadow -Wwrite-strings -fno-omit-frame-pointer -fno-optimize-sibling-calls
 CFLAGS_HEOB=$(CPPFLAGS) $(CFLAGS) -O3 -DHEOB_VER="\"$(HEOB_VERSION)\"" \
 	    -ffreestanding
 LDFLAGS_HEOB=-s -nostdlib -lkernel32 -Wl,-dynamicbase
