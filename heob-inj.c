@@ -481,7 +481,8 @@ static NOINLINE void trackFree(
       if( !failed_realloc )
       {
         sa->alloc_q--;
-        if( i<sa->alloc_q ) sa->alloc_a[i] = sa->alloc_a[sa->alloc_q];
+        if( i<sa->alloc_q ) RtlMoveMemory(
+            &sa->alloc_a[i],&sa->alloc_a[sa->alloc_q],sizeof(allocation) );
       }
       else
         sa->alloc_a[i].frameCount = enable;

@@ -2522,7 +2522,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
     {
       allocation a;
       int idx = alloc_idxs[i];
-      a = alloc_a[idx];
+      RtlMoveMemory( &a,&alloc_a[idx],sizeof(allocation) );
       int j;
       for( j=i+1; j<alloc_q; j++ )
       {
@@ -2532,7 +2532,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
         a.count++;
       }
 
-      alloc_a[idx] = a;
+      RtlMoveMemory( &alloc_a[idx],&a,sizeof(allocation) );
       alloc_idxs[combined_q++] = idx;
       i = j;
     }
@@ -3050,6 +3050,29 @@ static void setHeobConsoleTitle( HANDLE heap,const wchar_t *prog )
 // }}}
 // main {{{
 
+static const char *funcnames[FT_COUNT] = {
+  "malloc",
+  "calloc",
+  "free",
+  "realloc",
+  "strdup",
+  "wcsdup",
+  "operator new",
+  "operator delete",
+  "operator new[]",
+  "operator delete[]",
+  "getcwd",
+  "wgetcwd",
+  "getdcwd",
+  "wgetdcwd",
+  "fullpath",
+  "wfullpath",
+  "tempnam",
+  "wtempnam",
+  "free_dbg",
+  "recalloc",
+};
+
 void mainCRTStartup( void )
 {
   DWORD startTicks = GetTickCount();
@@ -3337,29 +3360,6 @@ void mainCRTStartup( void )
     ExitProcess( 0x7fffffff );
   }
   // }}}
-
-  const char *funcnames[FT_COUNT] = {
-    "malloc",
-    "calloc",
-    "free",
-    "realloc",
-    "strdup",
-    "wcsdup",
-    "operator new",
-    "operator delete",
-    "operator new[]",
-    "operator delete[]",
-    "getcwd",
-    "wgetcwd",
-    "getdcwd",
-    "wgetdcwd",
-    "fullpath",
-    "wfullpath",
-    "tempnam",
-    "wtempnam",
-    "free_dbg",
-    "recalloc",
-  };
 
   // trace mode {{{
   if( a2l_mi_a )
