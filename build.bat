@@ -18,7 +18,7 @@ if not defined DWSTFLAGS set DWSTFLAGS=/D NO_DWARFSTACK
 if not defined HEOB_VERSION set HEOB_VERSION=vc-dev
 set HEOBVER=/D "HEOB_VER=\"%HEOB_VERSION%\""
 
-set CFLAGS=/GS- /W3 /Gy- /Zc:wchar_t %DWSTFLAGS% /Gm- /O2 /Ob0 /fp:precise /D "NDEBUG" /D "_CONSOLE" %HEOBVER% /D "_MBCS" /errorReport:prompt /GF- /WX- /Zc:forScope /GR- /Gd /Oy- /Oi /MD /openmp- /nologo /Fo"obj%bits%\\" /Ot /wd4996
+set CFLAGS=/GS- /W3 /Gy- /Zc:wchar_t %DWSTFLAGS% /Gm- /O2 /Ob0 /fp:precise /D "NDEBUG" /D "_CONSOLE" %HEOBVER% /D "_MBCS" /errorReport:prompt /GF- /WX /Zc:forScope /GR- /Gd /Oy- /Oi /MD /openmp- /nologo /Fo"obj%bits%\\" /Ot /wd4996
 set LDFLAGS=/NXCOMPAT /DYNAMICBASE "kernel32.lib" /OPT:REF /INCREMENTAL:NO /SUBSYSTEM:CONSOLE /OPT:ICF /ERRORREPORT:PROMPT /NOLOGO /NODEFAULTLIB /TLBID:1
 
 rc %RCFLAGS% /foobj%bits%\heob-ver.res heob-ver.rc
@@ -35,6 +35,5 @@ if errorlevel 1 goto error
 goto eof
 
 :error
-pause
 
 :eof
