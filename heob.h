@@ -465,6 +465,34 @@ int heobSubProcess(
     const char *subOutName,const char *subXmlName,const wchar_t *subCurDir,
     int raise_alloc_q,size_t *raise_alloc_a,const char *specificOptions );
 
+static inline int mul_overflow( size_t n,size_t s,size_t *res )
+{
+#ifndef _MSC_VER
+#if defined(__GNUC__) && __GNUC__>=5
+  if( UNLIKELY(__builtin_mul_overflow(n,s,res)) )
+    return( 1 );
+#else
+  if( UNLIKELY(s && n>(size_t)-1/s) )
+    return( 1 );
+  *res = n*s;
+#endif
+#else
+#ifndef _WIN64
+  unsigned __int64 res64 = __emulu( n,s );
+  if( UNLIKELY(res64>(size_t)res64) )
+    return( 1 );
+  *res = (size_t)res64;
+#else
+  size_t resHigh;
+  *res = _umul128( n,s,&resHigh );
+  if( UNLIKELY(resHigh) )
+    return( 1 );
+#endif
+#endif
+
+  return( 0 );
+}
+
 // }}}
 
 // vim:fdm=marker
