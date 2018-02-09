@@ -4589,12 +4589,23 @@ void mainCRTStartup( void )
 
         case WRITE_ALLOC_FAIL:
           {
+            size_t mul;
+            if( !readFile(readPipe,&mul,sizeof(size_t),&ov) )
+              break;
             if( !readFile(readPipe,aa,sizeof(allocation),&ov) )
               break;
 
             cacheSymbolData( aa,NULL,1,mi_a,mi_q,&ds,1 );
 
-            printf( "\n$Wallocation failed of %U bytes\n",aa->size );
+            size_t product;
+            int mulOverflow = mul_overflow(aa->size,mul,&product);
+            if( !mulOverflow ) aa->size = product;
+
+            if( mulOverflow )
+              printf( "\n$Wmultiplication overflow in allocation"
+                  " of %U * %U bytes\n",aa->size,mul );
+            else
+              printf( "\n$Wallocation failed of %U bytes\n",aa->size );
             printf( "$S  called on: $N(#%U)",aa->id );
             printThreadName( aa->threadNameIdx );
             printStackCount( aa->frames,aa->frameCount,
@@ -4606,8 +4617,12 @@ void mainCRTStartup( void )
 
               printf( "<error>\n" );
               printf( "  <kind>UninitValue</kind>\n" );
-              printf( "  <what>allocation failed of %U bytes (#%U)</what>\n",
-                  aa->size,aa->id );
+              if( mulOverflow )
+                printf( "  <what>multiplication overflow in allocation"
+                    " of %U * %U bytes (#%U)</what>\n",aa->size,mul,aa->id );
+              else
+                printf( "  <what>allocation failed of %U bytes (#%U)</what>\n",
+                    aa->size,aa->id );
               printf( "  <stack>\n" );
               printStackCount( aa->frames,aa->frameCount,
                   mi_a,mi_q,&ds,aa->ft,-1 );

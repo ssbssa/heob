@@ -1,6 +1,6 @@
 allocer: main()
 
-allocation failed of NUM bytes
+multiplication overflow in allocation of NUM * 2 bytes
   called on: (#2)
     [calloc]
 

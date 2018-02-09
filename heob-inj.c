@@ -960,8 +960,8 @@ static NOINLINE void trackFree(
 }
 #define trackFree(f,at,ft,fr,e) trackFree(f,at,ft,fr,e,RETURN_ADDRESS())
 
-static NOINLINE void trackAlloc(
-    void *alloc_ptr,size_t alloc_size,allocType at,funcType ft,
+static NOINLINE void trackAllocs(
+    void *alloc_ptr,size_t alloc_size,size_t mul,allocType at,funcType ft,
     void *caller )
 {
   GET_REMOTEDATA( rd );
@@ -1073,7 +1073,7 @@ static NOINLINE void trackAlloc(
   }
   // }}}
   // allocation failure {{{
-  else if( UNLIKELY(alloc_size) )
+  else if( UNLIKELY(alloc_size && mul) )
   {
     allocation a;
     a.ptr = NULL;
@@ -1108,6 +1108,7 @@ static NOINLINE void trackAlloc(
     DWORD written;
     int type = WRITE_ALLOC_FAIL;
     WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+    WriteFile( rd->master,&mul,sizeof(size_t),&written,NULL );
     WriteFile( rd->master,&a,sizeof(allocation),&written,NULL );
 
     int raiseException = rd->opt.raiseException;
@@ -1128,7 +1129,8 @@ static NOINLINE void trackAlloc(
   }
   // }}}
 }
-#define trackAlloc(a,s,at,ft) trackAlloc(a,s,at,ft,RETURN_ADDRESS())
+#define trackAlloc(a,s,at,ft) trackAllocs(a,s,1,at,ft,RETURN_ADDRESS())
+#define trackCalloc(a,s,m,at,ft) trackAllocs(a,s,m,at,ft,RETURN_ADDRESS())
 
 // }}}
 // replacements for memory allocation tracking {{{
@@ -1148,7 +1150,12 @@ static void *new_calloc( size_t n,size_t s )
   GET_REMOTEDATA( rd );
   void *b = rd->fcalloc( n,s );
 
-  trackAlloc( b,n*s,AT_MALLOC,FT_CALLOC );
+  if( LIKELY(b) )
+  {
+    n *= s;
+    s = 1;
+  }
+  trackCalloc( b,n,s,AT_MALLOC,FT_CALLOC );
 
   return( b );
 }
@@ -1363,7 +1370,12 @@ static void *new_recalloc( void *b,size_t n,size_t s )
   void *nb = rd->frecalloc( b,n,s );
 
   trackFree( b,AT_MALLOC,FT_RECALLOC,!nb && n && s,enable );
-  trackAlloc( nb,n*s,AT_MALLOC,FT_RECALLOC );
+  if( LIKELY(nb) )
+  {
+    n *= s;
+    s = 1;
+  }
+  trackCalloc( nb,n,s,AT_MALLOC,FT_RECALLOC );
 
   return( nb );
 }
