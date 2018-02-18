@@ -960,14 +960,11 @@ static NOINLINE void trackFree(
 }
 #define trackFree(f,at,ft,fr,e) trackFree(f,at,ft,fr,e,RETURN_ADDRESS())
 
-static NOINLINE void trackAllocs(
-    void *alloc_ptr,size_t alloc_size,size_t mul,allocType at,funcType ft,
-    void *caller )
+static NOINLINE void trackAllocSuccess(
+    void *alloc_ptr,size_t alloc_size,allocType at,funcType ft,void *caller )
 {
   GET_REMOTEDATA( rd );
 
-  // successful allocation {{{
-  if( alloc_ptr )
   {
     uintptr_t align = rd->opt.align;
     alloc_size += ( align - (alloc_size%align) )%align;
@@ -1071,9 +1068,12 @@ static NOINLINE void trackAllocs(
     if( raiseException )
       DebugBreak();
   }
-  // }}}
-  // allocation failure {{{
-  else if( UNLIKELY(alloc_size && mul) )
+}
+static NOINLINE void trackAllocFailure(
+    size_t alloc_size,size_t mul,allocType at,funcType ft,void *caller )
+{
+  GET_REMOTEDATA( rd );
+
   {
     allocation a;
     a.ptr = NULL;
@@ -1127,10 +1127,22 @@ static NOINLINE void trackAllocs(
     if( raiseException )
       DebugBreak();
   }
-  // }}}
 }
-#define trackAlloc(a,s,at,ft) trackAllocs(a,s,1,at,ft,RETURN_ADDRESS())
-#define trackCalloc(a,s,m,at,ft) trackAllocs(a,s,m,at,ft,RETURN_ADDRESS())
+#define trackAlloc(a,s,at,ft) \
+  do { \
+    size_t sVal = s; \
+    if( LIKELY(a) ) \
+      trackAllocSuccess( a,sVal,at,ft,RETURN_ADDRESS() ); \
+    else if( sVal ) \
+      trackAllocFailure( sVal,1,at,ft,RETURN_ADDRESS() ); \
+  } while( 0 )
+#define trackCalloc(a,s,m,at,ft) \
+  do { \
+    if( LIKELY(a) ) \
+      trackAllocSuccess( a,(s)*(m),at,ft,RETURN_ADDRESS() ); \
+    else if( (s) && (m) ) \
+      trackAllocFailure( s,m,at,ft,RETURN_ADDRESS() ); \
+  } while( 0 )
 
 // }}}
 // replacements for memory allocation tracking {{{
@@ -1150,11 +1162,6 @@ static void *new_calloc( size_t n,size_t s )
   GET_REMOTEDATA( rd );
   void *b = rd->fcalloc( n,s );
 
-  if( LIKELY(b) )
-  {
-    n *= s;
-    s = 1;
-  }
   trackCalloc( b,n,s,AT_MALLOC,FT_CALLOC );
 
   return( b );
@@ -1370,11 +1377,6 @@ static void *new_recalloc( void *b,size_t n,size_t s )
   void *nb = rd->frecalloc( b,n,s );
 
   trackFree( b,AT_MALLOC,FT_RECALLOC,!nb && n && s,enable );
-  if( LIKELY(nb) )
-  {
-    n *= s;
-    s = 1;
-  }
   trackCalloc( nb,n,s,AT_MALLOC,FT_RECALLOC );
 
   return( nb );
