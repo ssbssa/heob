@@ -249,7 +249,7 @@ TOK=[0;32mOK[0m
 TFAIL=[0;31mFAIL[0m
 
 test: heob$(BITS).exe allocer$(BITS).exe
-	@$(foreach t,$(TESTS),echo test$(BITS)-$(t): heob$(BITS) $(T_H$(t)) allocer$(BITS) $(T_A$(t)) "->" `./heob$(BITS).exe $(T_H$(t)) allocer$(BITS) $(T_A$(t)) |sed 's/0x[0-9A-Z]*/0xPTR/g;/^[ |]*0xPTR/d;s/\<of [1-9][0-9]*/of NUM/g;s/^[ |]*\[/    \[/;/^           *[^\[]/d' |diff -Naur --label "expected result" --label "actual result" testres/test-$(t).txt - >test$(BITS)-$(t).diff && echo "$(TOK)" && rm -f test$(BITS)-$(t).diff || echo "$(TFAIL)"`;)
+	@$(foreach t,$(TESTS),echo test$(BITS)-$(t): heob$(BITS) $(T_H$(t)) allocer$(BITS) $(T_A$(t)) "->" `./heob$(BITS).exe $(T_H$(t)) allocer$(BITS) $(T_A$(t)) </dev/null |sed 's/0x[0-9A-Z]*/0xPTR/g;/^[ |]*0xPTR/d;s/\<of [1-9][0-9]*/of NUM/g;s/^[ |]*\[/    \[/;/^           *[^\[]/d' |diff -Naur --label "expected result" --label "actual result" testres/test-$(t).txt - >test$(BITS)-$(t).diff && echo "$(TOK)" && rm -f test$(BITS)-$(t).diff || echo "$(TFAIL)"`;)
 
 testsc:
 	$(MAKE) BITS=32 testc
