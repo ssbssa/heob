@@ -885,7 +885,7 @@ static CODE_SEG(".text$2") HANDLE inject(
 #endif
     HANDLE in,HANDLE err,attachedProcessInfo **api,
     const char *subOutName,const char *subXmlName,const wchar_t *subCurDir,
-    unsigned *heobExit )
+    unsigned *heobExit,int **recordingRemote )
 {
   // injection data {{{
   func_inj *finj = &remoteCall;
@@ -1095,6 +1095,8 @@ static CODE_SEG(".text$2") HANDLE inject(
     ReadProcessMemory( process,data->api,*api,
         sizeof(attachedProcessInfo),NULL );
   }
+
+  *recordingRemote = data->recordingRemote;
   // }}}
 
   HeapFree( heap,0,fullData );
@@ -3852,6 +3854,7 @@ void mainCRTStartup( void )
   unsigned heobExit = HEOB_OK;
   unsigned heobExitData = 0;
   wchar_t *exePathW = HeapAlloc( heap,0,MAX_PATH*2 );
+  int *recordingRemote = NULL;
   if( isWrongArch(pi.hProcess) )
   {
     printf( "$Wonly " BITS "bit applications possible\n" );
@@ -3863,7 +3866,8 @@ void mainCRTStartup( void )
 #ifndef NO_DBGENG
         &exceptionWait,
 #endif
-        in,err,&api,subOutName,subXmlName,subCurDir,&heobExit );
+        in,err,&api,subOutName,subXmlName,subCurDir,&heobExit,
+        &recordingRemote );
   if( !readPipe )
     TerminateProcess( pi.hProcess,1 );
 
@@ -4191,8 +4195,25 @@ void mainCRTStartup( void )
               break;
           }
 
-          if( cmd>=0 )
+          if( cmd>=LEAK_RECORDING_CLEAR )
             WriteFile( controlPipe,&cmd,sizeof(int),&didread,NULL );
+          else if( cmd>=LEAK_RECORDING_STOP )
+          {
+            // start & stop only set the recording flag, and by doing this
+            // directly, it also works if the target process is
+            // suspended in a debugger
+            WriteProcessMemory( pi.hProcess,
+                recordingRemote,&cmd,sizeof(int),NULL );
+
+            int prevRecording = recording;
+            if( cmd==LEAK_RECORDING_START || recording>0 )
+              recording = cmd;
+            if( prevRecording!=recording )
+            {
+              clearRecording( err,consoleCoord,errColor );
+              showRecording( err,recording,&consoleCoord,&errColor );
+            }
+          }
         }
         continue;
         // }}}

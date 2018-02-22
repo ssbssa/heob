@@ -1,5 +1,5 @@
 
-//          Copyright Hannes Domani 2014 - 2017.
+//          Copyright Hannes Domani 2014 - 2018.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -4318,6 +4318,8 @@ VOID CALLBACK heob( ULONG_PTR arg )
       api->stderrName[0] = 0;
   }
   // }}}
+
+  rd->recordingRemote = &ld->recording;
 
   HANDLE initFinished = rd->initFinished;
   SetEvent( initFinished );
