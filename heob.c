@@ -6,7 +6,7 @@
 
 // includes {{{
 
-#include "heob.h"
+#include "heob-internal.h"
 
 #ifndef NO_DWARFSTACK
 #include <dwarfstack.h>

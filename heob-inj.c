@@ -6,7 +6,7 @@
 
 // includes {{{
 
-#include "heob.h"
+#include "heob-internal.h"
 
 #include <stdint.h>
 
