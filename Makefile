@@ -31,7 +31,7 @@ CFLAGS_TEST=$(CFLAGS) -O3 -g -D_GLIBCXX_INCLUDE_NEXT_C_HEADERS
 
 all: heob$(BITS).exe allocer$(BITS).exe
 
-heob$(BITS).exe: heob.c heob-inj.c heob-internal.h heob-ver$(BITS).o
+heob$(BITS).exe: heob.c heob-inj.c heob-internal.h heob.h heob-ver$(BITS).o
 	$(CC) $(CFLAGS_HEOB) -o$@ heob.c heob-inj.c heob-ver$(BITS).o $(LDFLAGS_HEOB) || { rm -f $@; exit 1; }
 
 heob-ver$(BITS).o: heob-ver.rc heob.manifest heob.ico Makefile

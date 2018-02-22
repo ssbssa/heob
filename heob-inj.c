@@ -3838,14 +3838,14 @@ DLLEXPORT int heob_control( int cmd )
   switch( cmd )
   {
     // stop/start {{{
-    case LEAK_RECORDING_STOP:
-    case LEAK_RECORDING_START:
+    case HEOB_LEAK_RECORDING_STOP:
+    case HEOB_LEAK_RECORDING_START:
       rd->recording = cmd;
       break;
       // }}}
 
       // clear {{{
-    case LEAK_RECORDING_CLEAR:
+    case HEOB_LEAK_RECORDING_CLEAR:
       {
         int i;
         for( i=0; i<=SPLIT_MASK; i++ )
@@ -3867,7 +3867,7 @@ DLLEXPORT int heob_control( int cmd )
       // }}}
 
       // show {{{
-    case LEAK_RECORDING_SHOW:
+    case HEOB_LEAK_RECORDING_SHOW:
       {
         int i;
         EnterCriticalSection( &rd->csWrite );
@@ -3895,7 +3895,7 @@ DLLEXPORT int heob_control( int cmd )
       // }}}
 
       // count {{{
-    case LEAK_COUNT:
+    case HEOB_LEAK_COUNT:
       {
         int i,j;
         int count = 0;
@@ -3916,7 +3916,7 @@ DLLEXPORT int heob_control( int cmd )
       // }}}
   }
 
-  if( cmd>=LEAK_RECORDING_STOP && cmd<=LEAK_RECORDING_SHOW )
+  if( cmd>=HEOB_LEAK_RECORDING_STOP && cmd<=HEOB_LEAK_RECORDING_SHOW )
   {
     EnterCriticalSection( &rd->csWrite );
 

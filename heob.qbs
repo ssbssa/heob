@@ -35,6 +35,7 @@ Project {
             "heob.c",
             "heob-inj.c",
             "heob-internal.h",
+            "heob.h",
             "heob-ver.rc",
             "heob.ico",
         ]

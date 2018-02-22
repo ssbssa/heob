@@ -4176,28 +4176,28 @@ void mainCRTStartup( void )
           {
             case 'N':
               if( recording>0 ) break;
-              cmd = LEAK_RECORDING_START;
+              cmd = HEOB_LEAK_RECORDING_START;
               break;
 
             case 'F':
               if( recording<=0 ) break;
-              cmd = LEAK_RECORDING_STOP;
+              cmd = HEOB_LEAK_RECORDING_STOP;
               break;
 
             case 'C':
               if( recording<0 ) break;
-              cmd = LEAK_RECORDING_CLEAR;
+              cmd = HEOB_LEAK_RECORDING_CLEAR;
               break;
 
             case 'S':
               if( recording<0 ) break;
-              cmd = LEAK_RECORDING_SHOW;
+              cmd = HEOB_LEAK_RECORDING_SHOW;
               break;
           }
 
-          if( cmd>=LEAK_RECORDING_CLEAR )
+          if( cmd>=HEOB_LEAK_RECORDING_CLEAR )
             WriteFile( controlPipe,&cmd,sizeof(int),&didread,NULL );
-          else if( cmd>=LEAK_RECORDING_STOP )
+          else if( cmd>=HEOB_LEAK_RECORDING_STOP )
           {
             // start & stop only set the recording flag, and by doing this
             // directly, it also works if the target process is
@@ -4206,7 +4206,7 @@ void mainCRTStartup( void )
                 recordingRemote,&cmd,sizeof(int),NULL );
 
             int prevRecording = recording;
-            if( cmd==LEAK_RECORDING_START || recording>0 )
+            if( cmd==HEOB_LEAK_RECORDING_START || recording>0 )
               recording = cmd;
             if( prevRecording!=recording )
             {
@@ -5113,14 +5113,14 @@ void mainCRTStartup( void )
 
             switch( cmd )
             {
-              case LEAK_RECORDING_START:
+              case HEOB_LEAK_RECORDING_START:
                 recording = 1;
                 break;
-              case LEAK_RECORDING_STOP:
+              case HEOB_LEAK_RECORDING_STOP:
                 if( recording>0 ) recording = 0;
                 break;
-              case LEAK_RECORDING_CLEAR:
-              case LEAK_RECORDING_SHOW:
+              case HEOB_LEAK_RECORDING_CLEAR:
+              case HEOB_LEAK_RECORDING_SHOW:
                 if( !recording ) recording = -1;
                 break;
             }

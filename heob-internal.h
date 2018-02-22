@@ -6,8 +6,8 @@
 
 // includes {{{
 
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+#define HEOB_INTERNAL
+#include "heob.h"
 
 #ifndef NO_DBGHELP
 #include <dbghelp.h>
@@ -333,16 +333,6 @@ enum
   WRITE_EXIT_TRACE,
   WRITE_EXIT,
   WRITE_RECORDING,
-};
-
-enum
-{
-  LEAK_RECORDING_STOP,
-  LEAK_RECORDING_START,
-  LEAK_RECORDING_CLEAR,
-  LEAK_RECORDING_SHOW,
-  LEAK_RECORDING_STATE,
-  LEAK_COUNT,
 };
 
 typedef struct
