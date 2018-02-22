@@ -1,5 +1,5 @@
 
-//          Copyright Hannes Domani 2014 - 2017.
+//          Copyright Hannes Domani 2014 - 2018.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -2155,12 +2155,10 @@ static void showRecording( HANDLE err,int recording,
 }
 
 static void clearRecording( HANDLE err,
-    COORD consoleCoord,int errColor,int clearAll )
+    COORD consoleCoord,int errColor )
 {
   COORD moveCoord = { consoleCoord.X,consoleCoord.Y-1 };
   SetConsoleCursorPosition( err,moveCoord );
-
-  if( !clearAll ) return;
 
   DWORD didwrite;
   int recTextLen = 41;
@@ -4201,7 +4199,7 @@ void mainCRTStartup( void )
       }
 
       if( in )
-        clearRecording( err,consoleCoord,errColor,1 );
+        clearRecording( err,consoleCoord,errColor );
 
       if( !GetOverlappedResult(readPipe,&ov,&didread,TRUE) ||
           didread<sizeof(int) )
