@@ -3894,6 +3894,11 @@ DLLEXPORT int heob_control( int cmd )
       break;
       // }}}
 
+      // state {{{
+    case HEOB_LEAK_RECORDING_STATE:
+      break;
+      // }}}
+
       // count {{{
     case HEOB_LEAK_COUNT:
       {
@@ -3914,6 +3919,9 @@ DLLEXPORT int heob_control( int cmd )
         return( count );
       }
       // }}}
+
+    default:
+      return( HEOB_INVALID_CMD );
   }
 
   if( cmd>=HEOB_LEAK_RECORDING_STOP && cmd<=HEOB_LEAK_RECORDING_SHOW )

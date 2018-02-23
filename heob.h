@@ -36,6 +36,8 @@ enum
   HEOB_HANDLE_EXCEPTIONS_ONLY = -1,
   // target process doesn't use a CRT
   HEOB_NO_CRT_FOUND = -2,
+  // invalid command
+  HEOB_INVALID_CMD = -3,
 
   // process was not started with heob
   HEOB_NOT_FOUND = -1024,
