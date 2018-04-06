@@ -13,8 +13,10 @@ of the offending instruction and buffer allocation are provided.
 When the program exits normally, stacktraces for all leaks are shown.
 
 
-compilation:
-------------
+## compilation:
+
+### MinGW
+
 The location of dwarfstack.h has to be provided.
 
     make CPPFLAGS="-I../dwarfstack/include"
@@ -23,9 +25,12 @@ Or disable dwarfstack completely (this is the default).
 
     make CPPFLAGS="-DNO_DWARFSTACK"
 
+### MSVC
 
-notes:
-------
+Run `build.bat` in the source directory.
+
+## notes:
+
 To get file/line information in stacktraces of executables with
 DWARF debug information (gcc), dwarfstack.dll needs to be available.
 For PDB debug information, dbghelp.dll is used.
