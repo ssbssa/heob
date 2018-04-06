@@ -2132,16 +2132,22 @@ static void showRecording( HANDLE err,int recording,
   WriteFile( err,recText+26,1,&didwrite,NULL );
   if( recording>=0 )
   {
+    WORD highlight = FOREGROUND_RED | FOREGROUND_BLUE | FOREGROUND_INTENSITY;
+    WORD xorClear = recording==2 ? BACKGROUND_GREEN : 0;
+    WORD xorShow = recording==3 ? BACKGROUND_GREEN : 0;
+    SetConsoleTextAttribute( err,errColor^xorClear );
     WriteFile( err,recText+27,1,&didwrite,NULL );
-    SetConsoleTextAttribute( err,
-        errColor^(FOREGROUND_RED|FOREGROUND_BLUE|FOREGROUND_INTENSITY) );
+    SetConsoleTextAttribute( err,errColor^(highlight|xorClear) );
     WriteFile( err,recText+28,1,&didwrite,NULL );
+    SetConsoleTextAttribute( err,errColor^xorClear );
+    WriteFile( err,recText+29,5,&didwrite,NULL );
     SetConsoleTextAttribute( err,errColor );
-    WriteFile( err,recText+29,7,&didwrite,NULL );
-    SetConsoleTextAttribute( err,
-        errColor^(FOREGROUND_RED|FOREGROUND_BLUE|FOREGROUND_INTENSITY) );
+    WriteFile( err,recText+34,1,&didwrite,NULL );
+    SetConsoleTextAttribute( err,errColor^xorShow );
+    WriteFile( err,recText+35,1,&didwrite,NULL );
+    SetConsoleTextAttribute( err,errColor^(highlight|xorShow) );
     WriteFile( err,recText+36,1,&didwrite,NULL );
-    SetConsoleTextAttribute( err,errColor );
+    SetConsoleTextAttribute( err,errColor^xorShow );
     WriteFile( err,recText+37,4,&didwrite,NULL );
   }
   else
@@ -2152,8 +2158,8 @@ static void showRecording( HANDLE err,int recording,
     WriteFile( err,recText+34,1,&didwrite,NULL );
     SetConsoleTextAttribute( err,errColor^BACKGROUND_INTENSITY );
     WriteFile( err,recText+35,6,&didwrite,NULL );
-    SetConsoleTextAttribute( err,errColor );
   }
+  SetConsoleTextAttribute( err,errColor );
 }
 
 static void clearRecording( HANDLE err,
@@ -4147,6 +4153,7 @@ void mainCRTStartup( void )
     COORD consoleCoord = { 0,0 };
     allocation *aa = HeapAlloc( heap,0,4*sizeof(allocation) );
     exceptionInfo *eiPtr = HeapAlloc( heap,0,sizeof(exceptionInfo) );
+    DWORD flashStart = 0;
     if( in ) showConsole();
     while( 1 )
     {
@@ -4160,9 +4167,31 @@ void mainCRTStartup( void )
           showRecording( err,recording,&consoleCoord,&errColor );
       }
 
+      DWORD waitTime = INFINITE;
+      // timeout of clear/show text flash {{{
+      if( recording>=2 )
+      {
+        DWORD ticks = GetTickCount();
+        if( ticks>=flashStart+500 )
+        {
+          flashStart = 0;
+          recording = 1;
+          clearRecording( err,consoleCoord,errColor );
+          showRecording( err,recording,&consoleCoord,&errColor );
+        }
+        else
+          waitTime = 500 + flashStart - ticks;
+      }
+      // }}}
       DWORD didread;
-      if( WaitForMultipleObjects(waitCount,handles,
-            FALSE,INFINITE)==WAIT_OBJECT_0+1 )
+      DWORD waitRet = WaitForMultipleObjects(
+          waitCount,handles,FALSE,waitTime );
+      if( waitRet==WAIT_TIMEOUT )
+      {
+        flashStart = GetTickCount() - 2000;
+        continue;
+      }
+      else if( waitRet==WAIT_OBJECT_0+1 )
       {
         // control leak recording {{{
         INPUT_RECORD ir;
@@ -4196,7 +4225,19 @@ void mainCRTStartup( void )
           }
 
           if( cmd>=HEOB_LEAK_RECORDING_CLEAR )
+          {
             WriteFile( controlPipe,&cmd,sizeof(int),&didread,NULL );
+
+            // start flash of text to visualize clear/show was done {{{
+            if( recording>0 )
+            {
+              flashStart = GetTickCount();
+              recording = cmd;
+              clearRecording( err,consoleCoord,errColor );
+              showRecording( err,recording,&consoleCoord,&errColor );
+            }
+            // }}}
+          }
           else if( cmd>=HEOB_LEAK_RECORDING_STOP )
           {
             // start & stop only set the recording flag, and by doing this
