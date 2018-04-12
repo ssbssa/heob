@@ -854,6 +854,18 @@ void choose( int arg )
             sizeof(exceptionParams)/sizeof(ULONG_PTR),exceptionParams );
       }
       break;
+
+    case 46:
+      // leak types: only reachable
+      {
+        char *indirectly_reachable = (char*)malloc( 16 );
+        static char **reachable;
+        reachable = (char**)malloc( sizeof(char*) );
+        *reachable = indirectly_reachable;
+        mem[1] = reachable[0][0];
+        *(char****)indirectly_reachable = &reachable;
+      }
+      break;
   }
 
   mem = (char*)realloc( mem,30 );

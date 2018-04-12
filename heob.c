@@ -2695,7 +2695,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
             content_ptrs,mi_a,mi_q,ds );
       printf( "  $Wsum: %U B / %d\n",sg->allocSumSize,sg->allocSum );
     }
-    if( tcXml && l<lDetails )
+    if( sg->allocSum && tcXml && l<lDetails )
     {
       textColor *tcOrig = tc;
       ds->tc = tcXml;

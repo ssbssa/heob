@@ -1,0 +1,7 @@
+allocer: main()
+
+leaks (reachable):
+  sum: 8 B / 1
+leaks (indirectly reachable):
+  sum: 16 B / 1
+exit code: 46 (0xPTR)
