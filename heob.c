@@ -4171,8 +4171,9 @@ void mainCRTStartup( void )
       // timeout of clear/show text flash {{{
       if( recording>=2 )
       {
-        DWORD ticks = GetTickCount();
-        if( ticks>=flashStart+500 )
+#define FLASH_TIMEOUT 500
+        DWORD flashTime = GetTickCount() - flashStart;
+        if( flashTime>=FLASH_TIMEOUT )
         {
           flashStart = 0;
           recording = 1;
@@ -4180,7 +4181,7 @@ void mainCRTStartup( void )
           showRecording( err,recording,&consoleCoord,&errColor );
         }
         else
-          waitTime = 500 + flashStart - ticks;
+          waitTime = FLASH_TIMEOUT - flashTime;
       }
       // }}}
       DWORD didread;
@@ -4188,7 +4189,7 @@ void mainCRTStartup( void )
           waitCount,handles,FALSE,waitTime );
       if( waitRet==WAIT_TIMEOUT )
       {
-        flashStart = GetTickCount() - 2000;
+        flashStart = GetTickCount() - 2*FLASH_TIMEOUT;
         continue;
       }
       else if( waitRet==WAIT_OBJECT_0+1 )
