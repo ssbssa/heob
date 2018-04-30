@@ -866,6 +866,16 @@ void choose( int arg )
         *(char****)indirectly_reachable = &reachable;
       }
       break;
+
+    case 47:
+      // sampling profiler test
+      {
+        for( int i=0; i<10; i++ )
+          Sleep( 2 );
+        for( int i=0; i<1000; i++ )
+          Sleep( 2 );
+      }
+      break;
   }
 
   mem = (char*)realloc( mem,30 );

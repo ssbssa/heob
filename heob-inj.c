@@ -173,6 +173,7 @@ typedef struct localData
   CRITICAL_SECTION csAllocId;
   CRITICAL_SECTION csWrite;
   CRITICAL_SECTION csFreedMod;
+  CRITICAL_SECTION csSampling;
 
   // protected by csMod {{{
 
@@ -215,6 +216,14 @@ typedef struct localData
   int freed_mod_q;
   int freed_mod_s;
   int inExit;
+
+  // }}}
+  // protected by csSampling {{{
+
+  allocation *samp_a;
+  int samp_q;
+  int samp_s;
+  size_t samp_id;
 
   // }}}
 }
@@ -1393,7 +1402,7 @@ static void *new_recalloc( void *b,size_t n,size_t s )
 // }}}
 // transfer leak data {{{
 
-static void writeLeakMods( allocation *exitTrace )
+static void writeLeakMods( allocation *exitTrace,int sampling )
 {
   GET_REMOTEDATA( rd );
 
@@ -1408,6 +1417,8 @@ static void writeLeakMods( allocation *exitTrace )
       writeModsFind( sa->alloc_a,sa->alloc_q,&mi_a,&mi_q );
     }
   }
+  if( sampling && rd->samp_q )
+    writeModsFind( rd->samp_a,rd->samp_q,&mi_a,&mi_q );
   if( exitTrace )
     writeModsFind( exitTrace,1,&mi_a,&mi_q );
   writeModsSend( mi_a,mi_q );
@@ -1799,6 +1810,13 @@ static VOID WINAPI new_ExitProcess( UINT c )
 {
   GET_REMOTEDATA( rd );
 
+  if( rd->opt.samplingInterval )
+  {
+    EnterCriticalSection( &rd->csSampling );
+    rd->opt.samplingInterval = 0;
+    LeaveCriticalSection( &rd->csSampling );
+  }
+
   EnterCriticalSection( &rd->csFreedMod );
   rd->inExit = 1;
   LeaveCriticalSection( &rd->csFreedMod );
@@ -1830,7 +1848,17 @@ static VOID WINAPI new_ExitProcess( UINT c )
   if( rd->opt.leakDetails>1 )
     findLeakTypes();
 
-  writeLeakMods( exitTracePtr );
+  writeLeakMods( exitTracePtr,1 );
+
+  if( rd->samp_q )
+  {
+    int type = WRITE_SAMPLING;
+    DWORD written;
+    WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+    WriteFile( rd->master,&rd->samp_q,sizeof(int),&written,NULL );
+    WriteFile( rd->master,rd->samp_a,rd->samp_q*sizeof(allocation),
+        &written,NULL );
+  }
 
   // free modules {{{
   if( rd->freed_mod_q )
@@ -2117,6 +2145,7 @@ int heobSubProcess(
       ADD_OPTION( " -z",minLeakSize,0 );
       ADD_OPTION( " -k",leakRecording,0 );
       ADD_OPTION( " -D",exceptionDetails,0 );
+      ADD_OPTION( " -I",samplingInterval,0 );
 #undef ADD_OPTION
       int i;
       for( i=0; i<raise_alloc_q; i++ )
@@ -3695,6 +3724,13 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 {
   GET_REMOTEDATA( rd );
 
+  if( rd->opt.samplingInterval )
+  {
+    EnterCriticalSection( &rd->csSampling );
+    rd->opt.samplingInterval = 0;
+    LeaveCriticalSection( &rd->csSampling );
+  }
+
   exceptionInfo *eiPtr = rd->ei;
 #define ei (*eiPtr)
 
@@ -3925,7 +3961,7 @@ DLLEXPORT int heob_control( int cmd )
         for( i=0; i<=SPLIT_MASK; i++ )
           EnterCriticalSection( &rd->splits[i].cs );
 
-        writeLeakMods( NULL );
+        writeLeakMods( NULL,0 );
         writeLeakData();
 
         LeaveCriticalSection( &rd->csWrite );
@@ -3998,6 +4034,86 @@ static DWORD WINAPI controlThread( LPVOID arg )
   DWORD didread;
   while( ReadFile(controlPipe,&cmd,sizeof(int),&didread,NULL) )
     heob_control( cmd );
+
+  return( 0 );
+}
+
+// }}}
+// sampling profiler {{{
+
+static DWORD WINAPI samplingThread( LPVOID arg )
+{
+  GET_REMOTEDATA( rd );
+
+  HANDLE thread = arg;
+
+#if USE_STACKWALK
+  initDbghelp();
+#endif
+
+  int interval = rd->opt.samplingInterval;
+
+  CONTEXT context;
+  EnterCriticalSection( &rd->csSampling );
+  while( 1 )
+  {
+    LeaveCriticalSection( &rd->csSampling );
+    Sleep( interval );
+    EnterCriticalSection( &rd->csSampling );
+
+    if( !rd->opt.samplingInterval ) break;
+
+    {
+      // allocate sampling stack space {{{
+      if( rd->samp_q>=rd->samp_s )
+      {
+        rd->samp_s += 1024;
+        allocation *samp_an;
+        if( !rd->samp_a )
+          samp_an = HeapAlloc(
+              rd->heap,0,rd->samp_s*sizeof(allocation) );
+        else
+          samp_an = HeapReAlloc(
+              rd->heap,0,rd->samp_a,rd->samp_s*sizeof(allocation) );
+        if( UNLIKELY(!samp_an) )
+        {
+          LeaveCriticalSection( &rd->csSampling );
+          EnterCriticalSection( &rd->csWrite );
+
+          DWORD written;
+          int type = WRITE_MAIN_ALLOC_FAIL;
+          WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+
+          LeaveCriticalSection( &rd->csWrite );
+
+          exitWait( 1,0 );
+        }
+        rd->samp_a = samp_an;
+      }
+      // }}}
+
+      allocation *a = &rd->samp_a[rd->samp_q];
+      RtlZeroMemory( a,sizeof(allocation) );
+      a->size = 1;
+      a->ft = FT_COUNT;
+      a->id = ++rd->samp_id;
+
+      RtlZeroMemory( &context,sizeof(CONTEXT) );
+      context.ContextFlags = CONTEXT_FULL;
+
+      if( UNLIKELY(SuspendThread(thread)==(DWORD)-1) ) break;
+
+      GetThreadContext( thread,&context );
+      stackwalk( thread,&context,a->frames );
+
+      ResumeThread( thread );
+
+      rd->samp_q++;
+    }
+  }
+  LeaveCriticalSection( &rd->csSampling );
+
+  CloseHandle( thread );
 
   return( 0 );
 }
@@ -4174,6 +4290,8 @@ VOID CALLBACK heob( ULONG_PTR arg )
     fInitCritSecEx( &ld->csMod,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
     fInitCritSecEx( &ld->csWrite,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
     fInitCritSecEx( &ld->csFreedMod,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
+    if( ld->opt.samplingInterval )
+      fInitCritSecEx( &ld->csSampling,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
     int i;
     if( ld->splits )
     {
@@ -4193,6 +4311,8 @@ VOID CALLBACK heob( ULONG_PTR arg )
     InitializeCriticalSection( &ld->csMod );
     InitializeCriticalSection( &ld->csWrite );
     InitializeCriticalSection( &ld->csFreedMod );
+    if( ld->opt.samplingInterval )
+      InitializeCriticalSection( &ld->csSampling );
     int i;
     if( ld->splits )
     {
@@ -4395,6 +4515,15 @@ VOID CALLBACK heob( ULONG_PTR arg )
   if( controlPipe )
   {
     HANDLE thread = CreateThread( NULL,0,&controlThread,controlPipe,0,NULL );
+    CloseHandle( thread );
+  }
+
+  if( ld->opt.samplingInterval )
+  {
+    HANDLE mainThread;
+    DuplicateHandle( GetCurrentProcess(),GetCurrentThread(),
+        GetCurrentProcess(),&mainThread,0,FALSE,DUPLICATE_SAME_ACCESS );
+    HANDLE thread = CreateThread( NULL,0,&samplingThread,mainThread,0,NULL );
     CloseHandle( thread );
   }
 }

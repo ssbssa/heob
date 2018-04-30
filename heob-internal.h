@@ -251,6 +251,7 @@ typedef struct
   int children;
   int leakErrorExitCode;
   int exceptionDetails;
+  int samplingInterval;
 }
 options;
 
@@ -333,6 +334,7 @@ enum
   WRITE_EXIT_TRACE,
   WRITE_EXIT,
   WRITE_RECORDING,
+  WRITE_SAMPLING,
 };
 
 typedef struct

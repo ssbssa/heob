@@ -2294,7 +2294,8 @@ static void printStackGroup( stackGroup *sg,
 #ifndef NO_THREADNAMES
     threadNameInfo *threadName_a,int threadName_q,
 #endif
-    unsigned char **content_ptrs,modInfo *mi_a,int mi_q,dbgsym *ds )
+    unsigned char **content_ptrs,modInfo *mi_a,int mi_q,dbgsym *ds,
+    int sampling )
 {
   int i;
   stackGroup *child_a = sg->child_a;
@@ -2307,7 +2308,7 @@ static void printStackGroup( stackGroup *sg,
 #ifndef NO_THREADNAMES
         threadName_a,threadName_q,
 #endif
-        content_ptrs,mi_a,mi_q,ds );
+        content_ptrs,mi_a,mi_q,ds,sampling );
   }
 
   int allocStart = sg->allocStart;
@@ -2328,9 +2329,14 @@ static void printStackGroup( stackGroup *sg,
       if( combSize<opt->minLeakSize ) continue;
 
       int indent = stackIndent + ( allocCount>1 );
-      printf( "  %i$W%U B ",indent,a->size );
-      if( a->count>1 )
-        printf( "* %d = %U B ",a->count,combSize );
+      if( !sampling )
+      {
+        printf( "  %i$W%U B ",indent,a->size );
+        if( a->count>1 )
+          printf( "* %d = %U B ",a->count,combSize );
+      }
+      else
+        printf( "  %i$W%d sample%s ",indent,a->count,a->count>1?"s":NULL );
       printf( "$N(#%U)",a->id );
       printThreadName( a->threadNameIdx );
       if( allocCount>1 )
@@ -2388,7 +2394,10 @@ static void printStackGroup( stackGroup *sg,
   if( allocCount>1 )
   {
     int indent = stackIndent + 1;
-    printf( "  %i$Wsum: %U B / %d\n",indent,sg->allocSumSize,sg->allocSum );
+    if( !sampling )
+      printf( "  %i$Wsum: %U B / %d\n",indent,sg->allocSumSize,sg->allocSum );
+    else
+      printf( "  %i$Wsum: %d samples\n",indent,sg->allocSum );
   }
   if( !stackIsPrinted )
     printStackCount( a->frames+(a->frameCount-(sg->stackStart+sg->stackCount)),
@@ -2401,7 +2410,7 @@ static int printStackGroupXml( stackGroup *sg,
     threadNameInfo *threadName_a,int threadName_q,
 #endif
     modInfo *mi_a,int mi_q,dbgsym *ds,const char **leakTypeNames,
-    int xmlRecordNum )
+    int xmlRecordNum,int sampling )
 {
   int i;
   stackGroup *child_a = sg->child_a;
@@ -2414,7 +2423,7 @@ static int printStackGroupXml( stackGroup *sg,
 #ifndef NO_THREADNAMES
         threadName_a,threadName_q,
 #endif
-        mi_a,mi_q,ds,leakTypeNames,xmlRecordNum );
+        mi_a,mi_q,ds,leakTypeNames,xmlRecordNum,sampling );
   }
 
   int allocStart = sg->allocStart;
@@ -2427,6 +2436,7 @@ static int printStackGroupXml( stackGroup *sg,
     "Leak_StillReachable",
     "Leak_StillReachable",
   };
+  if( sampling ) xmlLeakTypeNames[0] = "SyscallParam";
   textColor *tc = ds->tc;
   size_t minLeakSize = ds->opt->minLeakSize;
   if( sg->stackStart+sg->stackCount==a->frameCount )
@@ -2456,9 +2466,14 @@ static int printStackGroupXml( stackGroup *sg,
 #endif
       printf( "  <kind>%s</kind>\n",xmlLeakTypeNames[a->lt] );
       printf( "  <xwhat>\n" );
-      printf( "    <text>%U bytes in %d blocks are %s"
-          " in loss record %d of %d (#%U)</text>\n",
-          combSize,a->count,leakTypeNames[a->lt],xmlRecordNum,alloc_q,a->id );
+      if( !sampling )
+        printf( "    <text>%U bytes in %d blocks are %s"
+            " in loss record %d of %d (#%U)</text>\n",
+            combSize,a->count,leakTypeNames[a->lt],
+            xmlRecordNum,alloc_q,a->id );
+      else
+        printf( "    <text>%d sample%s (#%U)</text>\n",
+            a->count,a->count>1?"s":NULL,a->id );
       printf( "    <leakedbytes>%U</leakedbytes>\n",a->size );
       printf( "    <leakedblocks>%d</leakedblocks>\n",a->count );
       printf( "  </xwhat>\n" );
@@ -2493,12 +2508,12 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
     threadNameInfo *threadName_a,int threadName_q,
 #endif
     options *opt,textColor *tc,dbgsym *ds,HANDLE heap,textColor *tcXml,
-    uintptr_t threadInitAddr )
+    uintptr_t threadInitAddr,int sampling )
 {
   if( !tc->out && !tcXml ) return;
 
   printf( "\n" );
-  if( opt->handleException>=2 )
+  if( opt->handleException>=2 && !sampling )
     return;
 
   if( !alloc_q && !alloc_ignore_q && !alloc_ignore_ind_q )
@@ -2509,6 +2524,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
 
   int i;
   int leakDetails = opt->leakDetails;
+  if( sampling ) leakDetails = 1;
   int combined_q = alloc_q;
   int *alloc_idxs =
     leakDetails ? HeapAlloc( heap,0,alloc_q*sizeof(int) ) : NULL;
@@ -2683,7 +2699,10 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
     stackGroup *sg = sg_a + l;
     if( sg->allocSum && tc->out )
     {
-      printf( "$Sleaks" );
+      if( !sampling )
+        printf( "$Sleaks" );
+      else
+        printf( "$Sprofiling samples" );
       if( leakTypeNamesRef )
         printf( " (%s)",leakTypeNamesRef[l] );
       printf( ":\n" );
@@ -2692,8 +2711,11 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
 #ifndef NO_THREADNAMES
             threadName_a,threadName_q,
 #endif
-            content_ptrs,mi_a,mi_q,ds );
-      printf( "  $Wsum: %U B / %d\n",sg->allocSumSize,sg->allocSum );
+            content_ptrs,mi_a,mi_q,ds,sampling );
+      if( !sampling )
+        printf( "  $Wsum: %U B / %d\n",sg->allocSumSize,sg->allocSum );
+      else
+        printf( "  $Wsum: %d samples\n",sg->allocSum );
     }
     if( sg->allocSum && tcXml && l<lDetails )
     {
@@ -2703,7 +2725,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
 #ifndef NO_THREADNAMES
           threadName_a,threadName_q,
 #endif
-          mi_a,mi_q,ds,leakTypeNames,xmlRecordNum );
+          mi_a,mi_q,ds,leakTypeNames,xmlRecordNum,sampling );
       ds->tc = tcOrig;
     }
     freeStackGroup( sg,heap );
@@ -2898,6 +2920,10 @@ char *readOption( char *args,options *opt,int *raq,size_t **raa,HANDLE heap )
 
     case 'D':
       opt->exceptionDetails = atoi( args+2 );
+      break;
+
+    case 'I':
+      opt->samplingInterval = atoi( args+2 );
       break;
 
     default:
@@ -3122,6 +3148,7 @@ void mainCRTStartup( void )
     0,                              // hook children
     0,                              // use leak and error count for exit code
     0,                              // show exception details
+    0,                              // sampling profiler interval
   };
   // }}}
   options opt = defopt;
@@ -3530,6 +3557,8 @@ void mainCRTStartup( void )
       printf( "    $I-E$BX$N    "
           "use leak and error count for exit code [$I%d$N]\n",
           defopt.leakErrorExitCode );
+      printf( "    $I-I$BX$N    sampling profiler interval [$I%d$N]\n",
+          defopt.samplingInterval );
       printf( "    $I-O$BA$I:$BO$I; a$Npplication specific $Io$Nptions\n" );
       printf( "    $I-X$N     "
           "disable heob via application specific options\n" );
@@ -4343,7 +4372,7 @@ void mainCRTStartup( void )
 #ifndef NO_THREADNAMES
                 threadName_a,threadName_q,
 #endif
-                &opt,tc,&ds,heap,tcXml,(uintptr_t)RETURN_ADDRESS() );
+                &opt,tc,&ds,heap,tcXml,(uintptr_t)RETURN_ADDRESS(),0 );
 
             if( alloc_a ) HeapFree( heap,0,alloc_a );
             if( contents ) HeapFree( heap,0,contents );
@@ -5166,6 +5195,33 @@ void mainCRTStartup( void )
                 if( !recording ) recording = -1;
                 break;
             }
+          }
+          break;
+
+          // }}}
+          // sampling profiler {{{
+
+        case WRITE_SAMPLING:
+          {
+            allocation *samp_a = NULL;
+            int samp_q = 0;
+
+            if( !readFile(readPipe,&samp_q,sizeof(int),&ov) )
+              break;
+            if( samp_q )
+            {
+              samp_a = HeapAlloc( heap,0,samp_q*sizeof(allocation) );
+              if( !readFile(readPipe,samp_a,samp_q*sizeof(allocation),&ov) )
+                break;
+            }
+
+            printLeaks( samp_a,samp_q,0,0,0,0,NULL,mi_a,mi_q,
+#ifndef NO_THREADNAMES
+                threadName_a,threadName_q,
+#endif
+                &opt,tc,&ds,heap,tcXml,(uintptr_t)RETURN_ADDRESS(),1 );
+
+            if( samp_a ) HeapFree( heap,0,samp_a );
           }
           break;
 
