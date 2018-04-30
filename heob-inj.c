@@ -161,6 +161,14 @@ typedef struct localData
   char subXmlName[MAX_PATH];
   wchar_t subCurDir[MAX_PATH];
 
+#if USE_STACKWALK
+  HMODULE dbghelp;
+  func_StackWalk64 *fStackWalk64;
+  func_SymCleanup *fSymCleanup;
+  PFUNCTION_TABLE_ACCESS_ROUTINE64 fSymFunctionTableAccess64;
+  PGET_MODULE_BASE_ROUTINE64 fSymGetModuleBase64;
+#endif
+
   CRITICAL_SECTION csMod;
   CRITICAL_SECTION csAllocId;
   CRITICAL_SECTION csWrite;
@@ -3540,6 +3548,50 @@ DLLEXPORT VOID heob_exit( UINT c )
 // }}}
 // exception handler {{{
 
+#if USE_STACKWALK
+static int initDbghelp( void )
+{
+  GET_REMOTEDATA( rd );
+
+  if( rd->dbghelp ) return( 1 );
+
+  HMODULE symMod = rd->fLoadLibraryA( "dbghelp.dll" );
+  if( !symMod ) return( 0 );
+
+  func_SymInitialize *fSymInitialize =
+    rd->fGetProcAddress( symMod,"SymInitialize" );
+  rd->fStackWalk64 = rd->fGetProcAddress( symMod,"StackWalk64" );
+  rd->fSymCleanup = rd->fGetProcAddress( symMod,"SymCleanup" );
+
+  if( !fSymInitialize || !rd->fStackWalk64 || !rd->fSymCleanup )
+  {
+    rd->fFreeLibrary( symMod );
+    return( 0 );
+  }
+
+  rd->dbghelp = symMod;
+  rd->fSymFunctionTableAccess64 =
+    rd->fGetProcAddress( symMod,"SymFunctionTableAccess64" );
+  rd->fSymGetModuleBase64 =
+    rd->fGetProcAddress( symMod,"SymGetModuleBase64" );
+
+  fSymInitialize( GetCurrentProcess(),NULL,TRUE );
+
+  return( 1 );
+}
+
+static void freeDbghelp( void )
+{
+  GET_REMOTEDATA( rd );
+
+  if( !rd->dbghelp ) return;
+
+  rd->fSymCleanup( GetCurrentProcess() );
+  rd->fFreeLibrary( rd->dbghelp );
+  rd->dbghelp = NULL;
+}
+#endif
+
 #ifdef _WIN64
 #define csp Rsp
 #define cip Rip
@@ -3559,6 +3611,86 @@ DLLEXPORT VOID heob_exit( UINT c )
 #define THROW_ARGS 3
 #define CALC_THROW_ARG(mod,ofs) (ofs)
 #endif
+static void stackwalk( HANDLE thread,CONTEXT *contextRecord,void **frames )
+{
+#if !USE_STACKWALK
+  (void)thread;
+#endif
+
+  GET_REMOTEDATA( rd );
+
+  int count = 0;
+
+  // stackwalk with dbghelp {{{
+#if USE_STACKWALK
+  if( rd->dbghelp )
+  {
+    CONTEXT context;
+    RtlMoveMemory( &context,contextRecord,sizeof(CONTEXT) );
+
+    STACKFRAME64 stack;
+    RtlZeroMemory( &stack,sizeof(STACKFRAME64) );
+    stack.AddrPC.Offset = context.cip;
+    stack.AddrPC.Mode = AddrModeFlat;
+    stack.AddrStack.Offset = context.csp;
+    stack.AddrStack.Mode = AddrModeFlat;
+    stack.AddrFrame.Offset = context.cfp;
+    stack.AddrFrame.Mode = AddrModeFlat;
+
+    HANDLE process = GetCurrentProcess();
+
+    func_StackWalk64 *fStackWalk64 = rd->fStackWalk64;
+    PFUNCTION_TABLE_ACCESS_ROUTINE64 fSymFunctionTableAccess64 =
+      rd->fSymFunctionTableAccess64;
+    PGET_MODULE_BASE_ROUTINE64 fSymGetModuleBase64 =
+      rd->fSymGetModuleBase64;
+
+    while( count<PTRS )
+    {
+      if( !fStackWalk64(MACH_TYPE,process,thread,&stack,&context,
+            NULL,fSymFunctionTableAccess64,fSymGetModuleBase64,NULL) )
+        break;
+
+      uintptr_t frame = (uintptr_t)stack.AddrPC.Offset;
+      if( !count ) frame++;
+      else if( !frame ) break;
+      frames[count++] = (void*)frame;
+
+      if( count==1 && rd->opt.useSp )
+      {
+        ULONG_PTR csp = *(ULONG_PTR*)contextRecord->csp;
+        if( csp ) frames[count++] = (void*)csp;
+      }
+    }
+  }
+  else
+#endif
+  // }}}
+  // manual stackwalk {{{
+  {
+    frames[count++] = (void*)( contextRecord->cip+1 );
+    if( rd->opt.useSp )
+    {
+      ULONG_PTR csp = *(ULONG_PTR*)contextRecord->csp;
+      if( csp ) frames[count++] = (void*)csp;
+    }
+    ULONG_PTR *sp = (ULONG_PTR*)contextRecord->cfp;
+    while( count<PTRS )
+    {
+      if( IsBadReadPtr(sp,2*sizeof(ULONG_PTR)) || !sp[0] || !sp[1] )
+        break;
+
+      ULONG_PTR *np = (ULONG_PTR*)sp[0];
+      frames[count++] = (void*)sp[1];
+
+      sp = np;
+    }
+  }
+  // }}}
+  if( count<PTRS )
+    RtlZeroMemory( frames+count,(PTRS-count)*sizeof(void*) );
+}
+
 static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 {
   GET_REMOTEDATA( rd );
@@ -3638,101 +3770,19 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   }
   // }}}
 
-  int count = 0;
-  void **frames = ei.aa[0].frames;
 #ifndef NO_THREADNAMES
   ei.aa[0].threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
 #endif
 
-  // stackwalk with dbghelp {{{
 #if USE_STACKWALK
-  HMODULE symMod = NULL;
   if( ec!=EXCEPTION_STACK_OVERFLOW )
-    symMod = rd->fLoadLibraryA( "dbghelp.dll" );
-  func_SymInitialize *fSymInitialize = NULL;
-  func_StackWalk64 *fStackWalk64 = NULL;
-  func_SymCleanup *fSymCleanup = NULL;
-  if( symMod )
-  {
-    fSymInitialize = rd->fGetProcAddress( symMod,"SymInitialize" );
-    fStackWalk64 = rd->fGetProcAddress( symMod,"StackWalk64" );
-    fSymCleanup = rd->fGetProcAddress( symMod,"SymCleanup" );
-  }
-
-  if( fSymInitialize && fStackWalk64 && fSymCleanup )
-  {
-    CONTEXT context;
-    RtlMoveMemory( &context,ep->ContextRecord,sizeof(CONTEXT) );
-
-    STACKFRAME64 stack;
-    RtlZeroMemory( &stack,sizeof(STACKFRAME64) );
-    stack.AddrPC.Offset = context.cip;
-    stack.AddrPC.Mode = AddrModeFlat;
-    stack.AddrStack.Offset = context.csp;
-    stack.AddrStack.Mode = AddrModeFlat;
-    stack.AddrFrame.Offset = context.cfp;
-    stack.AddrFrame.Mode = AddrModeFlat;
-
-    HANDLE process = GetCurrentProcess();
-    HANDLE thread = GetCurrentThread();
-
-    fSymInitialize( process,NULL,TRUE );
-
-    PFUNCTION_TABLE_ACCESS_ROUTINE64 fSymFunctionTableAccess64 =
-      rd->fGetProcAddress( symMod,"SymFunctionTableAccess64" );
-    PGET_MODULE_BASE_ROUTINE64 fSymGetModuleBase64 =
-      rd->fGetProcAddress( symMod,"SymGetModuleBase64" );
-
-    while( count<PTRS )
-    {
-      if( !fStackWalk64(MACH_TYPE,process,thread,&stack,&context,
-            NULL,fSymFunctionTableAccess64,fSymGetModuleBase64,NULL) )
-        break;
-
-      uintptr_t frame = (uintptr_t)stack.AddrPC.Offset;
-      if( !count ) frame++;
-      else if( !frame ) break;
-      frames[count++] = (void*)frame;
-
-      if( count==1 && rd->opt.useSp )
-      {
-        ULONG_PTR csp = *(ULONG_PTR*)ep->ContextRecord->csp;
-        if( csp ) frames[count++] = (void*)csp;
-      }
-    }
-
-    fSymCleanup( process );
-  }
-  else
+    initDbghelp();
 #endif
-  // }}}
-  // manual stackwalk {{{
-  {
-    frames[count++] = (void*)( ep->ContextRecord->cip+1 );
-    if( rd->opt.useSp )
-    {
-      ULONG_PTR csp = *(ULONG_PTR*)ep->ContextRecord->csp;
-      if( csp ) frames[count++] = (void*)csp;
-    }
-    ULONG_PTR *sp = (ULONG_PTR*)ep->ContextRecord->cfp;
-    while( count<PTRS )
-    {
-      if( IsBadReadPtr(sp,2*sizeof(ULONG_PTR)) || !sp[0] || !sp[1] )
-        break;
 
-      ULONG_PTR *np = (ULONG_PTR*)sp[0];
-      frames[count++] = (void*)sp[1];
-
-      sp = np;
-    }
-  }
-  // }}}
-  if( count<PTRS )
-    RtlZeroMemory( frames+count,(PTRS-count)*sizeof(void*) );
+  stackwalk( GetCurrentThread(),ep->ContextRecord,ei.aa[0].frames );
 
 #if USE_STACKWALK
-  if( symMod )
-    rd->fFreeLibrary( symMod );
+  freeDbghelp();
 #endif
 
   RtlMoveMemory( &ei.er,ep->ExceptionRecord,sizeof(EXCEPTION_RECORD) );
