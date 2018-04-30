@@ -2108,6 +2108,7 @@ int heobSubProcess(
       ADD_OPTION( " -g",groupLeaks,1 );
       ADD_OPTION( " -z",minLeakSize,0 );
       ADD_OPTION( " -k",leakRecording,0 );
+      ADD_OPTION( " -D",exceptionDetails,0 );
 #undef ADD_OPTION
       int i;
       for( i=0; i<raise_alloc_q; i++ )
