@@ -1919,6 +1919,33 @@ static BOOL WINAPI new_TerminateProcess( HANDLE p,UINT c )
 // replacement for RaiseException {{{
 
 #ifndef NO_THREADNAMES
+static void **getTlsSlotAddress( HANDLE thread,DWORD tls )
+{
+  GET_REMOTEDATA( rd );
+
+  THREAD_BASIC_INFORMATION tbi;
+  RtlZeroMemory( &tbi,sizeof(THREAD_BASIC_INFORMATION) );
+  if( rd->fNtQueryInformationThread(thread,
+        ThreadBasicInformation,&tbi,sizeof(tbi),NULL)==0 &&
+      (ULONG_PTR)tbi.ClientId.UniqueProcess==GetCurrentProcessId() )
+  {
+    PTEB teb = tbi.TebBaseAddress;
+    if( tls<64 )
+    {
+      void **tlsArr = teb->TlsSlots;
+      return( &tlsArr[tls] );
+    }
+    else
+    {
+      void **tlsArr = teb->TlsExpansionSlots;
+      if( tlsArr )
+        return( &tlsArr[tls-64] );
+    }
+  }
+
+  return( NULL );
+}
+
 #pragma pack(push,8)
 typedef struct tagTHREADNAME_INFO
 {
@@ -2000,25 +2027,9 @@ static VOID WINAPI new_RaiseException(
             THREAD_QUERY_INFORMATION,FALSE,threadId );
         if( thread )
         {
-          THREAD_BASIC_INFORMATION tbi;
-          RtlZeroMemory( &tbi,sizeof(THREAD_BASIC_INFORMATION) );
-          if( rd->fNtQueryInformationThread(thread,
-                ThreadBasicInformation,&tbi,sizeof(tbi),NULL)==0 &&
-              (ULONG_PTR)tbi.ClientId.UniqueProcess==GetCurrentProcessId() )
-          {
-            PTEB teb = tbi.TebBaseAddress;
-            if( threadNameTls<64 )
-            {
-              void **tlsArr = teb->TlsSlots;
-              tlsArr[threadNameTls] = (void*)(uintptr_t)newNameIdx;
-            }
-            else
-            {
-              void **tlsArr = teb->TlsExpansionSlots;
-              if( tlsArr )
-                tlsArr[threadNameTls-64] = (void*)(uintptr_t)newNameIdx;
-            }
-          }
+          void **tlsSlotAddress = getTlsSlotAddress( thread,threadNameTls );
+          if( tlsSlotAddress )
+            *tlsSlotAddress = (void*)(uintptr_t)newNameIdx;
           CloseHandle( thread );
         }
       }
