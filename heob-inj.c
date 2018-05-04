@@ -1696,7 +1696,7 @@ static void findLeakTypeWork( leakTypeInfo *lti )
   }
 }
 
-static DWORD WINAPI findLeakTypeThread( LPVOID arg )
+static CODE_SEG(".text$5") DWORD WINAPI findLeakTypeThread( LPVOID arg )
 {
   leakTypeThreadInfo *ltti = arg;
   HANDLE startEvent = ltti->startEvent;
@@ -4026,7 +4026,7 @@ DLLEXPORT int heob_control( int cmd )
   return( prevRecording );
 }
 
-static DWORD WINAPI controlThread( LPVOID arg )
+static CODE_SEG(".text$5") DWORD WINAPI controlThread( LPVOID arg )
 {
   HANDLE controlPipe = arg;
 
@@ -4041,7 +4041,7 @@ static DWORD WINAPI controlThread( LPVOID arg )
 // }}}
 // sampling profiler {{{
 
-static DWORD WINAPI samplingThread( LPVOID arg )
+static CODE_SEG(".text$5") DWORD WINAPI samplingThread( LPVOID arg )
 {
   GET_REMOTEDATA( rd );
 
@@ -4117,6 +4117,91 @@ static DWORD WINAPI samplingThread( LPVOID arg )
 
   return( 0 );
 }
+
+// }}}
+// dll entry point {{{
+
+#ifndef NO_THREADNAMES
+static CODE_SEG(".text$6") BOOL WINAPI dllMain(
+    HINSTANCE hinstDLL,DWORD fdwReason,LPVOID lpvReserved )
+{
+  (void)hinstDLL;
+  (void)lpvReserved;
+
+  if( fdwReason!=DLL_THREAD_ATTACH && fdwReason!=DLL_THREAD_DETACH )
+    return( TRUE );
+
+  GET_REMOTEDATA( rd );
+
+  if( fdwReason==DLL_THREAD_ATTACH )
+  {
+    // ignore threads of heob {{{
+    if( !rd->fNtQueryInformationThread ) return( TRUE );
+
+    uintptr_t startAddr;
+    if( rd->fNtQueryInformationThread(GetCurrentThread(),
+          ThreadQuerySetWin32StartAddress,&startAddr,sizeof(uintptr_t),NULL) )
+      return( TRUE );
+
+    if( startAddr>(uintptr_t)rd->heobMod && startAddr<(uintptr_t)&dllMain )
+      return( TRUE );
+    // }}}
+  }
+
+  return( TRUE );
+}
+
+static void setupDllMain( void )
+{
+  GET_REMOTEDATA( rd );
+
+  PEB *peb = GET_PEB();
+  PEB_LDR_DATA *ldrData = peb->Ldr;
+  LIST_ENTRY *head = &ldrData->InMemoryOrderModuleList;
+  LIST_ENTRY *entry = head;
+  LIST_ENTRY *heobEntry = NULL;
+  do
+  {
+    LDR_DATA_TABLE_ENTRY *ldrEntry = CONTAINING_RECORD(
+        entry,LDR_DATA_TABLE_ENTRY,InMemoryOrderModuleList );
+    if( ldrEntry->DllBase==rd->heobMod )
+    {
+      // dll entry point
+      ldrEntry->EntryPoint = &dllMain;
+      // flags needed to get thread attach/detach notifications
+      ldrEntry->Flags = IMAGE_DLL | PROCESS_ATTACH_CALLED;
+
+      heobEntry = &ldrEntry->InInitializationOrderModuleList;
+      break;
+    }
+    entry = entry->Flink;
+  }
+  while( entry!=head );
+
+  head = &ldrData->InInitializationOrderModuleList;
+  entry = head;
+  do
+  {
+    if( entry==heobEntry )
+    {
+      // heob is already in the module initialization list
+      heobEntry = NULL;
+      break;
+    }
+    entry = entry->Flink;
+  }
+  while( entry!=head );
+
+  if( heobEntry )
+  {
+    // add heob to module initialization list
+    heobEntry->Blink = head->Blink;
+    heobEntry->Flink = head;
+    head->Blink->Flink = heobEntry;
+    head->Blink = heobEntry;
+  }
+}
+#endif
 
 // }}}
 // injected main {{{
@@ -4526,6 +4611,17 @@ VOID CALLBACK heob( ULONG_PTR arg )
     HANDLE thread = CreateThread( NULL,0,&samplingThread,mainThread,0,NULL );
     CloseHandle( thread );
   }
+
+  // setup loaded heob executable as dll with proper DllMain() {{{
+#ifndef NO_THREADNAMES
+  if( !ld->noCRT )
+  {
+    dllMain( ld->heobMod,DLL_THREAD_ATTACH,NULL );
+
+    setupDllMain();
+  }
+#endif
+  // }}}
 }
 
 // }}}

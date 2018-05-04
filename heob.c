@@ -3105,7 +3105,7 @@ static const char *funcnames[FT_COUNT] = {
   "recalloc",
 };
 
-void mainCRTStartup( void )
+CODE_SEG(".text$7") void mainCRTStartup( void )
 {
   DWORD startTicks = GetTickCount();
   int writeProcessPid = 0;

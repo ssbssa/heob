@@ -58,9 +58,11 @@
 #ifndef _WIN64
 #define IL_INT LONG
 #define IL_INC(var) InterlockedIncrement(var)
+#define GET_PEB() ((PEB*)__readfsdword(0x30))
 #else
 #define IL_INT LONGLONG
 #define IL_INC(var) InterlockedIncrement64(var)
+#define GET_PEB() ((PEB*)__readgsqword(0x60))
 #endif
 
 #define EXCEPTION_VC_CPP_EXCEPTION 0xe06d7363
@@ -382,6 +384,7 @@ PROCESSINFOCLASS;
 typedef enum
 {
   ThreadBasicInformation,
+  ThreadQuerySetWin32StartAddress=9,
 }
 THREADINFOCLASS;
 
@@ -415,6 +418,50 @@ typedef struct _TEB
   PVOID *TlsExpansionSlots;
 }
 TEB, *PTEB;
+
+typedef struct _PEB_LDR_DATA
+{
+  BYTE Reserved1[8];
+  PVOID Reserved2[1];
+  LIST_ENTRY InLoadOrderModuleList;
+  LIST_ENTRY InMemoryOrderModuleList;
+  LIST_ENTRY InInitializationOrderModuleList;
+}
+PEB_LDR_DATA, *PPEB_LDR_DATA;
+
+enum
+{
+  IMAGE_DLL            =0x00000004,
+  PROCESS_ATTACH_CALLED=0x00080000,
+};
+
+typedef struct _LDR_DATA_TABLE_ENTRY
+{
+  LIST_ENTRY InLoadOrderModuleList;
+  LIST_ENTRY InMemoryOrderModuleList;
+  LIST_ENTRY InInitializationOrderModuleList;
+  PVOID DllBase;
+  PVOID EntryPoint;
+  PVOID Reserved3;
+  UNICODE_STRING FullDllName;
+  UNICODE_STRING BaseDllName;
+  ULONG Flags;
+}
+LDR_DATA_TABLE_ENTRY, *PLDR_DATA_TABLE_ENTRY;
+
+typedef struct _PEB
+{
+  BYTE Reserved1[2];
+  BYTE BeingDebugged;
+#ifndef _WIN64
+  BYTE Reserved2[1];
+  PVOID Reserved3[2];
+#else
+  BYTE Reserved2[21];
+#endif
+  PPEB_LDR_DATA Ldr;
+}
+PEB, *PPEB;
 
 typedef struct _CLIENT_ID
 {
