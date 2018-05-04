@@ -997,23 +997,6 @@ static NOINLINE void trackAllocSuccess(
     a.id = IL_INC( (IL_INT*)&rd->cur_id );
 #ifndef NO_THREADNAMES
     a.threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
-    if( UNLIKELY(!a.threadNameIdx) )
-    {
-      DWORD threadNameTls = rd->threadNameTls;
-
-      EnterCriticalSection( &rd->csWrite );
-
-      int threadNameIdx = (int)(uintptr_t)TlsGetValue( threadNameTls );
-      if( !threadNameIdx )
-      {
-        threadNameIdx = --rd->threadNameIdx;
-        TlsSetValue( threadNameTls,(void*)(uintptr_t)threadNameIdx );
-      }
-
-      LeaveCriticalSection( &rd->csWrite );
-
-      a.threadNameIdx = threadNameIdx;
-    }
 #endif
 
     CAPTURE_STACK_TRACE( 2,PTRS,a.frames,caller,rd->maxStackFrames );
@@ -4145,6 +4128,22 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
 
     if( startAddr>(uintptr_t)rd->heobMod && startAddr<(uintptr_t)&dllMain )
       return( TRUE );
+    // }}}
+
+    // thread number {{{
+    DWORD threadNameTls = rd->threadNameTls;
+    if( !TlsGetValue(threadNameTls) )
+    {
+      EnterCriticalSection( &rd->csWrite );
+
+      if( !TlsGetValue(threadNameTls) )
+      {
+        int threadNameIdx = --rd->threadNameIdx;
+        TlsSetValue( threadNameTls,(void*)(uintptr_t)threadNameIdx );
+      }
+
+      LeaveCriticalSection( &rd->csWrite );
+    }
     // }}}
   }
 
