@@ -876,6 +876,16 @@ void choose( int arg )
           Sleep( 2 );
       }
       break;
+
+    case 48:
+      // thread number
+      {
+        HANDLE thread = CreateThread(
+            NULL,0,&namedThread,NULL,0,NULL );
+        WaitForSingleObject( thread,INFINITE );
+        CloseHandle( thread );
+      }
+      break;
   }
 
   mem = (char*)realloc( mem,30 );

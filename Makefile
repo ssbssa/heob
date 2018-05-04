@@ -239,7 +239,9 @@ T_H83=-h2
 T_A83=45
 T_H84=-p1 -a8 -f0 -l2 -d0
 T_A84=46
-TESTS:=$(shell seq -w 01 84)
+T_H85=-p1 -a8 -f0
+T_A85=48
+TESTS:=$(shell seq -w 01 85)
 
 testres:
 	mkdir -p $@
