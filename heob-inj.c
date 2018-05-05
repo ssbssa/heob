@@ -65,6 +65,16 @@ typedef struct
 }
 modMemType;
 
+typedef struct
+{
+  HANDLE thread;
+#ifndef NO_THREADNAMES
+  void **threadNameIdxSlot;
+#endif
+  DWORD threadId;
+}
+threadSamplingType;
+
 typedef struct localData
 {
   func_LoadLibraryA *fLoadLibraryA;
@@ -81,8 +91,8 @@ typedef struct localData
 
 #ifndef NO_THREADNAMES
   func_RaiseException *fRaiseException;
-  func_NtQueryInformationThread *fNtQueryInformationThread;
 #endif
+  func_NtQueryInformationThread *fNtQueryInformationThread;
 
   func_malloc *fmalloc;
   func_calloc *fcalloc;
@@ -224,6 +234,9 @@ typedef struct localData
   int samp_q;
   int samp_s;
   size_t samp_id;
+  threadSamplingType *thread_samp_a;
+  int thread_samp_q;
+  int thread_samp_s;
 
   // }}}
 }
@@ -4037,9 +4050,9 @@ static CODE_SEG(".text$5") DWORD WINAPI controlThread( LPVOID arg )
 
 static CODE_SEG(".text$5") DWORD WINAPI samplingThread( LPVOID arg )
 {
-  GET_REMOTEDATA( rd );
+  (void)arg;
 
-  HANDLE thread = arg;
+  GET_REMOTEDATA( rd );
 
 #if USE_STACKWALK
   initDbghelp();
@@ -4057,6 +4070,10 @@ static CODE_SEG(".text$5") DWORD WINAPI samplingThread( LPVOID arg )
 
     if( !rd->opt.samplingInterval ) break;
 
+    threadSamplingType *thread_samp_a = rd->thread_samp_a;
+    int thread_samp_q = rd->thread_samp_q;
+    int ts;
+    for( ts=0; ts<thread_samp_q; ts++ )
     {
       // allocate sampling stack space {{{
       if( rd->samp_q>=rd->samp_s )
@@ -4092,10 +4109,18 @@ static CODE_SEG(".text$5") DWORD WINAPI samplingThread( LPVOID arg )
       a->ft = FT_COUNT;
       a->id = ++rd->samp_id;
 
+#ifndef NO_THREADNAMES
+      void **threadNameIdxSlot = thread_samp_a[ts].threadNameIdxSlot;
+      if( threadNameIdxSlot )
+        a->threadNameIdx = (int)(uintptr_t)*threadNameIdxSlot;
+#endif
+
+      HANDLE thread = thread_samp_a[ts].thread;
+
       RtlZeroMemory( &context,sizeof(CONTEXT) );
       context.ContextFlags = CONTEXT_FULL;
 
-      if( UNLIKELY(SuspendThread(thread)==(DWORD)-1) ) break;
+      if( UNLIKELY(SuspendThread(thread)==(DWORD)-1) ) continue;
 
       GetThreadContext( thread,&context );
       stackwalk( thread,&context,a->frames );
@@ -4107,15 +4132,12 @@ static CODE_SEG(".text$5") DWORD WINAPI samplingThread( LPVOID arg )
   }
   LeaveCriticalSection( &rd->csSampling );
 
-  CloseHandle( thread );
-
   return( 0 );
 }
 
 // }}}
 // dll entry point {{{
 
-#ifndef NO_THREADNAMES
 static CODE_SEG(".text$6") BOOL WINAPI dllMain(
     HINSTANCE hinstDLL,DWORD fdwReason,LPVOID lpvReserved )
 {
@@ -4129,11 +4151,13 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
 
   if( fdwReason==DLL_THREAD_ATTACH )
   {
+    HANDLE thread = GetCurrentThread();
+
     // ignore threads of heob {{{
     if( !rd->fNtQueryInformationThread ) return( TRUE );
 
     uintptr_t startAddr;
-    if( rd->fNtQueryInformationThread(GetCurrentThread(),
+    if( rd->fNtQueryInformationThread(thread,
           ThreadQuerySetWin32StartAddress,&startAddr,sizeof(uintptr_t),NULL) )
       return( TRUE );
 
@@ -4142,6 +4166,7 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
     // }}}
 
     // thread number {{{
+#ifndef NO_THREADNAMES
     DWORD threadNameTls = rd->threadNameTls;
     if( !TlsGetValue(threadNameTls) )
     {
@@ -4154,6 +4179,78 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
       }
 
       LeaveCriticalSection( &rd->csWrite );
+    }
+#endif
+    // }}}
+
+    // add sampling thread {{{
+    if( rd->opt.samplingInterval )
+    {
+      EnterCriticalSection( &rd->csSampling );
+
+      // allocate sampling thread space {{{
+      if( rd->thread_samp_q>=rd->thread_samp_s )
+      {
+        rd->thread_samp_s += 64;
+        threadSamplingType *thread_samp_an;
+        if( !rd->thread_samp_a )
+          thread_samp_an = HeapAlloc(
+              rd->heap,0,rd->thread_samp_s*sizeof(threadSamplingType) );
+        else
+          thread_samp_an = HeapReAlloc( rd->heap,0,
+              rd->thread_samp_a,rd->thread_samp_s*sizeof(threadSamplingType) );
+        if( UNLIKELY(!thread_samp_an) )
+        {
+          LeaveCriticalSection( &rd->csSampling );
+          EnterCriticalSection( &rd->csWrite );
+
+          DWORD written;
+          int type = WRITE_MAIN_ALLOC_FAIL;
+          WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+
+          LeaveCriticalSection( &rd->csWrite );
+
+          exitWait( 1,0 );
+        }
+        rd->thread_samp_a = thread_samp_an;
+      }
+      // }}}
+
+      threadSamplingType *tst = &rd->thread_samp_a[rd->thread_samp_q++];
+      DuplicateHandle( GetCurrentProcess(),thread,
+          GetCurrentProcess(),&tst->thread,0,FALSE,DUPLICATE_SAME_ACCESS );
+#ifndef NO_THREADNAMES
+      tst->threadNameIdxSlot = getTlsSlotAddress( thread,threadNameTls );
+#endif
+      tst->threadId = GetCurrentThreadId();
+
+      LeaveCriticalSection( &rd->csSampling );
+    }
+    // }}}
+  }
+  else // DLL_THREAD_DETACH
+  {
+    // remove sampling thread {{{
+    if( rd->opt.samplingInterval )
+    {
+      EnterCriticalSection( &rd->csSampling );
+
+      threadSamplingType *thread_samp_a = rd->thread_samp_a;
+      int thread_samp_q = rd->thread_samp_q;
+      DWORD threadId = GetCurrentThreadId();
+      int ts;
+      for( ts=thread_samp_q-1; ts>=0; ts-- )
+      {
+        if( thread_samp_a[ts].threadId!=threadId ) continue;
+
+        thread_samp_q = --rd->thread_samp_q;
+        CloseHandle( thread_samp_a[ts].thread );
+        if( ts<thread_samp_q )
+          thread_samp_a[ts] = thread_samp_a[thread_samp_q];
+        break;
+      }
+
+      LeaveCriticalSection( &rd->csSampling );
     }
     // }}}
   }
@@ -4211,7 +4308,6 @@ static void setupDllMain( void )
     head->Blink = heobEntry;
   }
 }
-#endif
 
 // }}}
 // injected main {{{
@@ -4448,11 +4544,11 @@ VOID CALLBACK heob( ULONG_PTR arg )
     ld->raise_id = *(ld->raise_alloc_a++);
   }
 
-#ifndef NO_THREADNAMES
   HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
   if( ntdll )
     ld->fNtQueryInformationThread = rd->fGetProcAddress(
         ntdll,"NtQueryInformationThread" );
+#ifndef NO_THREADNAMES
   ld->threadNameTls = TlsAlloc();
 #endif
 
@@ -4615,22 +4711,17 @@ VOID CALLBACK heob( ULONG_PTR arg )
 
   if( ld->opt.samplingInterval )
   {
-    HANDLE mainThread;
-    DuplicateHandle( GetCurrentProcess(),GetCurrentThread(),
-        GetCurrentProcess(),&mainThread,0,FALSE,DUPLICATE_SAME_ACCESS );
-    HANDLE thread = CreateThread( NULL,0,&samplingThread,mainThread,0,NULL );
+    HANDLE thread = CreateThread( NULL,0,&samplingThread,NULL,0,NULL );
     CloseHandle( thread );
   }
 
   // setup loaded heob executable as dll with proper DllMain() {{{
-#ifndef NO_THREADNAMES
-  if( !ld->noCRT )
+  if( !ld->noCRT || ld->opt.samplingInterval )
   {
     dllMain( ld->heobMod,DLL_THREAD_ATTACH,NULL );
 
     setupDllMain();
   }
-#endif
   // }}}
 }
 
