@@ -140,6 +140,130 @@ typedef BOOL WINAPI func_StackWalk64(
 #endif
 
 // }}}
+// ntdll.dll function definitions {{{
+
+typedef enum
+{
+  ObjectNameInformation=1,
+}
+OBJECT_INFORMATION_CLASS;
+
+typedef enum
+{
+  ProcessImageFileName=27,
+}
+PROCESSINFOCLASS;
+
+typedef enum
+{
+  ThreadBasicInformation,
+  ThreadQuerySetWin32StartAddress=9,
+}
+THREADINFOCLASS;
+
+typedef struct
+{
+  USHORT Length;
+  USHORT MaximumLength;
+  PWSTR Buffer;
+}
+UNICODE_STRING;
+
+typedef struct
+{
+  UNICODE_STRING Name;
+  WCHAR NameBuffer[0xffff];
+}
+OBJECT_NAME_INFORMATION;
+
+typedef struct _TEB
+{
+  PVOID ExceptionList;
+  PVOID StackBase;
+  PVOID StackLimit;
+  BYTE Reserved1[1952];
+  PVOID Reserved2[409];
+  PVOID TlsSlots[64];
+  BYTE Reserved3[8];
+  PVOID Reserved4[26];
+  PVOID ReservedForOle;
+  PVOID Reserved5[4];
+  PVOID *TlsExpansionSlots;
+}
+TEB, *PTEB;
+
+typedef struct _PEB_LDR_DATA
+{
+  BYTE Reserved1[8];
+  PVOID Reserved2[1];
+  LIST_ENTRY InLoadOrderModuleList;
+  LIST_ENTRY InMemoryOrderModuleList;
+  LIST_ENTRY InInitializationOrderModuleList;
+}
+PEB_LDR_DATA, *PPEB_LDR_DATA;
+
+enum
+{
+  IMAGE_DLL            =0x00000004,
+  PROCESS_ATTACH_CALLED=0x00080000,
+};
+
+typedef struct _LDR_DATA_TABLE_ENTRY
+{
+  LIST_ENTRY InLoadOrderModuleList;
+  LIST_ENTRY InMemoryOrderModuleList;
+  LIST_ENTRY InInitializationOrderModuleList;
+  PVOID DllBase;
+  PVOID EntryPoint;
+  PVOID Reserved3;
+  UNICODE_STRING FullDllName;
+  UNICODE_STRING BaseDllName;
+  ULONG Flags;
+}
+LDR_DATA_TABLE_ENTRY, *PLDR_DATA_TABLE_ENTRY;
+
+typedef struct _PEB
+{
+  BYTE Reserved1[2];
+  BYTE BeingDebugged;
+#ifndef _WIN64
+  BYTE Reserved2[1];
+  PVOID Reserved3[2];
+#else
+  BYTE Reserved2[21];
+#endif
+  PPEB_LDR_DATA Ldr;
+}
+PEB, *PPEB;
+
+typedef struct _CLIENT_ID
+{
+  PVOID UniqueProcess;
+  PVOID UniqueThread;
+}
+CLIENT_ID, *PCLIENT_ID;
+
+typedef DWORD KPRIORITY;
+
+typedef struct _THREAD_BASIC_INFORMATION
+{
+  LONG ExitStatus;
+  PTEB TebBaseAddress;
+  CLIENT_ID ClientId;
+  KAFFINITY AffinityMask;
+  KPRIORITY Priority;
+  KPRIORITY BasePriority;
+}
+THREAD_BASIC_INFORMATION, *PTHREAD_BASIC_INFORMATION;
+
+typedef LONG NTAPI func_NtQueryObject(
+    HANDLE,OBJECT_INFORMATION_CLASS,PVOID,ULONG,PULONG );
+typedef LONG NTAPI func_NtQueryInformationProcess(
+    HANDLE,PROCESSINFOCLASS,PVOID,ULONG,PULONG );
+typedef LONG NTAPI func_NtQueryInformationThread(
+    HANDLE,THREADINFOCLASS,PVOID,ULONG,PULONG );
+
+// }}}
 // disable memmove/memset {{{
 
 #undef RtlMoveMemory
@@ -365,130 +489,6 @@ typedef struct
 }
 threadNameInfo;
 #endif
-
-// }}}
-// ntdll.dll function definitions {{{
-
-typedef enum
-{
-  ObjectNameInformation=1,
-}
-OBJECT_INFORMATION_CLASS;
-
-typedef enum
-{
-  ProcessImageFileName=27,
-}
-PROCESSINFOCLASS;
-
-typedef enum
-{
-  ThreadBasicInformation,
-  ThreadQuerySetWin32StartAddress=9,
-}
-THREADINFOCLASS;
-
-typedef struct
-{
-  USHORT Length;
-  USHORT MaximumLength;
-  PWSTR Buffer;
-}
-UNICODE_STRING;
-
-typedef struct
-{
-  UNICODE_STRING Name;
-  WCHAR NameBuffer[0xffff];
-}
-OBJECT_NAME_INFORMATION;
-
-typedef struct _TEB
-{
-  PVOID ExceptionList;
-  PVOID StackBase;
-  PVOID StackLimit;
-  BYTE Reserved1[1952];
-  PVOID Reserved2[409];
-  PVOID TlsSlots[64];
-  BYTE Reserved3[8];
-  PVOID Reserved4[26];
-  PVOID ReservedForOle;
-  PVOID Reserved5[4];
-  PVOID *TlsExpansionSlots;
-}
-TEB, *PTEB;
-
-typedef struct _PEB_LDR_DATA
-{
-  BYTE Reserved1[8];
-  PVOID Reserved2[1];
-  LIST_ENTRY InLoadOrderModuleList;
-  LIST_ENTRY InMemoryOrderModuleList;
-  LIST_ENTRY InInitializationOrderModuleList;
-}
-PEB_LDR_DATA, *PPEB_LDR_DATA;
-
-enum
-{
-  IMAGE_DLL            =0x00000004,
-  PROCESS_ATTACH_CALLED=0x00080000,
-};
-
-typedef struct _LDR_DATA_TABLE_ENTRY
-{
-  LIST_ENTRY InLoadOrderModuleList;
-  LIST_ENTRY InMemoryOrderModuleList;
-  LIST_ENTRY InInitializationOrderModuleList;
-  PVOID DllBase;
-  PVOID EntryPoint;
-  PVOID Reserved3;
-  UNICODE_STRING FullDllName;
-  UNICODE_STRING BaseDllName;
-  ULONG Flags;
-}
-LDR_DATA_TABLE_ENTRY, *PLDR_DATA_TABLE_ENTRY;
-
-typedef struct _PEB
-{
-  BYTE Reserved1[2];
-  BYTE BeingDebugged;
-#ifndef _WIN64
-  BYTE Reserved2[1];
-  PVOID Reserved3[2];
-#else
-  BYTE Reserved2[21];
-#endif
-  PPEB_LDR_DATA Ldr;
-}
-PEB, *PPEB;
-
-typedef struct _CLIENT_ID
-{
-  PVOID UniqueProcess;
-  PVOID UniqueThread;
-}
-CLIENT_ID, *PCLIENT_ID;
-
-typedef DWORD KPRIORITY;
-
-typedef struct _THREAD_BASIC_INFORMATION
-{
-  LONG ExitStatus;
-  PTEB TebBaseAddress;
-  CLIENT_ID ClientId;
-  KAFFINITY AffinityMask;
-  KPRIORITY Priority;
-  KPRIORITY BasePriority;
-}
-THREAD_BASIC_INFORMATION, *PTHREAD_BASIC_INFORMATION;
-
-typedef LONG NTAPI func_NtQueryObject(
-    HANDLE,OBJECT_INFORMATION_CLASS,PVOID,ULONG,PULONG );
-typedef LONG NTAPI func_NtQueryInformationProcess(
-    HANDLE,PROCESSINFOCLASS,PVOID,ULONG,PULONG );
-typedef LONG NTAPI func_NtQueryInformationThread(
-    HANDLE,THREADINFOCLASS,PVOID,ULONG,PULONG );
 
 // }}}
 // common functions {{{
