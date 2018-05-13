@@ -263,6 +263,10 @@ typedef LONG NTAPI func_NtQueryInformationProcess(
 typedef LONG NTAPI func_NtQueryInformationThread(
     HANDLE,THREADINFOCLASS,PVOID,ULONG,PULONG );
 
+typedef VOID (NTAPI *PKNORMAL_ROUTINE)( PVOID,PVOID,PVOID );
+typedef LONG NTAPI func_NtQueueApcThread(
+    HANDLE,PKNORMAL_ROUTINE,PVOID,PVOID,PVOID );
+
 // }}}
 // disable memmove/memset {{{
 

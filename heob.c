@@ -865,10 +865,14 @@ enum
 // code injection {{{
 
 typedef VOID CALLBACK func_heob( ULONG_PTR );
-typedef VOID CALLBACK func_inj( remoteData* );
+typedef VOID NTAPI func_inj( void*,remoteData*,void* );
 
-static CODE_SEG(".text$1") VOID CALLBACK remoteCall( remoteData *rd )
+static CODE_SEG(".text$1") VOID NTAPI remoteCall(
+    void *apc,remoteData *rd,void *ac )
 {
+  (void)apc;
+  (void)ac;
+
   HMODULE app = rd->fLoadLibraryW( rd->exePath );
   rd->heobMod = app;
 
@@ -904,9 +908,12 @@ static CODE_SEG(".text$2") HANDLE inject(
   remoteData *data = (remoteData*)fullData;
   RtlZeroMemory( data,sizeof(remoteData) );
 
-  PAPCFUNC remoteFuncStart = (PAPCFUNC)( fullDataRemote+funcOffset );
+  PKNORMAL_ROUTINE remoteFuncStart =
+    (PKNORMAL_ROUTINE)( fullDataRemote+funcOffset );
 
   HMODULE kernel32 = GetModuleHandle( "kernel32.dll" );
+  HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
+
   data->kernel32 = kernel32;
   data->fQueueUserAPC =
     (func_QueueUserAPC*)GetProcAddress( kernel32,"QueueUserAPC" );
@@ -1006,7 +1013,10 @@ static CODE_SEG(".text$2") HANDLE inject(
   // injection {{{
   WriteProcessMemory( process,fullDataRemote,fullData,fullSize,NULL );
 
-  QueueUserAPC( remoteFuncStart,thread,(ULONG_PTR)fullDataRemote );
+  func_NtQueueApcThread *fNtQueueApcThread =
+    (func_NtQueueApcThread*)GetProcAddress( ntdll,"NtQueueApcThread" );
+  fNtQueueApcThread(
+      thread,remoteFuncStart,NULL,fullDataRemote,(void*)(LONG_PTR)-1 );
   ResumeThread( thread );
   // }}}
 
