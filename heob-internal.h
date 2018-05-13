@@ -266,6 +266,10 @@ typedef LONG NTAPI func_NtQueryInformationThread(
 typedef VOID (NTAPI *PKNORMAL_ROUTINE)( PVOID,PVOID,PVOID );
 typedef LONG NTAPI func_NtQueueApcThread(
     HANDLE,PKNORMAL_ROUTINE,PVOID,PVOID,PVOID );
+typedef LONG NTAPI func_LdrGetDllHandle(
+    PWSTR,PULONG,UNICODE_STRING*,HMODULE* );
+typedef LONG NTAPI func_NtSetEvent( HANDLE,PLONG );
+typedef LONG NTAPI func_NtDelayExecution( BOOL,PLARGE_INTEGER );
 
 // }}}
 // disable memmove/memset {{{
@@ -409,6 +413,10 @@ typedef struct remoteData
   func_LoadLibraryW *fLoadLibraryW;
   func_GetProcAddress *fGetProcAddress;
 
+  func_LdrGetDllHandle *fLdrGetDllHandle;
+  func_NtSetEvent *fNtSetEvent;
+  func_NtDelayExecution *fNtDelayExecution;
+
   HANDLE master;
   HANDLE controlPipe;
   HANDLE initFinished;
@@ -418,8 +426,10 @@ typedef struct remoteData
 #endif
 
   wchar_t exePath[MAX_PATH];
-
   size_t injOffset;
+
+  UNICODE_STRING kernelName;
+  WCHAR kernelNameBuffer[13];
 
   options opt;
   options globalopt;

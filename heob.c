@@ -873,6 +873,20 @@ static CODE_SEG(".text$1") VOID NTAPI remoteCall(
   (void)apc;
   (void)ac;
 
+  HMODULE kernel32;
+  if( UNLIKELY(rd->fLdrGetDllHandle(NULL,NULL,&rd->kernelName,&kernel32)) )
+  {
+    // kernel32.dll is not loaded -> notify heob and wait
+    rd->master = INVALID_HANDLE_VALUE;
+    rd->fNtSetEvent( rd->initFinished,NULL );
+
+    LARGE_INTEGER delay;
+    delay.LowPart = 0;
+    delay.HighPart = 0x7fffffff;
+    rd->fNtDelayExecution( FALSE,&delay );
+    return;
+  }
+
   HMODULE app = rd->fLoadLibraryW( rd->exePath );
   rd->heobMod = app;
 
@@ -930,6 +944,17 @@ static CODE_SEG(".text$2") HANDLE inject(
     (func_LoadLibraryW*)GetProcAddress( kernel32,"LoadLibraryW" );
   data->fGetProcAddress =
     (func_GetProcAddress*)GetProcAddress( kernel32,"GetProcAddress" );
+
+  data->fLdrGetDllHandle =
+    (func_LdrGetDllHandle*)GetProcAddress( ntdll,"LdrGetDllHandle" );
+  data->fNtSetEvent =
+    (func_NtSetEvent*)GetProcAddress( ntdll,"NtSetEvent" );
+  data->fNtDelayExecution =
+    (func_NtDelayExecution*)GetProcAddress( ntdll,"NtDelayExecution" );
+  lstrcpyW( data->kernelNameBuffer,L"kernel32.dll" );
+  data->kernelName.Length = lstrlenW( data->kernelNameBuffer )*2;
+  data->kernelName.MaximumLength = data->kernelName.Length + 2;
+  data->kernelName.Buffer = ((remoteData*)fullDataRemote)->kernelNameBuffer;
 
   GetModuleFileNameW( NULL,data->exePath,MAX_PATH );
   func_heob *fheob = &heob;
@@ -1083,11 +1108,14 @@ static CODE_SEG(".text$2") HANDLE inject(
   // data of injected process {{{
   ReadProcessMemory( process,fullDataRemote,data,sizeof(remoteData),NULL );
 
-  if( !data->master )
+  if( !data->master || data->master==INVALID_HANDLE_VALUE )
   {
     CloseHandle( readPipe );
     readPipe = NULL;
-    printf( "$Wonly works with dynamically linked CRT\n" );
+    if( !data->master )
+      printf( "$Wonly works with dynamically linked CRT\n" );
+    else
+      printf( "$Wkernel32.dll is not loaded in target process\n" );
     *heobExit = HEOB_NO_CRT;
   }
   else
