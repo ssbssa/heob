@@ -230,6 +230,7 @@ typedef struct localData
   // }}}
   // protected by csSampling {{{
 
+  HANDLE samplingInit;
   allocation *samp_a;
   int samp_q;
   int samp_s;
@@ -4060,6 +4061,8 @@ static CODE_SEG(".text$5") DWORD WINAPI samplingThread( LPVOID arg )
 
   int interval = rd->opt.samplingInterval;
 
+  SetEvent( rd->samplingInit );
+
   CONTEXT context;
   EnterCriticalSection( &rd->csSampling );
   while( 1 )
@@ -4711,8 +4714,11 @@ VOID CALLBACK heob( ULONG_PTR arg )
 
   if( ld->opt.samplingInterval )
   {
+    ld->samplingInit = CreateEvent( NULL,FALSE,FALSE,NULL );
     HANDLE thread = CreateThread( NULL,0,&samplingThread,NULL,0,NULL );
     CloseHandle( thread );
+    WaitForSingleObject( ld->samplingInit,INFINITE );
+    CloseHandle( ld->samplingInit );
   }
 
   // setup loaded heob executable as dll with proper DllMain() {{{
