@@ -4060,6 +4060,7 @@ static CODE_SEG(".text$5") DWORD WINAPI samplingThread( LPVOID arg )
 #endif
 
   int interval = rd->opt.samplingInterval;
+  HANDLE processHeap = GetProcessHeap();
 
   SetEvent( rd->samplingInit );
 
@@ -4072,6 +4073,8 @@ static CODE_SEG(".text$5") DWORD WINAPI samplingThread( LPVOID arg )
     EnterCriticalSection( &rd->csSampling );
 
     if( !rd->opt.samplingInterval ) break;
+
+    HeapLock( processHeap );
 
     threadSamplingType *thread_samp_a = rd->thread_samp_a;
     int thread_samp_q = rd->thread_samp_q;
@@ -4132,6 +4135,8 @@ static CODE_SEG(".text$5") DWORD WINAPI samplingThread( LPVOID arg )
 
       rd->samp_q++;
     }
+
+    HeapUnlock( processHeap );
   }
   LeaveCriticalSection( &rd->csSampling );
 
