@@ -210,6 +210,7 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
           {
             int indent = va_arg( vl,int );
             int i;
+            tc->fWriteText( tc,"  ",2 );
             for( i=0; i<indent; i++ )
             {
               if( tc->fTextColor )
@@ -1692,7 +1693,7 @@ static void locOut( textColor *tc,uintptr_t addr,
     else printFilename++;
   }
 
-  printf( "  %i",indent );
+  printf( "%i",indent );
   switch( lineno )
   {
     case DWST_BASE_ADDR:
@@ -1749,7 +1750,7 @@ static void locOut( textColor *tc,uintptr_t addr,
                 if( firstLine<1 ) firstLine = 1;
                 int lastLine = lineno - 1 + opt->sourceCode;
                 if( firstLine>1 )
-                  printf( "  %i      ...\n",indent );
+                  printf( "%i      ...\n",indent );
                 int i;
                 if( columnno>0 ) columnno--;
                 for( i=1; i<=lastLine; i++ )
@@ -1762,10 +1763,7 @@ static void locOut( textColor *tc,uintptr_t addr,
                   {
                     if( i==lineno )
                     {
-                      printf( "$S> " );
-                      if( indent )
-                        printf( "$N%i$S",indent );
-                      printf( "      " );
+                      printf( "%i$S  >   ",indent );
                       if( columnno>0 && columnno<eol-bol )
                       {
                         printf( "$N" );
@@ -1778,7 +1776,7 @@ static void locOut( textColor *tc,uintptr_t addr,
                     }
                     else
                     {
-                      printf( "  %i      ",indent );
+                      printf( "%i      ",indent );
                       tc->fWriteText( tc,bol,eol-bol );
                     }
                   }
@@ -1789,8 +1787,8 @@ static void locOut( textColor *tc,uintptr_t addr,
                 if( bol>map && bol[-1]!='\n' )
                   printf( "\n" );
                 if( bol!=eof )
-                  printf( "  %i      ...\n",indent );
-                printf( "  %i\n",indent );
+                  printf( "%i      ...\n",indent );
+                printf( "%i\n",indent );
 
                 UnmapViewOfFile( map );
               }
@@ -1889,7 +1887,7 @@ static void printStackCount( void **framesV,int fc,
   if( ft<FT_COUNT )
   {
     if( indent>=0 )
-      printf( "  %i      " PTR_SPACES "   [$I%s$N]\n",
+      printf( "%i      " PTR_SPACES "   [$I%s$N]\n",
           indent,ds->funcnames[ft] );
     else
       locXml( tc,0,NULL,0,ds->funcnames[ft],NULL );
@@ -2369,12 +2367,12 @@ static void printStackGroup( stackGroup *sg,
       int indent = stackIndent + ( allocCount>1 );
       if( !sampling )
       {
-        printf( "  %i$W%U B ",indent,a->size );
+        printf( "%i$W%U B ",indent,a->size );
         if( a->count>1 )
           printf( "* %d = %U B ",a->count,combSize );
       }
       else
-        printf( "  %i$W%d sample%s ",indent,a->count,a->count>1?"s":NULL );
+        printf( "%i$W%d sample%s ",indent,a->count,a->count>1?"s":NULL );
       printf( "$N(#%U)",a->id );
       printThreadName( a->threadNameIdx );
       if( allocCount>1 )
@@ -2403,7 +2401,7 @@ static void printStackGroup( stackGroup *sg,
           text[1] = num2hex( lc>>4 );
           text[2] = num2hex( lc );
           text[3] = '0';
-          printf( "  %i      $I%s$N ",indent,text );
+          printf( "%i      $I%s$N ",indent,text );
           int p;
           text[2] = 0;
           for( p=0; p<line_size; p++ )
@@ -2433,9 +2431,9 @@ static void printStackGroup( stackGroup *sg,
   {
     int indent = stackIndent;
     if( !sampling )
-      printf( "  %i$Wsum: %U B / %d\n",indent,sg->allocSumSize,sg->allocSum );
+      printf( "%i$Wsum: %U B / %d\n",indent,sg->allocSumSize,sg->allocSum );
     else
-      printf( "  %i$Wsum: %d samples\n",indent,sg->allocSum );
+      printf( "%i$Wsum: %d samples\n",indent,sg->allocSum );
   }
   if( !stackIsPrinted )
     printStackCount( a->frames+(a->frameCount-(sg->stackStart+sg->stackCount)),
