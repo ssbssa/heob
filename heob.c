@@ -2431,7 +2431,7 @@ static void printStackGroup( stackGroup *sg,
   }
   if( allocCount>1 )
   {
-    int indent = stackIndent + 1;
+    int indent = stackIndent;
     if( !sampling )
       printf( "  %i$Wsum: %U B / %d\n",indent,sg->allocSumSize,sg->allocSum );
     else
@@ -2661,7 +2661,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
           }
           stackChildGrouping( alloc_a,alloc_idxs+startIdx,i-startIdx,
               startIdx,heap,sg,
-              0,0 );
+              0,1 );
         }
         sortStackGroup( sg,heap );
       }
