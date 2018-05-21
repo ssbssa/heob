@@ -220,14 +220,23 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
           // indention {{{
 
         case 'i': // indent
+        case 'E': // new entry
           {
             int indent = va_arg( vl,int );
             int i;
             wchar_t bar[2] = { ' ','|' };
+            wchar_t specialBars[1][2] = { {' ',' '} };
+            int specialCount = 0;
             if( tc->canWriteWideChar )
             {
               const wchar_t barTopBottom =            0x2502;
+              const wchar_t barRightBottom =          0x250c;
               bar[1] = barTopBottom;
+              if( ptr[1]=='E' )
+              {
+                specialBars[0][1] = barRightBottom;
+                specialCount = 1;
+              }
             }
             tc->fWriteText( tc," ",1 );
             for( i=0; i<indent; i++ )
@@ -235,6 +244,8 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
               if( tc->fTextColor )
                 tc->fTextColor( tc,i%ATT_BASE );
 
+              if( i>=indent-specialCount )
+                RtlMoveMemory( bar,specialBars[i-(indent-specialCount)],4 );
               tc->fWriteSubTextW( tc,bar,2 );
             }
             if( tc->fTextColor )
@@ -2403,12 +2414,12 @@ static void printStackGroup( stackGroup *sg,
       int indent = stackIndent + ( allocCount>1 );
       if( !sampling )
       {
-        printf( "%i$W%U B ",indent,a->size );
+        printf( "%E$W%U B ",indent,a->size );
         if( a->count>1 )
           printf( "* %d = %U B ",a->count,combSize );
       }
       else
-        printf( "%i$W%d sample%s ",indent,a->count,a->count>1?"s":NULL );
+        printf( "%E$W%d sample%s ",indent,a->count,a->count>1?"s":NULL );
       printf( "$N(#%U)",a->id );
       printThreadName( a->threadNameIdx );
       if( allocCount>1 )
