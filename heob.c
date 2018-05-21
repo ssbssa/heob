@@ -221,21 +221,32 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
 
         case 'i': // indent
         case 'E': // new entry
+        case 'I': // indent level end
           {
             int indent = va_arg( vl,int );
             int i;
             wchar_t bar[2] = { ' ','|' };
-            wchar_t specialBars[1][2] = { {' ',' '} };
+            wchar_t specialBars[2][2] = { {' ',' '},{' ',' '} };
             int specialCount = 0;
             if( tc->canWriteWideChar )
             {
               const wchar_t barTopBottom =            0x2502;
               const wchar_t barRightBottom =          0x250c;
+              const wchar_t barTopRightBottom =       0x251c;
+              const wchar_t barTopLeft =              0x2518;
+              const wchar_t barLeftRight =            0x2500;
               bar[1] = barTopBottom;
               if( ptr[1]=='E' )
               {
                 specialBars[0][1] = barRightBottom;
                 specialCount = 1;
+              }
+              else if( ptr[1]=='I' )
+              {
+                specialBars[0][1] = barTopRightBottom;
+                specialBars[1][0] = barLeftRight;
+                specialBars[1][1] = barTopLeft;
+                specialCount = 2;
               }
             }
             tc->fWriteText( tc," ",1 );
@@ -2472,6 +2483,8 @@ static void printStackGroup( stackGroup *sg,
         }
       }
       // }}}
+      if( tc->canWriteWideChar && opt->groupLeaks>1 )
+        printf( "%I\n",indent );
     }
   }
   if( allocCount>1 )
@@ -2482,9 +2495,13 @@ static void printStackGroup( stackGroup *sg,
     else
       printf( "%i$Wsum: %d samples\n",indent,sg->allocSum );
   }
-  if( !stackIsPrinted )
+  if( !stackIsPrinted && sg->stackCount )
+  {
     printStackCount( a->frames+(a->frameCount-(sg->stackStart+sg->stackCount)),
         sg->stackCount,mi_a,mi_q,ds,FT_COUNT,stackIndent );
+    if( tc->canWriteWideChar && opt->groupLeaks>1 )
+      printf( "%I\n",stackIndent );
+  }
 }
 
 static int printStackGroupXml( stackGroup *sg,
