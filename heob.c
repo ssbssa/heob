@@ -107,6 +107,7 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
   const char *ptr = format;
   while( ptr[0] )
   {
+    // argument {{{
     if( ptr[0]=='%' && ptr[1] )
     {
       // % = argument
@@ -114,6 +115,8 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
         tc->fWriteText( tc,format,ptr-format );
       switch( ptr[1] )
       {
+        // strings {{{
+
         case 's': // const char*
           {
             const char *arg = va_arg( vl,const char* );
@@ -129,6 +132,9 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
               tc->fWriteSubTextW( tc,arg,lstrlenW(arg) );
           }
           break;
+
+          // }}}
+          // decimal numbers {{{
 
         case 'd': // int
         case 'D': // intptr_t
@@ -170,6 +176,9 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
           }
           break;
 
+          // }}}
+          // hexadecimal numbers {{{
+
         case 'w': // unsigned short (word)
         case 'x': // unsigned int
         case 'X': // uintptr_t
@@ -206,6 +215,9 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
           }
           break;
 
+          // }}}
+          // indention {{{
+
         case 'i': // indent
           {
             int indent = va_arg( vl,int );
@@ -223,6 +235,9 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
             tc->fWriteText( tc," ",1 );
           }
           break;
+
+          // }}}
+          // time {{{
 
         case 't': // time
           {
@@ -247,6 +262,9 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
           }
           break;
 
+          // }}}
+          // last-error code {{{
+
         case 'e': // last-error code
           {
             DWORD e = va_arg( vl,DWORD );
@@ -265,11 +283,15 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
             LocalFree( s );
           }
           break;
+
+          // }}}
       }
       ptr += 2;
       format = ptr;
       continue;
     }
+    // }}}
+    // color {{{
     else if( ptr[0]=='$' && ptr[1] )
     {
       // $ = color
@@ -298,6 +320,8 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
       format = ptr;
       continue;
     }
+    // }}}
+    // newline {{{
     else if( ptr[0]=='\n' && tc->fTextColor && tc->color!=ATT_NORMAL )
     {
       if( ptr>format )
@@ -305,6 +329,7 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
       tc->fTextColor( tc,ATT_NORMAL );
       format = ptr;
     }
+    // }}}
     ptr++;
   }
   if( ptr>format )
