@@ -225,6 +225,7 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
           {
             int indent = va_arg( vl,int );
             int i;
+            wchar_t firstSpace = ' ';
             wchar_t bar[2] = { ' ','|' };
             wchar_t specialBars[2][2] = { {' ',' '},{' ',' '} };
             int specialCount = 0;
@@ -235,6 +236,7 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
               const wchar_t barTopRightBottom =       0x251c;
               const wchar_t barTopLeft =              0x2518;
               const wchar_t barLeftRight =            0x2500;
+              const wchar_t barRightDoubleTopBottom = 0x255f;
               bar[1] = barTopBottom;
               if( ptr[1]=='E' )
               {
@@ -243,13 +245,15 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
               }
               else if( ptr[1]=='I' )
               {
+                if( indent==1 )
+                  firstSpace = barRightDoubleTopBottom;
                 specialBars[0][1] = barTopRightBottom;
                 specialBars[1][0] = barLeftRight;
                 specialBars[1][1] = barTopLeft;
                 specialCount = 2;
               }
             }
-            tc->fWriteText( tc," ",1 );
+            tc->fWriteSubTextW( tc,&firstSpace,1 );
             for( i=0; i<indent; i++ )
             {
               if( tc->fTextColor )
