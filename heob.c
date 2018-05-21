@@ -46,6 +46,7 @@ typedef struct textColor
   func_WriteText *fWriteSubText;
   func_WriteTextW *fWriteSubTextW;
   func_TextColor *fTextColor;
+  int canWriteWideChar;
   HANDLE out;
   union {
     int colors[ATT_COUNT];
@@ -222,13 +223,19 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
           {
             int indent = va_arg( vl,int );
             int i;
+            wchar_t bar[2] = { ' ','|' };
+            if( tc->canWriteWideChar )
+            {
+              const wchar_t barTopBottom =            0x2502;
+              bar[1] = barTopBottom;
+            }
             tc->fWriteText( tc," ",1 );
             for( i=0; i<indent; i++ )
             {
               if( tc->fTextColor )
                 tc->fTextColor( tc,i%ATT_BASE );
 
-              tc->fWriteText( tc," |",2 );
+              tc->fWriteSubTextW( tc,bar,2 );
             }
             if( tc->fTextColor )
               tc->fTextColor( tc,ATT_NORMAL );
@@ -695,6 +702,7 @@ static void checkOutputVariant( textColor *tc,HANDLE out )
   tc->fWriteSubText = &WriteText;
   tc->fWriteSubTextW = &WriteTextW;
   tc->fTextColor = NULL;
+  tc->canWriteWideChar = 0;
   tc->out = out;
   tc->color = ATT_NORMAL;
 
@@ -720,6 +728,7 @@ static void checkOutputVariant( textColor *tc,HANDLE out )
 
     tc->fWriteSubTextW = &WriteTextConsoleW;
     tc->fTextColor = &TextColorConsole;
+    tc->canWriteWideChar = 1;
 
     tc->colors[ATT_NORMAL]  = csbi.wAttributes&0xff;
     tc->colors[ATT_OK]      = bg|FOREGROUND_GREEN|FOREGROUND_INTENSITY;
@@ -801,6 +810,7 @@ static void checkOutputVariant( textColor *tc,HANDLE out )
         tc->fWriteSubText = &WriteTextHtml;
         tc->fWriteSubTextW = &WriteTextHtmlW;
         tc->fTextColor = &TextColorHtml;
+        tc->canWriteWideChar = 1;
 
         tc->styles[ATT_NORMAL]  = NULL;
         tc->styles[ATT_OK]      = "ok";
