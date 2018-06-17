@@ -26,7 +26,7 @@
 
 #define DLLEXPORT __declspec(dllexport)
 
-#ifndef _MSC_VER
+#if !defined(_MSC_VER) || defined(__clang__)
 #define NOINLINE __attribute__((noinline))
 #define NORETURN __attribute__((noreturn))
 #define CODE_SEG(seg) __attribute__((section(seg)))

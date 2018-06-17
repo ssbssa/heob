@@ -1640,7 +1640,8 @@ static stackSourceLocation *findStackSourceLocation(
   return( NULL );
 }
 
-static void cacheSymbolData( allocation *alloc_a,int *alloc_idxs,int alloc_q,
+static void cacheSymbolData(
+    allocation *alloc_a,const int *alloc_idxs,int alloc_q,
     modInfo *mi_a,int mi_q,dbgsym *ds,int initFrames )
 {
   cacheClear( ds );
@@ -1905,15 +1906,16 @@ static void locXml( textColor *tc,uintptr_t addr,
     {
       printf( "      <dir>" );
       const char *p = filename;
-      char slash[2] = "/";
+      const char slash = '/';
       while( 1 )
       {
         const char *backslash = strchr( p,'\\' );
+        if( !backslash ) break;
         if( backslash>p )
           tc->fWriteSubText( tc,p,backslash-p );
         p = backslash + 1;
         if( p>sep ) break;
-        tc->fWriteSubText( tc,slash,1 );
+        tc->fWriteSubText( tc,&slash,1 );
       }
       printf( "</dir>\n" );
       filepart = sep + 1;
@@ -2292,7 +2294,7 @@ typedef struct stackGroup
 stackGroup;
 
 static void stackChildGrouping(
-    allocation *alloc_a,int *alloc_idxs,int alloc_q,
+    allocation *alloc_a,const int *alloc_idxs,int alloc_q,
     int alloc_s,HANDLE heap,stackGroup *sgParent,
     int stackIdx,int stackIndent )
 {
@@ -2388,7 +2390,7 @@ static void sortStackGroup( stackGroup *sg,HANDLE heap )
 }
 
 static void printStackGroup( stackGroup *sg,
-    allocation *alloc_a,int *alloc_idxs,
+    allocation *alloc_a,const int *alloc_idxs,
 #ifndef NO_THREADNAMES
     threadNameInfo *threadName_a,int threadName_q,
 #endif
@@ -2509,7 +2511,7 @@ static void printStackGroup( stackGroup *sg,
 }
 
 static int printStackGroupXml( stackGroup *sg,
-    allocation *alloc_a,int *alloc_idxs,int alloc_q,
+    allocation *alloc_a,const int *alloc_idxs,int alloc_q,
 #ifndef NO_THREADNAMES
     threadNameInfo *threadName_a,int threadName_q,
 #endif

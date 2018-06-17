@@ -1567,7 +1567,7 @@ static void writeLeakData( void )
 // }}}
 // leak type detection {{{
 
-static void addModMem( PBYTE start,PBYTE end )
+static void addModMem( const BYTE *start,const BYTE *end )
 {
   uintptr_t startPtr = (uintptr_t)start;
   if( startPtr%sizeof(uintptr_t) )
@@ -1744,9 +1744,11 @@ static void findLeakType( leakType lt,
   HeapFree( rd->heap,0,mod_mem_a );
 }
 
-void findLeakTypes( void )
+static void findLeakTypes( void )
 {
   GET_REMOTEDATA( rd );
+
+  if( !rd->splits ) return;
 
   SetPriorityClass( GetCurrentProcess(),BELOW_NORMAL_PRIORITY_CLASS );
 
@@ -4654,8 +4656,7 @@ VOID CALLBACK heob( ULONG_PTR arg )
       cyg_child_info;
       cyg_child_info *ci = (cyg_child_info*)startup.lpReserved2;
       int type = 0;
-      if( startup.cbReserved2>=sizeof(cyg_child_info) &&
-          ci && (ci->type>=1 || ci->type<=3) )
+      if( startup.cbReserved2>=sizeof(cyg_child_info) && ci )
         type = ci->type;
       if( (type==1 || type==2) &&
           ci->moreinfo && ci->moreinfo->argc && ci->moreinfo->argv )
