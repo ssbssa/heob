@@ -3186,6 +3186,476 @@ static void setHeobConsoleTitle( HANDLE heap,const wchar_t *prog )
 }
 
 // }}}
+// xml {{{
+
+static textColor *writeXmlHeader( char **xmlName,HANDLE heap,
+    char *exePath,char *delim,attachedProcessInfo *api,
+    const wchar_t *cmdLineW,const wchar_t *argsW,const wchar_t *exePathW,
+    PROCESS_INFORMATION *pi,DWORD ppid,DWORD dbgPid,DWORD startTicks )
+{
+  if( !xmlName || !*xmlName ) return( NULL );
+
+  char *fullName = strreplacenum( *xmlName,"%p",pi->dwProcessId,heap );
+  if( !fullName )
+  {
+    fullName = *xmlName;
+    *xmlName = NULL;
+  }
+
+  char *ppidName = strreplacenum( fullName,"%P",ppid,heap );
+  if( ppidName )
+  {
+    HeapFree( heap,0,fullName );
+    fullName = ppidName;
+  }
+
+  if( delim ) delim++;
+  else delim = exePath;
+  char *lastPoint = strrchr( delim,'.' );
+  if( lastPoint ) lastPoint[0] = 0;
+  char *replaced = strreplace( fullName,"%n",delim,heap );
+  if( lastPoint ) lastPoint[0] = '.';
+  if( replaced )
+  {
+    HeapFree( heap,0,fullName );
+    fullName = replaced;
+  }
+
+  HANDLE xml = CreateFile( fullName,GENERIC_WRITE,FILE_SHARE_READ,
+      NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
+  HeapFree( heap,0,fullName );
+  if( xml==INVALID_HANDLE_VALUE ) return( NULL );
+
+  textColor *tc = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(textColor) );
+  tc->fWriteText = &WriteText;
+  tc->fWriteSubText = &WriteTextHtml;
+  tc->fWriteSubTextW = &WriteTextHtmlW;
+  tc->fTextColor = NULL;
+  tc->out = xml;
+  tc->color = ATT_NORMAL;
+
+  printf( "<?xml version=\"1.0\"?>\n\n" );
+  printf( "<valgrindoutput>\n\n" );
+  printf( "<protocolversion>4</protocolversion>\n" );
+  printf( "<protocoltool>memcheck</protocoltool>\n\n" );
+  printf( "<preamble>\n" );
+  printf( "  <line>heap-observer " HEOB_VER " (" BITS "bit)</line>\n" );
+  if( api )
+  {
+    printf( "  <line>application: %S</line>\n",exePathW );
+    if( api->type>=0 && api->type<=3 )
+    {
+      const char *types[4] = {
+        "  <line>command line: %S</line>\n",
+        "  <line>cygwin exec:</line>\n",
+        "  <line>cygwin spawn:</line>\n",
+        "  <line>cygwin fork</line>\n",
+      };
+      const wchar_t *cl = api->commandLine;
+      printf( types[api->type],cl );
+
+      int i;
+      int cyg_argc = api->cyg_argc;
+      for( i=0; i<cyg_argc; i++ )
+      {
+        printf( "  <line>  argv[%d]: %S</line>\n",i,cl );
+        cl += lstrlenW( cl ) + 1;
+      }
+    }
+    if( api->currentDirectory[0] )
+      printf( "  <line>directory: %S</line>\n",api->currentDirectory );
+    if( api->stdinName[0] )
+      printf( "  <line>stdin: %S</line>\n",api->stdinName );
+    if( api->stdoutName[0] )
+      printf( "  <line>stdout: %S</line>\n",api->stdoutName );
+    if( api->stderrName[0] )
+      printf( "  <line>stderr: %S</line>\n",api->stderrName );
+  }
+  if( dbgPid )
+    printf( "  <line>debugger PID: %u</line>\n",dbgPid );
+  printf( "</preamble>\n\n" );
+  printf( "<pid>%u</pid>\n<ppid>%u</ppid>\n<tool>heob</tool>\n\n",
+      pi->dwProcessId,ppid );
+
+  const wchar_t *argva[2] = { cmdLineW,argsW };
+  if( api ) argva[1] = api->commandLine;
+  int l = (int)( argsW - cmdLineW );
+  while( l>0 && cmdLineW[l-1]==' ' ) l--;
+  int argvl[2] = { l,lstrlenW(argva[1]) };
+  printf( "<args>\n" );
+  for( l=0; l<2; l++ )
+  {
+    const char *argvstr = l ? "argv" : "vargv";
+    const wchar_t *argv = argva[l];
+    int argl = argvl[l];
+    printf( "  <%s>\n",argvstr );
+    if( l && api && api->type>0 )
+    {
+      const wchar_t *cl = api->commandLine;
+      int i;
+      int cyg_argc = api->cyg_argc;
+      if( api->type==3 )
+      {
+        const wchar_t *lastDelim = strrchrW( exePathW,'\\' );
+        if( lastDelim ) lastDelim++;
+        else lastDelim = exePathW;
+        lstrcpyW( api->commandLine,lastDelim );
+        wchar_t *lastPointW = strrchrW( cl,'.' );
+        if( lastPointW ) lastPointW[0] = 0;
+        cyg_argc = 1;
+      }
+      for( i=0; i<cyg_argc; i++ )
+      {
+        const char *argstr = i ? "arg" : "exe";
+        printf( "    <%s>%S</%s>\n",argstr,cl,argstr );
+        cl += lstrlenW( cl ) + 1;
+      }
+      printf( "  </%s>\n",argvstr );
+      break;
+    }
+    int i = 0;
+    while( i<argl )
+    {
+      int startI = i;
+      if( !l && i+1<argl && argv[i]=='-' && argv[i+1]=='O' )
+      {
+        i += 2;
+        while( i<argl && argv[i]!=' ' )
+        {
+          while( i<argl && argv[i]!=':' ) i++;
+          while( i<argl && argv[i]!=';' ) i++;
+          if( i<argl ) i++;
+        }
+      }
+      while( i<argl && argv[i]!=' ' )
+      {
+        wchar_t c = argv[i];
+        i++;
+        if( c=='"' )
+        {
+          while( i<argl && argv[i]!='"' ) i++;
+          if( i<argl && argv[i]=='"' ) i++;
+        }
+      }
+      if( i>startI )
+      {
+        const char *argstr = startI ? "arg" : "exe";
+        printf( "    <%s>",argstr );
+        tc->fWriteSubTextW( tc,argv+startI,i-startI );
+        printf( "</%s>\n",argstr );
+      }
+      while( i<argl && argv[i]==' ' ) i++;
+    }
+    printf( "  </%s>\n",argvstr );
+  }
+  printf( "</args>\n\n" );
+
+  printf( "<status>\n  <state>RUNNING</state>\n"
+      "  <time>%t</time>\n</status>\n\n",
+      GetTickCount()-startTicks );
+
+  return( tc );
+}
+
+static void writeXmlFooter( textColor *tc,HANDLE heap,DWORD startTicks )
+{
+  if( !tc ) return;
+
+  printf( "<status>\n  <state>FINISHED</state>\n"
+      "  <time>%t</time>\n</status>\n\n",
+      GetTickCount()-startTicks );
+
+  printf( "</valgrindoutput>\n" );
+
+  CloseHandle( tc->out );
+  HeapFree( heap,0,tc );
+}
+
+static void writeXmlException( textColor *tc,dbgsym *ds,
+    exceptionInfo *ei,const char *desc,char *addr,const char *violationType,
+    const char *nearBlock,const char *blockType,modInfo *mi_a,int mi_q )
+{
+  if( !tc ) return;
+
+  textColor *tcOrig = ds->tc;
+  ds->tc = tc;
+
+  printf( "<error>\n" );
+  printf( "  <kind>InvalidRead</kind>\n" );
+  printf( "  <what>unhandled exception code: %x%s</what>\n",
+      ei->er.ExceptionCode,desc );
+  printf( "  <auxwhat>exception on</auxwhat>\n" );
+  printf( "  <stack>\n" );
+  printStackCount( ei->aa[0].frames,ei->aa[0].frameCount,
+      mi_a,mi_q,ds,FT_COUNT,-1 );
+  printf( "  </stack>\n" );
+  if( violationType )
+  {
+    printf( "  <auxwhat>%s violation at %p</auxwhat>\n",
+        violationType,addr );
+    printf( "  <stack>\n" );
+    printf( "  </stack>\n" );
+  }
+
+  if( ei->aq>1 )
+  {
+    char *ptr = (char*)ei->aa[1].ptr;
+    size_t size = ei->aa[1].size;
+    printf(
+        "  <auxwhat>%s%s %p (size %U, offset %s%D)</auxwhat>\n",
+        nearBlock,blockType,
+        ptr,size,addr>ptr?"+":"",addr-ptr );
+    printf( "  <stack>\n" );
+    printf( "  </stack>\n" );
+    printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",
+        ei->aa[1].id );
+    printf( "  <stack>\n" );
+    printStackCount( ei->aa[1].frames,ei->aa[1].frameCount,
+        mi_a,mi_q,ds,ei->aa[1].ft,-1 );
+    printf( "  </stack>\n" );
+
+    if( ei->aq>2 )
+    {
+      printf( "  <auxwhat>freed on</auxwhat>\n" );
+      printf( "  <stack>\n" );
+      printStackCount( ei->aa[2].frames,ei->aa[2].frameCount,
+          mi_a,mi_q,ds,ei->aa[2].ft,-1 );
+      printf( "  </stack>\n" );
+    }
+  }
+  else if( ei->throwName[0] )
+  {
+    char *throwName = undecorateVCsymbol( ds,ei->throwName );
+    printf( "  <auxwhat>VC c++ exception: %s</auxwhat>\n",
+        throwName );
+    printf( "  <stack>\n" );
+    printf( "  </stack>\n" );
+  }
+  printf( "</error>\n\n" );
+
+  ds->tc = tcOrig;
+}
+
+static void writeXmlAllocFail( textColor *tc,dbgsym *ds,
+    size_t mul,int mulOverflow,allocation *aa,modInfo *mi_a,int mi_q )
+{
+  if( !tc ) return;
+
+  textColor *tcOrig = ds->tc;
+  ds->tc = tc;
+
+  printf( "<error>\n" );
+  printf( "  <kind>UninitValue</kind>\n" );
+  if( mulOverflow )
+    printf( "  <what>multiplication overflow in allocation"
+        " of %U * %U bytes (#%U)</what>\n",aa->size,mul,aa->id );
+  else
+    printf( "  <what>allocation failed of %U bytes (#%U)</what>\n",
+        aa->size,aa->id );
+  printf( "  <stack>\n" );
+  printStackCount( aa->frames,aa->frameCount,
+      mi_a,mi_q,ds,aa->ft,-1 );
+  printf( "  </stack>\n" );
+  printf( "</error>\n\n" );
+
+  ds->tc = tcOrig;
+}
+
+static void writeXmlFreeFail( textColor *tc,dbgsym *ds,
+    modInfo *allocMi,allocation *aa,modInfo *mi_a,int mi_q )
+{
+  if( !tc ) return;
+
+  textColor *tcOrig = ds->tc;
+  ds->tc = tc;
+
+  printf( "<error>\n" );
+  printf( "  <kind>InvalidFree</kind>\n" );
+  printf( "  <what>deallocation of invalid pointer %p</what>\n",
+      aa->ptr );
+  printf( "  <stack>\n" );
+  printStackCount( aa->frames,aa->frameCount,
+      mi_a,mi_q,ds,aa->ft,-1 );
+  printf( "  </stack>\n" );
+
+  if( aa[1].ptr )
+  {
+    char *ptr = aa->ptr;
+    char *addr = aa[1].ptr;
+    size_t size = aa[1].size;
+    const char *block = aa[2].ptr ? "freed " : "";
+    printf(
+        "  <auxwhat>pointing to %sblock %p"
+        " (size %U, offset %s%D)</auxwhat>\n",
+        block,addr,size,ptr>addr?"+":"",ptr-addr );
+    printf( "  <stack>\n" );
+    printf( "  </stack>\n" );
+    printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",
+        aa[1].id );
+    printf( "  <stack>\n" );
+    printStackCount( aa[1].frames,aa[1].frameCount,
+        mi_a,mi_q,ds,aa[1].ft,-1 );
+    printf( "  </stack>\n" );
+
+    if( aa[2].ptr )
+    {
+      printf( "  <auxwhat>freed on</auxwhat>\n" );
+      printf( "  <stack>\n" );
+      printStackCount( aa[2].frames,aa[2].frameCount,
+          mi_a,mi_q,ds,aa[2].ft,-1 );
+      printf( "  </stack>\n" );
+    }
+  }
+  else if( aa[1].id==1 )
+  {
+    printf( "  <auxwhat>pointing to stack</auxwhat>\n" );
+    printf( "  <stack>\n" );
+    printf( "  </stack>\n" );
+    printf( "  <auxwhat>possibly same frame as</auxwhat>\n" );
+    printf( "  <stack>\n" );
+    printStackCount( aa[1].frames,aa[1].frameCount,
+        mi_a,mi_q,ds,FT_COUNT,-1 );
+    printf( "  </stack>\n" );
+  }
+  else if( aa[1].id==2 )
+  {
+    printf( "  <auxwhat>allocated (size %U) from</auxwhat>\n",
+        aa[1].size );
+    if( allocMi )
+    {
+      printf( "  <stack>\n" );
+      locXml( tc,0,NULL,0,NULL,allocMi );
+      printf( "  </stack>\n" );
+    }
+  }
+  else if( aa[1].id==3 )
+  {
+    printf( "  <auxwhat>pointing to global area of</auxwhat>\n" );
+    if( allocMi )
+    {
+      printf( "  <stack>\n" );
+      locXml( tc,0,NULL,0,NULL,allocMi );
+      printf( "  </stack>\n" );
+    }
+  }
+
+  if( aa[3].ptr )
+  {
+    printf(
+        "  <auxwhat>referenced by block %p"
+        " (size %U, offset +%U)</auxwhat>\n",
+        aa[3].ptr,aa[3].size,aa[2].size );
+    printf( "  <stack>\n" );
+    printf( "  </stack>\n" );
+    printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",
+        aa[3].id );
+    printf( "  <stack>\n" );
+    printStackCount( aa[3].frames,aa[3].frameCount,
+        mi_a,mi_q,ds,aa[3].ft,-1 );
+    printf( "  </stack>\n" );
+  }
+  printf( "</error>\n\n" );
+
+  ds->tc = tcOrig;
+}
+
+static void writeXmlDoubleFree( textColor *tc,dbgsym *ds,
+    allocation *aa,modInfo *mi_a,int mi_q )
+{
+  if( !tc ) return;
+
+  textColor *tcOrig = ds->tc;
+  ds->tc = tc;
+
+  printf( "<error>\n" );
+  printf( "  <kind>InvalidFree</kind>\n" );
+  printf( "  <what>double free of %p (size %U)</what>\n",
+      aa[1].ptr,aa[1].size );
+  printf( "  <auxwhat>called on</auxwhat>\n" );
+  printf( "  <stack>\n" );
+  printStackCount( aa[0].frames,aa[0].frameCount,
+      mi_a,mi_q,ds,aa[0].ft,-1 );
+  printf( "  </stack>\n" );
+  printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",
+      aa[1].id );
+  printf( "  <stack>\n" );
+  printStackCount( aa[1].frames,aa[1].frameCount,
+      mi_a,mi_q,ds,aa[1].ft,-1 );
+  printf( "  </stack>\n" );
+  printf( "  <auxwhat>freed on</auxwhat>\n" );
+  printf( "  <stack>\n" );
+  printStackCount( aa[2].frames,aa[2].frameCount,
+      mi_a,mi_q,ds,aa[2].ft,-1 );
+  printf( "  </stack>\n" );
+  printf( "</error>\n\n" );
+
+  ds->tc = tcOrig;
+}
+
+static void writeXmlSlack( textColor *tc,dbgsym *ds,
+    allocation *aa,modInfo *mi_a,int mi_q )
+{
+  if( !tc ) return;
+
+  textColor *tcOrig = ds->tc;
+  ds->tc = tc;
+
+  printf( "<error>\n" );
+  printf( "  <kind>InvalidWrite</kind>\n" );
+  printf( "  <what>write access violation at %p</what>\n",
+      aa[1].ptr );
+  printf( "  <auxwhat>slack area of %p"
+      " (size %U, offset %s%D)</auxwhat>\n",
+      aa[0].ptr,aa[0].size,
+      aa[1].ptr>aa[0].ptr?"+":"",
+      (char*)aa[1].ptr-(char*)aa[0].ptr );
+  printf( "  <stack>\n" );
+  printf( "  </stack>\n" );
+  printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",
+      aa[0].id );
+  printf( "  <stack>\n" );
+  printStackCount( aa[0].frames,aa[0].frameCount,
+      mi_a,mi_q,ds,aa[0].ft,-1 );
+  printf( "  </stack>\n" );
+  printf( "  <auxwhat>freed on</auxwhat>\n" );
+  printf( "  <stack>\n" );
+  printStackCount( aa[1].frames,aa[1].frameCount,
+      mi_a,mi_q,ds,aa[1].ft,-1 );
+  printf( "  </stack>\n" );
+  printf( "</error>\n\n" );
+
+  ds->tc = tcOrig;
+}
+
+static void writeXmlWrongDealloc( textColor *tc,dbgsym *ds,
+    allocation *aa,modInfo *mi_a,int mi_q )
+{
+  if( !tc ) return;
+
+  textColor *tcOrig = ds->tc;
+  ds->tc = tc;
+
+  printf( "<error>\n" );
+  printf( "  <kind>MismatchedFree</kind>\n" );
+  printf(
+      "  <what>mismatching allocation/release method</what>\n" );
+  printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",
+      aa[0].id );
+  printf( "  <stack>\n" );
+  printStackCount( aa[0].frames,aa[0].frameCount,
+      mi_a,mi_q,ds,aa[0].ft,-1 );
+  printf( "  </stack>\n" );
+  printf( "  <auxwhat>freed on</auxwhat>\n" );
+  printf( "  <stack>\n" );
+  printStackCount( aa[1].frames,aa[1].frameCount,
+      mi_a,mi_q,ds,aa[1].ft,-1 );
+  printf( "  </stack>\n" );
+  printf( "</error>\n\n" );
+
+  ds->tc = tcOrig;
+}
+
+// }}}
 // main {{{
 
 static const char *funcnames[FT_COUNT] = {
@@ -4081,179 +4551,8 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
         FreeConsole();
     }
 
-    // xml header {{{
-    textColor *tcXml = NULL;
-    if( xmlName )
-    {
-      char *fullName = strreplacenum( xmlName,"%p",pi.dwProcessId,heap );
-      if( !fullName )
-      {
-        fullName = xmlName;
-        xmlName = NULL;
-      }
-
-      char *ppidName = strreplacenum( fullName,"%P",ppid,heap );
-      if( ppidName )
-      {
-        HeapFree( heap,0,fullName );
-        fullName = ppidName;
-      }
-
-      if( delim ) delim++;
-      else delim = exePath;
-      char *lastPoint = strrchr( delim,'.' );
-      if( lastPoint ) lastPoint[0] = 0;
-      char *replaced = strreplace( fullName,"%n",delim,heap );
-      if( lastPoint ) lastPoint[0] = '.';
-      if( replaced )
-      {
-        HeapFree( heap,0,fullName );
-        fullName = replaced;
-      }
-
-      HANDLE xml = CreateFile( fullName,GENERIC_WRITE,FILE_SHARE_READ,
-          NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
-      if( xml!=INVALID_HANDLE_VALUE )
-      {
-        tcXml = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(textColor) );
-        tcXml->fWriteText = &WriteText;
-        tcXml->fWriteSubText = &WriteTextHtml;
-        tcXml->fWriteSubTextW = &WriteTextHtmlW;
-        tcXml->fTextColor = NULL;
-        tcXml->out = xml;
-        tcXml->color = ATT_NORMAL;
-      }
-
-      HeapFree( heap,0,fullName );
-    }
-
-    if( tcXml )
-    {
-      tc = tcXml;
-
-      printf( "<?xml version=\"1.0\"?>\n\n" );
-      printf( "<valgrindoutput>\n\n" );
-      printf( "<protocolversion>4</protocolversion>\n" );
-      printf( "<protocoltool>memcheck</protocoltool>\n\n" );
-      printf( "<preamble>\n" );
-      printf( "  <line>heap-observer " HEOB_VER " (" BITS "bit)</line>\n" );
-      if( api )
-      {
-        printf( "  <line>application: %S</line>\n",exePathW );
-        if( api->type>=0 && api->type<=3 )
-        {
-          const char *types[4] = {
-            "  <line>command line: %S</line>\n",
-            "  <line>cygwin exec:</line>\n",
-            "  <line>cygwin spawn:</line>\n",
-            "  <line>cygwin fork</line>\n",
-          };
-          const wchar_t *cl = api->commandLine;
-          printf( types[api->type],cl );
-
-          int i;
-          int cyg_argc = api->cyg_argc;
-          for( i=0; i<cyg_argc; i++ )
-          {
-            printf( "  <line>  argv[%d]: %S</line>\n",i,cl );
-            cl += lstrlenW( cl ) + 1;
-          }
-        }
-        if( api->currentDirectory[0] )
-          printf( "  <line>directory: %S</line>\n",api->currentDirectory );
-        if( api->stdinName[0] )
-          printf( "  <line>stdin: %S</line>\n",api->stdinName );
-        if( api->stdoutName[0] )
-          printf( "  <line>stdout: %S</line>\n",api->stdoutName );
-        if( api->stderrName[0] )
-          printf( "  <line>stderr: %S</line>\n",api->stderrName );
-      }
-      if( dbgPid )
-        printf( "  <line>debugger PID: %u</line>\n",dbgPid );
-      printf( "</preamble>\n\n" );
-      printf( "<pid>%u</pid>\n<ppid>%u</ppid>\n<tool>heob</tool>\n\n",
-          pi.dwProcessId,ppid );
-
-      const wchar_t *argva[2] = { cmdLineW,argsW };
-      if( api ) argva[1] = api->commandLine;
-      int l = (int)( argsW - cmdLineW );
-      while( l>0 && cmdLineW[l-1]==' ' ) l--;
-      int argvl[2] = { l,lstrlenW(argva[1]) };
-      printf( "<args>\n" );
-      for( l=0; l<2; l++ )
-      {
-        const char *argvstr = l ? "argv" : "vargv";
-        const wchar_t *argv = argva[l];
-        int argl = argvl[l];
-        printf( "  <%s>\n",argvstr );
-        if( l && api && api->type>0 )
-        {
-          const wchar_t *cl = api->commandLine;
-          int i;
-          int cyg_argc = api->cyg_argc;
-          if( api->type==3 )
-          {
-            wchar_t *lastDelim = strrchrW( exePathW,'\\' );
-            if( lastDelim ) lastDelim++;
-            else lastDelim = exePathW;
-            lstrcpyW( api->commandLine,lastDelim );
-            wchar_t *lastPoint = strrchrW( cl,'.' );
-            if( lastPoint ) lastPoint[0] = 0;
-            cyg_argc = 1;
-          }
-          for( i=0; i<cyg_argc; i++ )
-          {
-            const char *argstr = i ? "arg" : "exe";
-            printf( "    <%s>%S</%s>\n",argstr,cl,argstr );
-            cl += lstrlenW( cl ) + 1;
-          }
-          printf( "  </%s>\n",argvstr );
-          break;
-        }
-        int i = 0;
-        while( i<argl )
-        {
-          int startI = i;
-          if( !l && i+1<argl && argv[i]=='-' && argv[i+1]=='O' )
-          {
-            i += 2;
-            while( i<argl && argv[i]!=' ' )
-            {
-              while( i<argl && argv[i]!=':' ) i++;
-              while( i<argl && argv[i]!=';' ) i++;
-              if( i<argl ) i++;
-            }
-          }
-          while( i<argl && argv[i]!=' ' )
-          {
-            wchar_t c = argv[i];
-            i++;
-            if( c=='"' )
-            {
-              while( i<argl && argv[i]!='"' ) i++;
-              if( i<argl && argv[i]=='"' ) i++;
-            }
-          }
-          if( i>startI )
-          {
-            const char *argstr = startI ? "arg" : "exe";
-            printf( "    <%s>",argstr );
-            tc->fWriteSubTextW( tc,argv+startI,i-startI );
-            printf( "</%s>\n",argstr );
-          }
-          while( i<argl && argv[i]==' ' ) i++;
-        }
-        printf( "  </%s>\n",argvstr );
-      }
-      printf( "</args>\n\n" );
-
-      printf( "<status>\n  <state>RUNNING</state>\n"
-          "  <time>%t</time>\n</status>\n\n",
-          GetTickCount()-startTicks );
-
-      tc = tcOut;
-    }
-    // }}}
+    textColor *tcXml = writeXmlHeader( &xmlName,heap,exePath,delim,api,
+        cmdLineW,argsW,exePathW,&pi,ppid,dbgPid,startTicks );
 
     if( !keepSuspended )
       ResumeThread( pi.hThread );
@@ -4711,67 +5010,8 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
             }
             // }}}
 
-            // xml {{{
-            if( tcXml )
-            {
-              ds.tc = tc = tcXml;
-
-              printf( "<error>\n" );
-              printf( "  <kind>InvalidRead</kind>\n" );
-              printf( "  <what>unhandled exception code: %x%s</what>\n",
-                  ei.er.ExceptionCode,desc );
-              printf( "  <auxwhat>exception on</auxwhat>\n" );
-              printf( "  <stack>\n" );
-              printStackCount( ei.aa[0].frames,ei.aa[0].frameCount,
-                  mi_a,mi_q,&ds,FT_COUNT,-1 );
-              printf( "  </stack>\n" );
-              if( violationType )
-              {
-                printf( "  <auxwhat>%s violation at %p</auxwhat>\n",
-                    violationType,addr );
-                printf( "  <stack>\n" );
-                printf( "  </stack>\n" );
-              }
-
-              if( ei.aq>1 )
-              {
-                char *ptr = (char*)ei.aa[1].ptr;
-                size_t size = ei.aa[1].size;
-                printf(
-                    "  <auxwhat>%s%s %p (size %U, offset %s%D)</auxwhat>\n",
-                    nearBlock,blockType,
-                    ptr,size,addr>ptr?"+":"",addr-ptr );
-                printf( "  <stack>\n" );
-                printf( "  </stack>\n" );
-                printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",
-                    ei.aa[1].id );
-                printf( "  <stack>\n" );
-                printStackCount( ei.aa[1].frames,ei.aa[1].frameCount,
-                    mi_a,mi_q,&ds,ei.aa[1].ft,-1 );
-                printf( "  </stack>\n" );
-
-                if( ei.aq>2 )
-                {
-                  printf( "  <auxwhat>freed on</auxwhat>\n" );
-                  printf( "  <stack>\n" );
-                  printStackCount( ei.aa[2].frames,ei.aa[2].frameCount,
-                      mi_a,mi_q,&ds,ei.aa[2].ft,-1 );
-                  printf( "  </stack>\n" );
-                }
-              }
-              else if( ei.throwName[0] )
-              {
-                char *throwName = undecorateVCsymbol( &ds,ei.throwName );
-                printf( "  <auxwhat>VC c++ exception: %s</auxwhat>\n",
-                    throwName );
-                printf( "  <stack>\n" );
-                printf( "  </stack>\n" );
-              }
-              printf( "</error>\n\n" );
-
-              ds.tc = tc = tcOut;
-            }
-            // }}}
+            writeXmlException( tcXml,&ds,eiPtr,desc,addr,violationType,
+                nearBlock,blockType,mi_a,mi_q );
 
             terminated = -1;
             heobExit = HEOB_EXCEPTION;
@@ -4807,26 +5047,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
             printStackCount( aa->frames,aa->frameCount,
                 mi_a,mi_q,&ds,aa->ft,0 );
 
-            if( tcXml )
-            {
-              ds.tc = tc = tcXml;
-
-              printf( "<error>\n" );
-              printf( "  <kind>UninitValue</kind>\n" );
-              if( mulOverflow )
-                printf( "  <what>multiplication overflow in allocation"
-                    " of %U * %U bytes (#%U)</what>\n",aa->size,mul,aa->id );
-              else
-                printf( "  <what>allocation failed of %U bytes (#%U)</what>\n",
-                    aa->size,aa->id );
-              printf( "  <stack>\n" );
-              printStackCount( aa->frames,aa->frameCount,
-                  mi_a,mi_q,&ds,aa->ft,-1 );
-              printf( "  </stack>\n" );
-              printf( "</error>\n\n" );
-
-              ds.tc = tc = tcOut;
-            }
+            writeXmlAllocFail( tcXml,&ds,mul,mulOverflow,aa,mi_a,mi_q );
 
             error_q++;
           }
@@ -4918,101 +5139,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
                   mi_a,mi_q,&ds,aa[3].ft,0 );
             }
 
-            // xml {{{
-            if( tcXml )
-            {
-              ds.tc = tc = tcXml;
-
-              printf( "<error>\n" );
-              printf( "  <kind>InvalidFree</kind>\n" );
-              printf( "  <what>deallocation of invalid pointer %p</what>\n",
-                  aa->ptr );
-              printf( "  <stack>\n" );
-              printStackCount( aa->frames,aa->frameCount,
-                  mi_a,mi_q,&ds,aa->ft,-1 );
-              printf( "  </stack>\n" );
-
-              if( aa[1].ptr )
-              {
-                char *ptr = aa->ptr;
-                char *addr = aa[1].ptr;
-                size_t size = aa[1].size;
-                const char *block = aa[2].ptr ? "freed " : "";
-                printf(
-                    "  <auxwhat>pointing to %sblock %p"
-                    " (size %U, offset %s%D)</auxwhat>\n",
-                    block,addr,size,ptr>addr?"+":"",ptr-addr );
-                printf( "  <stack>\n" );
-                printf( "  </stack>\n" );
-                printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",
-                    aa[1].id );
-                printf( "  <stack>\n" );
-                printStackCount( aa[1].frames,aa[1].frameCount,
-                    mi_a,mi_q,&ds,aa[1].ft,-1 );
-                printf( "  </stack>\n" );
-
-                if( aa[2].ptr )
-                {
-                  printf( "  <auxwhat>freed on</auxwhat>\n" );
-                  printf( "  <stack>\n" );
-                  printStackCount( aa[2].frames,aa[2].frameCount,
-                      mi_a,mi_q,&ds,aa[2].ft,-1 );
-                  printf( "  </stack>\n" );
-                }
-              }
-              else if( aa[1].id==1 )
-              {
-                printf( "  <auxwhat>pointing to stack</auxwhat>\n" );
-                printf( "  <stack>\n" );
-                printf( "  </stack>\n" );
-                printf( "  <auxwhat>possibly same frame as</auxwhat>\n" );
-                printf( "  <stack>\n" );
-                printStackCount( aa[1].frames,aa[1].frameCount,
-                    mi_a,mi_q,&ds,FT_COUNT,-1 );
-                printf( "  </stack>\n" );
-              }
-              else if( aa[1].id==2 )
-              {
-                printf( "  <auxwhat>allocated (size %U) from</auxwhat>\n",
-                    aa[1].size );
-                if( allocMi )
-                {
-                  printf( "  <stack>\n" );
-                  locXml( tc,0,NULL,0,NULL,allocMi );
-                  printf( "  </stack>\n" );
-                }
-              }
-              else if( aa[1].id==3 )
-              {
-                printf( "  <auxwhat>pointing to global area of</auxwhat>\n" );
-                if( allocMi )
-                {
-                  printf( "  <stack>\n" );
-                  locXml( tc,0,NULL,0,NULL,allocMi );
-                  printf( "  </stack>\n" );
-                }
-              }
-
-              if( aa[3].ptr )
-              {
-                printf(
-                    "  <auxwhat>referenced by block %p"
-                    " (size %U, offset +%U)</auxwhat>\n",
-                    aa[3].ptr,aa[3].size,aa[2].size );
-                printf( "  <stack>\n" );
-                printf( "  </stack>\n" );
-                printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",
-                    aa[3].id );
-                printf( "  <stack>\n" );
-                printStackCount( aa[3].frames,aa[3].frameCount,
-                    mi_a,mi_q,&ds,aa[3].ft,-1 );
-                printf( "  </stack>\n" );
-              }
-              printf( "</error>\n\n" );
-
-              ds.tc = tc = tcOut;
-            }
-            // }}}
+            writeXmlFreeFail( tcXml,&ds,allocMi,aa,mi_a,mi_q );
 
             error_q++;
           }
@@ -5044,34 +5171,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
             printStackCount( aa[2].frames,aa[2].frameCount,
                 mi_a,mi_q,&ds,aa[2].ft,0 );
 
-            if( tcXml )
-            {
-              ds.tc = tc = tcXml;
-
-              printf( "<error>\n" );
-              printf( "  <kind>InvalidFree</kind>\n" );
-              printf( "  <what>double free of %p (size %U)</what>\n",
-                  aa[1].ptr,aa[1].size );
-              printf( "  <auxwhat>called on</auxwhat>\n" );
-              printf( "  <stack>\n" );
-              printStackCount( aa[0].frames,aa[0].frameCount,
-                  mi_a,mi_q,&ds,aa[0].ft,-1 );
-              printf( "  </stack>\n" );
-              printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",
-                  aa[1].id );
-              printf( "  <stack>\n" );
-              printStackCount( aa[1].frames,aa[1].frameCount,
-                  mi_a,mi_q,&ds,aa[1].ft,-1 );
-              printf( "  </stack>\n" );
-              printf( "  <auxwhat>freed on</auxwhat>\n" );
-              printf( "  <stack>\n" );
-              printStackCount( aa[2].frames,aa[2].frameCount,
-                  mi_a,mi_q,&ds,aa[2].ft,-1 );
-              printf( "  </stack>\n" );
-              printf( "</error>\n\n" );
-
-              ds.tc = tc = tcOut;
-            }
+            writeXmlDoubleFree( tcXml,&ds,aa,mi_a,mi_q );
 
             error_q++;
           }
@@ -5100,36 +5200,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
             printStackCount( aa[1].frames,aa[1].frameCount,
                 mi_a,mi_q,&ds,aa[1].ft,0 );
 
-            if( tcXml )
-            {
-              ds.tc = tc = tcXml;
-
-              printf( "<error>\n" );
-              printf( "  <kind>InvalidWrite</kind>\n" );
-              printf( "  <what>write access violation at %p</what>\n",
-                  aa[1].ptr );
-              printf( "  <auxwhat>slack area of %p"
-                  " (size %U, offset %s%D)</auxwhat>\n",
-                  aa[0].ptr,aa[0].size,
-                  aa[1].ptr>aa[0].ptr?"+":"",
-                  (char*)aa[1].ptr-(char*)aa[0].ptr );
-              printf( "  <stack>\n" );
-              printf( "  </stack>\n" );
-              printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",
-                  aa[0].id );
-              printf( "  <stack>\n" );
-              printStackCount( aa[0].frames,aa[0].frameCount,
-                  mi_a,mi_q,&ds,aa[0].ft,-1 );
-              printf( "  </stack>\n" );
-              printf( "  <auxwhat>freed on</auxwhat>\n" );
-              printf( "  <stack>\n" );
-              printStackCount( aa[1].frames,aa[1].frameCount,
-                  mi_a,mi_q,&ds,aa[1].ft,-1 );
-              printf( "  </stack>\n" );
-              printf( "</error>\n\n" );
-
-              ds.tc = tc = tcOut;
-            }
+            writeXmlSlack( tcXml,&ds,aa,mi_a,mi_q );
 
             error_q++;
           }
@@ -5165,29 +5236,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
             printStackCount( aa[1].frames,aa[1].frameCount,
                 mi_a,mi_q,&ds,aa[1].ft,0 );
 
-            if( tcXml )
-            {
-              ds.tc = tc = tcXml;
-
-              printf( "<error>\n" );
-              printf( "  <kind>MismatchedFree</kind>\n" );
-              printf(
-                  "  <what>mismatching allocation/release method</what>\n" );
-              printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",
-                  aa[0].id );
-              printf( "  <stack>\n" );
-              printStackCount( aa[0].frames,aa[0].frameCount,
-                  mi_a,mi_q,&ds,aa[0].ft,-1 );
-              printf( "  </stack>\n" );
-              printf( "  <auxwhat>freed on</auxwhat>\n" );
-              printf( "  <stack>\n" );
-              printStackCount( aa[1].frames,aa[1].frameCount,
-                  mi_a,mi_q,&ds,aa[1].ft,-1 );
-              printf( "  </stack>\n" );
-              printf( "</error>\n\n" );
-
-              ds.tc = tc = tcOut;
-            }
+            writeXmlWrongDealloc( tcXml,&ds,aa,mi_a,mi_q );
 
             error_q++;
           }
@@ -5345,23 +5394,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
       heobExit = HEOB_UNEXPECTED_END;
     }
 
-    // xml footer {{{
-    if( tcXml )
-    {
-      tc = tcXml;
-
-      printf( "<status>\n  <state>FINISHED</state>\n"
-          "  <time>%t</time>\n</status>\n\n",
-          GetTickCount()-startTicks );
-
-      printf( "</valgrindoutput>\n" );
-
-      tc = tcOut;
-
-      CloseHandle( tcXml->out );
-      HeapFree( heap,0,tcXml );
-    }
-    // }}}
+    writeXmlFooter( tcXml,heap,startTicks );
 
     dbgsym_close( &ds );
     if( mi_a ) HeapFree( heap,0,mi_a );
