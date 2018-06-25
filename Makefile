@@ -22,6 +22,7 @@ else
 CPPFLAGS=-Idwarfstack/include
 endif
 CFLAGS=-Wall -Wextra -Wshadow -Wwrite-strings -Werror \
+       -Wno-cast-function-type \
        -fno-omit-frame-pointer -fno-optimize-sibling-calls
 CFLAGS_HEOB=$(CPPFLAGS) $(CFLAGS) -O3 -DHEOB_VER="\"$(HEOB_VERSION)\"" \
 	    -ffreestanding

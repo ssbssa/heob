@@ -196,7 +196,7 @@ void choose( int arg )
       {
         // memory leaks
         char *copy = strdup( "abcd" );
-        char *zeroes = (char*)calloc( 2,500 );
+        volatile char *zeroes = (char*)calloc( 2,500 );
         wchar_t *wcopy = wcsdup( L"efgh" );
         mem[1] = copy[0];
         mem[2] = zeroes[0];
