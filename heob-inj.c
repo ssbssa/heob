@@ -1809,7 +1809,8 @@ static VOID WINAPI new_ExitProcess( UINT c )
 {
   GET_REMOTEDATA( rd );
 
-  if( rd->opt.samplingInterval )
+  int samplingInterval = rd->opt.samplingInterval;
+  if( samplingInterval )
   {
     EnterCriticalSection( &rd->csSampling );
     rd->opt.samplingInterval = 0;
@@ -1849,7 +1850,7 @@ static VOID WINAPI new_ExitProcess( UINT c )
 
   writeLeakMods( exitTracePtr,1 );
 
-  if( rd->samp_q )
+  if( samplingInterval )
   {
     int type = WRITE_SAMPLING;
     DWORD written;

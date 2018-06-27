@@ -2624,7 +2624,10 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
 
   if( !alloc_q && !alloc_ignore_q && !alloc_ignore_ind_q )
   {
-    printf( "$Ono leaks found\n" );
+    if( !sampling )
+      printf( "$Ono leaks found\n" );
+    else
+      printf( "$Ino profiling samples\n" );
     return;
   }
 
