@@ -5407,7 +5407,9 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     CloseHandle( readPipe );
   }
   if( controlPipe ) CloseHandle( controlPipe );
+#ifndef NO_DBGENG
   if( exceptionWait ) CloseHandle( exceptionWait );
+#endif
   if( attachEvent )
   {
     SetEvent( attachEvent );
