@@ -925,6 +925,65 @@ enum
 };
 
 // }}}
+// main data {{{
+
+typedef struct appData
+{
+  HANDLE heap;
+  HANDLE errorPipe;
+  int writeProcessPid;
+  HANDLE attachEvent;
+  PROCESS_INFORMATION pi;
+  char exePath[MAX_PATH];
+  wchar_t exePathW[MAX_PATH];
+  wchar_t subCurDir[MAX_PATH];
+  textColor *tcOut;
+  textColor *tcOutOrig;
+  size_t *raise_alloc_a;
+  int raise_alloc_q;
+  char *outName;
+  char *xmlName;
+  char *specificOptions;
+  modInfo *a2l_mi_a;
+  int a2l_mi_q;
+}
+appData;
+
+static appData *initHeob( HANDLE heap )
+{
+  appData *ad = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(appData) );
+  ad->heap = heap;
+  ad->errorPipe = openErrorPipe( &ad->writeProcessPid );
+  return( ad );
+}
+
+static NORETURN void exitHeob( appData *ad,
+    unsigned exitStatus,unsigned extraArg,DWORD exitCode )
+{
+  HANDLE heap = ad->heap;
+  HANDLE errorPipe = ad->errorPipe;
+
+  if( ad->attachEvent )
+  {
+    SetEvent( ad->attachEvent );
+    CloseHandle( ad->attachEvent );
+  }
+  if( ad->pi.hThread ) CloseHandle( ad->pi.hThread );
+  if( ad->pi.hProcess ) CloseHandle( ad->pi.hProcess );
+  if( ad->tcOut ) HeapFree( heap,0,ad->tcOut );
+  if( ad->tcOutOrig ) HeapFree( heap,0,ad->tcOutOrig );
+  if( ad->raise_alloc_a ) HeapFree( heap,0,ad->raise_alloc_a );
+  if( ad->outName ) HeapFree( heap,0,ad->outName );
+  if( ad->xmlName ) HeapFree( heap,0,ad->xmlName );
+  if( ad->specificOptions ) HeapFree( heap,0,ad->specificOptions );
+  if( ad->a2l_mi_a ) HeapFree( heap,0,ad->a2l_mi_a );
+  HeapFree( heap,0,ad );
+
+  writeCloseErrorPipe( errorPipe,exitStatus,extraArg );
+  ExitProcess( exitCode );
+}
+
+// }}}
 // code injection {{{
 
 typedef VOID CALLBACK func_heob( ULONG_PTR );
@@ -958,9 +1017,8 @@ static CODE_SEG(".text$1") VOID NTAPI remoteCall(
 }
 
 static CODE_SEG(".text$2") HANDLE inject(
-    HANDLE process,HANDLE thread,options *opt,options *globalopt,
-    const char *specificOptions,wchar_t *exePath,textColor *tc,
-    int raise_alloc_q,size_t *raise_alloc_a,HANDLE *controlPipe,
+    appData *ad,options *opt,options *globalopt,
+    textColor *tc,HANDLE *controlPipe,
 #ifndef NO_DBGENG
     HANDLE *exceptionWait,
 #endif
@@ -970,16 +1028,20 @@ static CODE_SEG(".text$2") HANDLE inject(
 {
   // injection data {{{
   func_inj *finj = &remoteCall;
-  size_t funcOffset = sizeof(remoteData) + raise_alloc_q*sizeof(size_t);
+  size_t funcOffset = sizeof(remoteData) + ad->raise_alloc_q*sizeof(size_t);
   size_t funcSize = (size_t)&inject - (size_t)finj;
   size_t soOffset = funcOffset + funcSize;
-  size_t soSize = ( specificOptions ? lstrlen(specificOptions) + 1 : 0 );
+  size_t soSize =
+    ( ad->specificOptions ? lstrlen(ad->specificOptions) + 1 : 0 );
   size_t fullSize = soOffset + soSize;
+  HANDLE process = ad->pi.hProcess;
+  HANDLE thread = ad->pi.hThread;
+  wchar_t *exePath = ad->exePathW;
 
   unsigned char *fullDataRemote = VirtualAllocEx( process,NULL,
       fullSize,MEM_RESERVE|MEM_COMMIT,PAGE_EXECUTE_READWRITE );
 
-  HANDLE heap = GetProcessHeap();
+  HANDLE heap = ad->heap;
   unsigned char *fullData = HeapAlloc( heap,0,fullSize );
   RtlMoveMemory( fullData+funcOffset,finj,funcSize );
   remoteData *data = (remoteData*)fullData;
@@ -1086,15 +1148,15 @@ static CODE_SEG(".text$2") HANDLE inject(
   if( subXmlName ) lstrcpy( data->subXmlName,subXmlName );
   if( subCurDir ) lstrcpyW( data->subCurDir,subCurDir );
 
-  data->raise_alloc_q = raise_alloc_q;
-  if( raise_alloc_q )
+  data->raise_alloc_q = ad->raise_alloc_q;
+  if( ad->raise_alloc_q )
     RtlMoveMemory( data->raise_alloc_a,
-        raise_alloc_a,raise_alloc_q*sizeof(size_t) );
+        ad->raise_alloc_a,ad->raise_alloc_q*sizeof(size_t) );
 
   if( soSize )
   {
     data->specificOptions = (char*)fullDataRemote + soOffset;
-    RtlMoveMemory( fullData+soOffset,specificOptions,soSize );
+    RtlMoveMemory( fullData+soOffset,ad->specificOptions,soSize );
   }
   // }}}
 
@@ -2893,12 +2955,12 @@ static void printAttachedProcessInfo(
 // }}}
 // common options {{{
 
-char *readOption( char *args,options *opt,int *raq,size_t **raa,HANDLE heap )
+char *readOption( char *args,options *opt,appData *ad,HANDLE heap )
 {
   if( !args || args[0]!='-' ) return( NULL );
 
-  int raise_alloc_q = *raq;
-  size_t *raise_alloc_a = *raa;
+  int raise_alloc_q = ad->raise_alloc_q;
+  size_t *raise_alloc_a = ad->raise_alloc_a;
 
   switch( args[1] )
   {
@@ -3040,8 +3102,8 @@ char *readOption( char *args,options *opt,int *raq,size_t **raa,HANDLE heap )
   }
   while( args[0] && args[0]!=' ' && args[0]!=';' ) args++;
 
-  *raq = raise_alloc_q;
-  *raa = raise_alloc_a;
+  ad->raise_alloc_q = raise_alloc_q;
+  ad->raise_alloc_a = raise_alloc_a;
 
   return( args );
 }
@@ -3191,14 +3253,16 @@ static void setHeobConsoleTitle( HANDLE heap,const wchar_t *prog )
 // }}}
 // xml {{{
 
-static textColor *writeXmlHeader( char **xmlName,HANDLE heap,
-    char *exePath,char *delim,attachedProcessInfo *api,
-    const wchar_t *cmdLineW,const wchar_t *argsW,const wchar_t *exePathW,
-    PROCESS_INFORMATION *pi,DWORD ppid,DWORD dbgPid,DWORD startTicks )
+static textColor *writeXmlHeader( appData *ad,
+    char *delim,attachedProcessInfo *api,
+    const wchar_t *cmdLineW,const wchar_t *argsW,
+    DWORD ppid,DWORD dbgPid,DWORD startTicks )
 {
+  char **xmlName = &ad->xmlName;
   if( !xmlName || !*xmlName ) return( NULL );
 
-  char *fullName = strreplacenum( *xmlName,"%p",pi->dwProcessId,heap );
+  HANDLE heap = ad->heap;
+  char *fullName = strreplacenum( *xmlName,"%p",ad->pi.dwProcessId,heap );
   if( !fullName )
   {
     fullName = *xmlName;
@@ -3212,6 +3276,8 @@ static textColor *writeXmlHeader( char **xmlName,HANDLE heap,
     fullName = ppidName;
   }
 
+  char *exePath = ad->exePath;
+  const wchar_t *exePathW = ad->exePathW;
   if( delim ) delim++;
   else delim = exePath;
   char *lastPoint = strrchr( delim,'.' );
@@ -3278,7 +3344,7 @@ static textColor *writeXmlHeader( char **xmlName,HANDLE heap,
     printf( "  <line>debugger PID: %u</line>\n",dbgPid );
   printf( "</preamble>\n\n" );
   printf( "<pid>%u</pid>\n<ppid>%u</ppid>\n<tool>heob</tool>\n\n",
-      pi->dwProcessId,ppid );
+      ad->pi.dwProcessId,ppid );
 
   const wchar_t *argva[2] = { cmdLineW,argsW };
   if( api ) argva[1] = api->commandLine;
@@ -3687,8 +3753,8 @@ static const char *funcnames[FT_COUNT] = {
 CODE_SEG(".text$7") void mainCRTStartup( void )
 {
   DWORD startTicks = GetTickCount();
-  int writeProcessPid = 0;
-  HANDLE errorPipe = openErrorPipe( &writeProcessPid );
+  HANDLE heap = GetProcessHeap();
+  appData *ad = initHeob( heap );
   HANDLE in = GetStdHandle( STD_INPUT_HANDLE );
   if( !FlushConsoleInputBuffer(in) ) in = NULL;
 
@@ -3731,28 +3797,17 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   };
   // }}}
   options opt = defopt;
-  HANDLE heap = GetProcessHeap();
-  int raise_alloc_q = 0;
-  size_t *raise_alloc_a = NULL;
-  char *outName = NULL;
-  modInfo *a2l_mi_a = NULL;
-  int a2l_mi_q = 0;
   int fullhelp = 0;
   char badArg = 0;
-  char *xmlName = NULL;
-  PROCESS_INFORMATION pi;
-  RtlZeroMemory( &pi,sizeof(PROCESS_INFORMATION) );
   DWORD ppid = 0;
   int keepSuspended = 0;
-  HANDLE attachEvent = NULL;
   int fakeAttached = 0;
-  char *specificOptions = NULL;
   // permanent options {{{
   while( args )
   {
     while( args[0]==' ' ) args++;
     if( args[0]!='-' ) break;
-    char *ro = readOption( args,&opt,&raise_alloc_q,&raise_alloc_a,heap );
+    char *ro = readOption( args,&opt,ad,heap );
     if( ro )
     {
       args = ro;
@@ -3766,32 +3821,32 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
 
       case 'o':
         {
-          if( outName ) break;
+          if( ad->outName ) break;
           char *start = args + 2;
           char *end = start;
           while( *end && *end!=' ' ) end++;
           if( end>start )
           {
             size_t len = end - start;
-            outName = HeapAlloc( heap,0,len+1 );
-            RtlMoveMemory( outName,start,len );
-            outName[len] = 0;
+            ad->outName = HeapAlloc( heap,0,len+1 );
+            RtlMoveMemory( ad->outName,start,len );
+            ad->outName[len] = 0;
           }
         }
         break;
 
       case 'x':
         {
-          if( xmlName ) break;
+          if( ad->xmlName ) break;
           char *start = args + 2;
           char *end = start;
           while( *end && *end!=' ' ) end++;
           if( end>start )
           {
             size_t len = end - start;
-            xmlName = HeapAlloc( heap,0,len+1 );
-            RtlMoveMemory( xmlName,start,len );
-            xmlName[len] = 0;
+            ad->xmlName = HeapAlloc( heap,0,len+1 );
+            RtlMoveMemory( ad->xmlName,start,len );
+            ad->xmlName[len] = 0;
           }
         }
         break;
@@ -3812,9 +3867,9 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
                 ntdll,"NtQueryInformationThread" );
           if( !fNtQueryInformationThread ) break;
 
-          if( pi.hProcess ) break;
+          if( ad->pi.hProcess ) break;
           char *start = args + 2;
-          pi.dwThreadId = (DWORD)atop( start );
+          ad->pi.dwThreadId = (DWORD)atop( start );
 
           while( start[0] && start[0]!=' ' && start[0]!='/' && start[0]!='+' )
             start++;
@@ -3826,29 +3881,29 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
           if( start[0]=='+' )
             keepSuspended = atoi( start+1 );
 
-          pi.hThread = OpenThread(
+          ad->pi.hThread = OpenThread(
               STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0x3ff,
-              FALSE,pi.dwThreadId );
-          if( !pi.hThread ) break;
+              FALSE,ad->pi.dwThreadId );
+          if( !ad->pi.hThread ) break;
 
           THREAD_BASIC_INFORMATION tbi;
           RtlZeroMemory( &tbi,sizeof(THREAD_BASIC_INFORMATION) );
-          if( fNtQueryInformationThread(pi.hThread,ThreadBasicInformation,
+          if( fNtQueryInformationThread(ad->pi.hThread,ThreadBasicInformation,
                 &tbi,sizeof(THREAD_BASIC_INFORMATION),NULL)!=0 )
           {
-            CloseHandle( pi.hThread );
-            pi.hThread = NULL;
+            CloseHandle( ad->pi.hThread );
+            ad->pi.hThread = NULL;
             break;
           }
-          pi.dwProcessId = (DWORD)(ULONG_PTR)tbi.ClientId.UniqueProcess;
+          ad->pi.dwProcessId = (DWORD)(ULONG_PTR)tbi.ClientId.UniqueProcess;
 
-          pi.hProcess = OpenProcess(
+          ad->pi.hProcess = OpenProcess(
               STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0xfff,
-              FALSE,pi.dwProcessId );
-          if( !pi.hProcess )
+              FALSE,ad->pi.dwProcessId );
+          if( !ad->pi.hProcess )
           {
-            CloseHandle( pi.hThread );
-            pi.hThread = NULL;
+            CloseHandle( ad->pi.hThread );
+            ad->pi.hThread = NULL;
             break;
           }
 
@@ -3856,7 +3911,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
           char *end = num2hexstr(
               eventName+lstrlen(eventName),GetCurrentProcessId(),8 );
           end[0] = 0;
-          attachEvent = OpenEvent( EVENT_ALL_ACCESS,FALSE,eventName );
+          ad->attachEvent = OpenEvent( EVENT_ALL_ACCESS,FALSE,eventName );
 
           opt.attached = 1;
         }
@@ -3880,15 +3935,16 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
           }
           if( optionEnd && optionEnd>optionStart )
           {
-            size_t curLen = specificOptions ? lstrlen( specificOptions ) : 0;
+            size_t curLen =
+              ad->specificOptions ? lstrlen( ad->specificOptions ) : 0;
             size_t addLen = optionEnd - optionStart;
-            if( !specificOptions )
-              specificOptions = HeapAlloc( heap,0,curLen+addLen+1 );
+            if( !ad->specificOptions )
+              ad->specificOptions = HeapAlloc( heap,0,curLen+addLen+1 );
             else
-              specificOptions = HeapReAlloc(
-                  heap,0,specificOptions,curLen+addLen+1 );
-            RtlMoveMemory( specificOptions+curLen,optionStart,addLen );
-            specificOptions[curLen+addLen] = 0;
+              ad->specificOptions = HeapReAlloc(
+                  heap,0,ad->specificOptions,curLen+addLen+1 );
+            RtlMoveMemory( ad->specificOptions+curLen,optionStart,addLen );
+            ad->specificOptions[curLen+addLen] = 0;
           }
           args = optionEnd;
         }
@@ -3902,13 +3958,13 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
           if( !*end || end<=start ) break;
           uintptr_t base = atop( end+1 );
           if( !base ) break;
-          a2l_mi_q++;
-          if( !a2l_mi_a )
-            a2l_mi_a = HeapAlloc( heap,0,a2l_mi_q*sizeof(modInfo) );
+          ad->a2l_mi_q++;
+          if( !ad->a2l_mi_a )
+            ad->a2l_mi_a = HeapAlloc( heap,0,ad->a2l_mi_q*sizeof(modInfo) );
           else
-            a2l_mi_a = HeapReAlloc(
-                heap,0,a2l_mi_a,a2l_mi_q*sizeof(modInfo) );
-          modInfo *mi = a2l_mi_a + ( a2l_mi_q-1 );
+            ad->a2l_mi_a = HeapReAlloc(
+                heap,0,ad->a2l_mi_a,ad->a2l_mi_q*sizeof(modInfo) );
+          modInfo *mi = ad->a2l_mi_a + ( ad->a2l_mi_q-1 );
           mi->base = base;
           mi->size = 0;
           size_t len = end - start;
@@ -3942,8 +3998,8 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     opt.slackInit = -1;
   }
   HANDLE out = GetStdHandle( STD_OUTPUT_HANDLE );
-  textColor *tcOut = HeapAlloc( heap,0,sizeof(textColor) );
-  textColor *tc = tcOut;
+  ad->tcOut = HeapAlloc( heap,0,sizeof(textColor) );
+  textColor *tc = ad->tcOut;
   checkOutputVariant( tc,out );
 
   // bad argument {{{
@@ -3952,31 +4008,16 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     char arg0[2] = { badArg,0 };
     printf( "$Wunknown argument: $I-%s\n",arg0 );
 
-    HeapFree( heap,0,tcOut );
-    if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
-    if( a2l_mi_a ) HeapFree( heap,0,a2l_mi_a );
-    if( outName ) HeapFree( heap,0,outName );
-    if( xmlName ) HeapFree( heap,0,xmlName );
-    if( attachEvent )
-    {
-      SetEvent( attachEvent );
-      CloseHandle( attachEvent );
-    }
-    if( opt.attached )
-    {
-      CloseHandle( pi.hThread );
-      CloseHandle( pi.hProcess );
-    }
-    if( specificOptions ) HeapFree( heap,0,specificOptions );
-    writeCloseErrorPipe( errorPipe,HEOB_BAD_ARG,badArg );
-    ExitProcess( 0x7fffffff );
+    exitHeob( ad,HEOB_BAD_ARG,badArg,0x7fffffff );
   }
   // }}}
 
   // trace mode {{{
-  if( a2l_mi_a )
+  if( ad->a2l_mi_a )
   {
     allocation *a = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(allocation) );
+    modInfo *a2l_mi_a = ad->a2l_mi_a;
+    int a2l_mi_q = ad->a2l_mi_q;
 
     while( args && args[0]>='0' && args[0]<='9' )
     {
@@ -4025,29 +4066,11 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
 
     int fc = a->frameCount;
     HeapFree( heap,0,a );
-    if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
-    raise_alloc_a = NULL;
-    HeapFree( heap,0,a2l_mi_a );
 
     if( fc )
     {
       waitForKeyIfConsoleOwner( tc,in );
-      HeapFree( heap,0,tcOut );
-      if( outName ) HeapFree( heap,0,outName );
-      if( xmlName ) HeapFree( heap,0,xmlName );
-      if( attachEvent )
-      {
-        SetEvent( attachEvent );
-        CloseHandle( attachEvent );
-      }
-      if( opt.attached )
-      {
-        CloseHandle( pi.hThread );
-        CloseHandle( pi.hProcess );
-      }
-      if( specificOptions ) HeapFree( heap,0,specificOptions );
-      writeCloseErrorPipe( errorPipe,HEOB_TRACE,0 );
-      ExitProcess( 0 );
+      exitHeob( ad,HEOB_TRACE,0,0 );
     }
     args = NULL;
   }
@@ -4056,7 +4079,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   // help text {{{
   if( (!args || !args[0]) && !opt.attached )
   {
-    char *exePath = HeapAlloc( heap,HEAP_ZERO_MEMORY,MAX_PATH );
+    char *exePath = ad->exePath;
     GetModuleFileName( NULL,exePath,MAX_PATH );
     char *delim = strrchr( exePath,'\\' );
     if( delim ) delim++;
@@ -4147,14 +4170,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     printf( "    $I-H$N     show full help\n" );
     printf( "\n$Ohe$Nap-$Oob$Nserver " HEOB_VER " ($O" BITS "$Nbit)\n" );
     waitForKeyIfConsoleOwner( tc,in );
-    HeapFree( heap,0,tcOut );
-    HeapFree( heap,0,exePath );
-    if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
-    if( outName ) HeapFree( heap,0,outName );
-    if( xmlName ) HeapFree( heap,0,xmlName );
-    if( specificOptions ) HeapFree( heap,0,specificOptions );
-    writeCloseErrorPipe( errorPipe,HEOB_HELP,0 );
-    ExitProcess( 0x7fffffff );
+    exitHeob( ad,HEOB_HELP,0,0x7fffffff );
   }
   // }}}
   // }}}
@@ -4169,13 +4185,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     if( fwine_get_version )
     {
       printf( "$Wheob does not work with Wine\n" );
-      HeapFree( heap,0,tcOut );
-      if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
-      if( outName ) HeapFree( heap,0,outName );
-      if( xmlName ) HeapFree( heap,0,xmlName );
-      if( specificOptions ) HeapFree( heap,0,specificOptions );
-      writeCloseErrorPipe( errorPipe,HEOB_WRONG_BITNESS,0 );
-      ExitProcess( 0x7fffffff );
+      exitHeob( ad,HEOB_WRONG_BITNESS,0,0x7fffffff );
     }
   }
   // }}}
@@ -4223,48 +4233,35 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     si.cb = sizeof(STARTUPINFO);
     BOOL result = CreateProcessW( NULL,argsW,NULL,NULL,FALSE,
         CREATE_SUSPENDED|(opt.newConsole&1?CREATE_NEW_CONSOLE:0),
-        NULL,NULL,&si,&pi );
+        NULL,NULL,&si,&ad->pi );
     if( !result )
     {
       DWORD e = GetLastError();
       printf( "$Wcan't create process for '%s' (%e)\n",args,e );
-      HeapFree( heap,0,tcOut );
-      if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
-      if( outName ) HeapFree( heap,0,outName );
-      if( xmlName ) HeapFree( heap,0,xmlName );
-      if( specificOptions ) HeapFree( heap,0,specificOptions );
-      writeCloseErrorPipe( errorPipe,HEOB_PROCESS_FAIL,e );
-      ExitProcess( 0x7fffffff );
+      exitHeob( ad,HEOB_PROCESS_FAIL,e,0x7fffffff );
     }
 
-    if( opt.newConsole>1 || isWrongArch(pi.hProcess) )
+    if( opt.newConsole>1 || isWrongArch(ad->pi.hProcess) )
     {
       HMODULE kernel32 = GetModuleHandle( "kernel32.dll" );
       func_CreateProcessW *fCreateProcessW =
         (func_CreateProcessW*)GetProcAddress( kernel32,"CreateProcessW" );
       DWORD exitCode = 0;
-      if( !heobSubProcess(0,&pi,NULL,heap,&opt,fCreateProcessW,
-            outName,xmlName,NULL,raise_alloc_q,raise_alloc_a,specificOptions) )
+      if( !heobSubProcess(0,&ad->pi,NULL,heap,&opt,fCreateProcessW,
+            ad->outName,ad->xmlName,NULL,ad->raise_alloc_q,ad->raise_alloc_a,
+            ad->specificOptions) )
       {
         printf( "$Wcan't create process for 'heob'\n" );
-        TerminateProcess( pi.hProcess,1 );
+        TerminateProcess( ad->pi.hProcess,1 );
         exitCode = 0x7fffffff;
       }
       else if( opt.newConsole<=2 )
       {
-        WaitForSingleObject( pi.hProcess,INFINITE );
-        GetExitCodeProcess( pi.hProcess,&exitCode );
+        WaitForSingleObject( ad->pi.hProcess,INFINITE );
+        GetExitCodeProcess( ad->pi.hProcess,&exitCode );
       }
 
-      CloseHandle( pi.hThread );
-      CloseHandle( pi.hProcess );
-      HeapFree( heap,0,tcOut );
-      if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
-      if( outName ) HeapFree( heap,0,outName );
-      if( xmlName ) HeapFree( heap,0,xmlName );
-      if( specificOptions ) HeapFree( heap,0,specificOptions );
-      writeCloseErrorPipe( errorPipe,HEOB_CONSOLE,0 );
-      ExitProcess( exitCode );
+      exitHeob( ad,HEOB_CONSOLE,0,exitCode );
     }
 
     opt.attached = fakeAttached;
@@ -4274,10 +4271,10 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   // }}}
 
   // executable name {{{
-  char *exePath = HeapAlloc( heap,HEAP_ZERO_MEMORY,MAX_PATH );
-  if( specificOptions || opt.attached ||
-      (outName && strstr(outName,"%n")) ||
-      (xmlName && strstr(xmlName,"%n")) )
+  char *exePath = ad->exePath;
+  if( ad->specificOptions || opt.attached ||
+      (ad->outName && strstr(ad->outName,"%n")) ||
+      (ad->xmlName && strstr(ad->xmlName,"%n")) )
   {
     func_NtQueryInformationProcess *fNtQueryInformationProcess =
       ntdll ? (func_NtQueryInformationProcess*)GetProcAddress(
@@ -4289,7 +4286,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
       if( oni )
       {
         ULONG len;
-        if( !fNtQueryInformationProcess(pi.hProcess,ProcessImageFileName,
+        if( !fNtQueryInformationProcess(ad->pi.hProcess,ProcessImageFileName,
               oni,sizeof(OBJECT_NAME_INFORMATION),&len) )
         {
           oni->Name.Buffer[oni->Name.Length/2] = 0;
@@ -4313,10 +4310,10 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
 
   // application specific options {{{
   defopt = opt;
-  if( specificOptions )
+  if( ad->specificOptions )
   {
     int nameLen = lstrlen( exePath );
-    char *name = specificOptions;
+    char *name = ad->specificOptions;
     lstrcpy( exePath+nameLen,":" );
     int disable = 0;
     while( 1 )
@@ -4335,7 +4332,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
         while( so[0]==' ' ) so++;
         if( so[0]!='-' ) break;
         if( so[1]=='X' ) disable = 1;
-        so = readOption( so,&opt,&raise_alloc_q,&raise_alloc_a,heap );
+        so = readOption( so,&opt,ad,heap );
       }
     }
     exePath[nameLen] = 0;
@@ -4343,31 +4340,16 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     if( disable )
     {
       if( !keepSuspended )
-        ResumeThread( pi.hThread );
-
-      if( attachEvent )
-      {
-        SetEvent( attachEvent );
-        CloseHandle( attachEvent );
-      }
+        ResumeThread( ad->pi.hThread );
 
       DWORD exitCode = 0;
       if( !opt.newConsole )
       {
-        WaitForSingleObject( pi.hProcess,INFINITE );
-        GetExitCodeProcess( pi.hProcess,&exitCode );
+        WaitForSingleObject( ad->pi.hProcess,INFINITE );
+        GetExitCodeProcess( ad->pi.hProcess,&exitCode );
       }
 
-      CloseHandle( pi.hThread );
-      CloseHandle( pi.hProcess );
-      HeapFree( heap,0,tcOut );
-      HeapFree( heap,0,exePath );
-      if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
-      if( outName ) HeapFree( heap,0,outName );
-      if( xmlName ) HeapFree( heap,0,xmlName );
-      if( specificOptions ) HeapFree( heap,0,specificOptions );
-      writeCloseErrorPipe( errorPipe,HEOB_OK,0 );
-      ExitProcess( exitCode );
+      exitHeob( ad,HEOB_OK,0,exitCode );
     }
   }
   if( opt.protect<1 ) opt.protectFree = 0;
@@ -4377,25 +4359,24 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
 
   // output destination {{{
   const char *subOutName = NULL;
-  textColor *tcOutOrig = NULL;
-  if( outName )
+  if( ad->outName )
   {
-    if( (outName[0]>='0' && outName[0]<='2') && !outName[1] )
+    if( (ad->outName[0]>='0' && ad->outName[0]<='2') && !ad->outName[1] )
     {
-      out = outName[0]=='0' ? NULL : GetStdHandle(
-          outName[0]=='1' ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE );
+      out = ad->outName[0]=='0' ? NULL : GetStdHandle(
+          ad->outName[0]=='1' ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE );
       checkOutputVariant( tc,out );
     }
     else
     {
-      char *fullName = strreplacenum( outName,"%p",pi.dwProcessId,heap );
+      char *fullName = strreplacenum( ad->outName,"%p",ad->pi.dwProcessId,heap );
       char *usedName;
       if( !fullName )
-        usedName = outName;
+        usedName = ad->outName;
       else
       {
         usedName = fullName;
-        subOutName = outName;
+        subOutName = ad->outName;
         opt.children = 1;
       }
 
@@ -4417,36 +4398,36 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     }
     if( out!=tc->out )
     {
-      tcOutOrig = tcOut;
-      tc = tcOut = HeapAlloc( heap,0,sizeof(textColor) );
+      ad->tcOutOrig = ad->tcOut;
+      tc = ad->tcOut = HeapAlloc( heap,0,sizeof(textColor) );
       checkOutputVariant( tc,out );
     }
   }
-  else if( xmlName )
+  else if( ad->xmlName )
   {
     out = tc->out = NULL;
     tc->fTextColor = NULL;
   }
-  if( !tc->out && !tcOutOrig && opt.attached )
+  if( !tc->out && !ad->tcOutOrig && opt.attached )
   {
-    tcOutOrig = HeapAlloc( heap,0,sizeof(textColor) );
-    checkOutputVariant( tcOutOrig,GetStdHandle(STD_OUTPUT_HANDLE) );
+    ad->tcOutOrig = HeapAlloc( heap,0,sizeof(textColor) );
+    checkOutputVariant( ad->tcOutOrig,GetStdHandle(STD_OUTPUT_HANDLE) );
   }
   if( !out )
     opt.sourceCode = opt.leakContents = 0;
   // }}}
 
   const char *subXmlName = NULL;
-  if( xmlName && strstr(xmlName,"%p") )
+  if( ad->xmlName && strstr(ad->xmlName,"%p") )
   {
-    subXmlName = xmlName;
+    subXmlName = ad->xmlName;
     opt.children = 1;
   }
 
   wchar_t *subCurDir = NULL;
   if( opt.children )
   {
-    subCurDir = HeapAlloc( heap,0,MAX_PATH*2 );
+    subCurDir = ad->subCurDir;
     if( !GetCurrentDirectoryW(MAX_PATH,subCurDir) )
       subCurDir[0] = 0;
   }
@@ -4467,23 +4448,22 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   attachedProcessInfo *api = NULL;
   unsigned heobExit = HEOB_OK;
   unsigned heobExitData = 0;
-  wchar_t *exePathW = HeapAlloc( heap,0,MAX_PATH*2 );
+  wchar_t *exePathW = ad->exePathW;
   int *recordingRemote = NULL;
-  if( isWrongArch(pi.hProcess) )
+  if( isWrongArch(ad->pi.hProcess) )
   {
     printf( "$Wonly " BITS "bit applications possible\n" );
     heobExit = HEOB_WRONG_BITNESS;
   }
   else
-    readPipe = inject( pi.hProcess,pi.hThread,&opt,&defopt,specificOptions,
-        exePathW,tc,raise_alloc_q,raise_alloc_a,&controlPipe,
+    readPipe = inject( ad,&opt,&defopt,tc,&controlPipe,
 #ifndef NO_DBGENG
         &exceptionWait,
 #endif
         in,err,&api,subOutName,subXmlName,subCurDir,&heobExit,
         &recordingRemote );
   if( !readPipe )
-    TerminateProcess( pi.hProcess,1 );
+    TerminateProcess( ad->pi.hProcess,1 );
 
   UINT exitCode = 0x7fffffff;
   if( readPipe )
@@ -4495,18 +4475,18 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     char *delim = strrchr( exePath,'\\' );
     if( delim ) delim[0] = 0;
     dbgsym ds;
-    dbgsym_init( &ds,pi.hProcess,tc,&opt,funcnames,heap,exePath,TRUE,
+    dbgsym_init( &ds,ad->pi.hProcess,tc,&opt,funcnames,heap,exePath,TRUE,
         RETURN_ADDRESS() );
     if( delim ) delim[0] = '\\';
 
     // debugger PID {{{
     DWORD dbgPid = 0;
-    if( writeProcessPid )
+    if( ad->writeProcessPid )
     {
-      unsigned data[2] = { HEOB_PID_ATTACH,pi.dwProcessId };
+      unsigned data[2] = { HEOB_PID_ATTACH,ad->pi.dwProcessId };
       DWORD didreadwrite;
-      WriteFile( errorPipe,data,sizeof(data),&didreadwrite,NULL );
-      if( !ReadFile(errorPipe,&data,sizeof(data),&didreadwrite,NULL) ||
+      WriteFile( ad->errorPipe,data,sizeof(data),&didreadwrite,NULL );
+      if( !ReadFile(ad->errorPipe,&data,sizeof(data),&didreadwrite,NULL) ||
           didreadwrite!=sizeof(data) )
       {
         data[0] = HEOB_CONTROL_NONE;
@@ -4516,10 +4496,10 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     }
     // }}}
 
-    printAttachedProcessInfo( exePathW,api,tc,pi.dwProcessId,ppid,dbgPid );
-    if( tcOutOrig )
-      printAttachedProcessInfo( exePathW,api,tcOutOrig,pi.dwProcessId,ppid,
-          dbgPid );
+    printAttachedProcessInfo( exePathW,api,tc,ad->pi.dwProcessId,ppid,dbgPid );
+    if( ad->tcOutOrig )
+      printAttachedProcessInfo( exePathW,api,ad->tcOutOrig,
+          ad->pi.dwProcessId,ppid,dbgPid );
 
     // console title {{{
     wchar_t *delimW = strrchrW( exePathW,'\\' );
@@ -4535,7 +4515,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     {
       tc->out = err;
       printf( "\n-------------------- PID %u --------------------\n",
-          pi.dwProcessId );
+          ad->pi.dwProcessId );
 
       showConsole();
       waitForKey( tc,in );
@@ -4554,17 +4534,17 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
         FreeConsole();
     }
 
-    textColor *tcXml = writeXmlHeader( &xmlName,heap,exePath,delim,api,
-        cmdLineW,argsW,exePathW,&pi,ppid,dbgPid,startTicks );
+    textColor *tcXml = writeXmlHeader( ad,delim,api,
+        cmdLineW,argsW,ppid,dbgPid,startTicks );
 
     if( !keepSuspended )
-      ResumeThread( pi.hThread );
+      ResumeThread( ad->pi.hThread );
 
-    if( attachEvent )
+    if( ad->attachEvent )
     {
-      SetEvent( attachEvent );
-      CloseHandle( attachEvent );
-      attachEvent = NULL;
+      SetEvent( ad->attachEvent );
+      CloseHandle( ad->attachEvent );
+      ad->attachEvent = NULL;
     }
 
     // main loop {{{
@@ -4681,7 +4661,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
             // start & stop only set the recording flag, and by doing this
             // directly, it also works if the target process is
             // suspended in a debugger
-            WriteProcessMemory( pi.hProcess,
+            WriteProcessMemory( ad->pi.hProcess,
                 recordingRemote,&cmd,sizeof(int),NULL );
 
             int prevRecording = recording;
@@ -4871,7 +4851,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
               if( exceptionWait && ei.er.ExceptionCode!=EXCEPTION_BREAKPOINT )
               {
                 char *dis = disassemble(
-                    pi.dwProcessId,ei.aa[0].frames[0],heap );
+                    ad->pi.dwProcessId,ei.aa[0].frames[0],heap );
                 if( dis )
                 {
                   printf( "$S  assembly instruction:\n" );
@@ -5410,27 +5390,10 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
 #ifndef NO_DBGENG
   if( exceptionWait ) CloseHandle( exceptionWait );
 #endif
-  if( attachEvent )
-  {
-    SetEvent( attachEvent );
-    CloseHandle( attachEvent );
-  }
-  CloseHandle( pi.hThread );
-  CloseHandle( pi.hProcess );
 
-  HeapFree( heap,0,tcOut );
-  HeapFree( heap,0,exePath );
-  if( tcOutOrig ) HeapFree( heap,0,tcOutOrig );
-  if( raise_alloc_a ) HeapFree( heap,0,raise_alloc_a );
-  if( outName ) HeapFree( heap,0,outName );
-  if( xmlName ) HeapFree( heap,0,xmlName );
-  if( subCurDir ) HeapFree( heap,0,subCurDir );
   if( api ) HeapFree( heap,0,api );
-  if( specificOptions ) HeapFree( heap,0,specificOptions );
-  HeapFree( heap,0,exePathW );
 
-  writeCloseErrorPipe( errorPipe,heobExit,heobExitData );
-  ExitProcess( exitCode );
+  exitHeob( ad,heobExit,heobExitData,exitCode );
 }
 
 // }}}
