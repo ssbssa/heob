@@ -4684,7 +4684,7 @@ VOID CALLBACK heob( ULONG_PTR arg )
     }
     // }}}
     if( !api->commandLine[0] )
-      lstrcpyW( api->commandLine,GetCommandLineW() );
+      lstrcpynW( api->commandLine,GetCommandLineW(),32768 );
     if( !GetCurrentDirectoryW(MAX_PATH,api->currentDirectory) )
       api->currentDirectory[0] = 0;
     if( !getHandleName(GetStdHandle(STD_INPUT_HANDLE),

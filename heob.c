@@ -1144,9 +1144,9 @@ static CODE_SEG(".text$2") HANDLE inject(
   RtlMoveMemory( &data->opt,opt,sizeof(options) );
   RtlMoveMemory( &data->globalopt,globalopt,sizeof(options) );
 
-  if( subOutName ) lstrcpy( data->subOutName,subOutName );
-  if( subXmlName ) lstrcpy( data->subXmlName,subXmlName );
-  if( subCurDir ) lstrcpyW( data->subCurDir,subCurDir );
+  if( subOutName ) lstrcpyn( data->subOutName,subOutName,MAX_PATH );
+  if( subXmlName ) lstrcpyn( data->subXmlName,subXmlName,MAX_PATH );
+  if( subCurDir ) lstrcpynW( data->subCurDir,subCurDir,MAX_PATH );
 
   data->raise_alloc_q = ad->raise_alloc_q;
   if( ad->raise_alloc_q )
@@ -1244,7 +1244,10 @@ static CODE_SEG(".text$2") HANDLE inject(
     *heobExit = HEOB_NO_CRT;
   }
   else
+  {
+    data->exePath[MAX_PATH-1] = 0;
     GetFullPathNameW( data->exePath,MAX_PATH,exePath,NULL );
+  }
 
   if( data->noCRT==2 )
   {
@@ -2697,12 +2700,14 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
   int leakDetails = opt->leakDetails;
   if( sampling ) leakDetails = 1;
   int combined_q = alloc_q;
-  int *alloc_idxs =
-    leakDetails ? HeapAlloc( heap,0,alloc_q*sizeof(int) ) : NULL;
   for( i=0; i<alloc_q; i++ )
-  {
     alloc_a[i].count = 1;
-    if( alloc_idxs )
+  int *alloc_idxs = NULL;
+  if( leakDetails )
+  {
+    alloc_idxs = HeapAlloc( heap,0,alloc_q*sizeof(int) );
+    if( !alloc_idxs ) return;
+    for( i=0; i<alloc_q; i++ )
       alloc_idxs[i] = i;
   }
   // merge identical leaks {{{
@@ -3368,7 +3373,7 @@ static textColor *writeXmlHeader( appData *ad,
         const wchar_t *lastDelim = strrchrW( exePathW,'\\' );
         if( lastDelim ) lastDelim++;
         else lastDelim = exePathW;
-        lstrcpyW( api->commandLine,lastDelim );
+        lstrcpynW( api->commandLine,lastDelim,32768 );
         wchar_t *lastPointW = strrchrW( cl,'.' );
         if( lastPointW ) lastPointW[0] = 0;
         cyg_argc = 1;
