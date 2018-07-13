@@ -2072,6 +2072,7 @@ static void printStackCount( void **framesV,int fc,
 
 static char *undecorateVCsymbol( dbgsym *ds,char *decorName )
 {
+#ifndef NO_DBGHELP
   if( decorName[0]!='.' || !ds->fUnDecorateSymbolName )
     return( decorName );
 
@@ -2093,6 +2094,9 @@ static char *undecorateVCsymbol( dbgsym *ds,char *decorName )
     }
   }
   HeapFree( ds->heap,0,decor );
+#else
+  (void)ds;
+#endif
 
   return( decorName );
 }
