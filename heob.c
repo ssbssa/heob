@@ -946,6 +946,21 @@ typedef struct appData
   char *specificOptions;
   modInfo *a2l_mi_a;
   int a2l_mi_q;
+  DWORD ppid;
+  DWORD dbgPid;
+  attachedProcessInfo *api;
+  wchar_t *cmdLineW;
+  wchar_t *argsW;
+#ifndef NO_DBGENG
+  HANDLE exceptionWait;
+#endif
+  HANDLE in;
+  HANDLE err;
+  HANDLE readPipe;
+  HANDLE controlPipe;
+  unsigned *heobExit;
+  unsigned *heobExitData;
+  int *recordingRemote;
 }
 appData;
 
@@ -977,6 +992,12 @@ static NORETURN void exitHeob( appData *ad,
   if( ad->xmlName ) HeapFree( heap,0,ad->xmlName );
   if( ad->specificOptions ) HeapFree( heap,0,ad->specificOptions );
   if( ad->a2l_mi_a ) HeapFree( heap,0,ad->a2l_mi_a );
+  if( ad->api ) HeapFree( heap,0,ad->api );
+#ifndef NO_DBGENG
+  if( ad->exceptionWait ) CloseHandle( ad->exceptionWait );
+#endif
+  if( ad->readPipe ) CloseHandle( ad->readPipe );
+  if( ad->controlPipe ) CloseHandle( ad->controlPipe );
   HeapFree( heap,0,ad );
 
   writeCloseErrorPipe( errorPipe,exitStatus,extraArg );
@@ -1017,14 +1038,8 @@ static CODE_SEG(".text$1") VOID NTAPI remoteCall(
 }
 
 static CODE_SEG(".text$2") HANDLE inject(
-    appData *ad,options *opt,options *globalopt,
-    textColor *tc,HANDLE *controlPipe,
-#ifndef NO_DBGENG
-    HANDLE *exceptionWait,
-#endif
-    HANDLE in,HANDLE err,attachedProcessInfo **api,
-    const char *subOutName,const char *subXmlName,const wchar_t *subCurDir,
-    unsigned *heobExit,int **recordingRemote )
+    appData *ad,options *opt,options *globalopt,textColor *tc,
+    const char *subOutName,const char *subXmlName,const wchar_t *subCurDir )
 {
   // injection data {{{
   func_inj *finj = &remoteCall;
@@ -1114,7 +1129,7 @@ static CODE_SEG(".text$2") HANDLE inject(
   if( opt->leakRecording )
   {
     HANDLE controlReadPipe;
-    CreatePipe( &controlReadPipe,controlPipe,NULL,0 );
+    CreatePipe( &controlReadPipe,&ad->controlPipe,NULL,0 );
     DuplicateHandle( GetCurrentProcess(),controlReadPipe,
         process,&data->controlPipe,0,FALSE,
         DUPLICATE_CLOSE_SOURCE|DUPLICATE_SAME_ACCESS );
@@ -1134,8 +1149,8 @@ static CODE_SEG(".text$2") HANDLE inject(
 #ifndef NO_DBGENG
   if( opt->exceptionDetails>1 && opt->handleException )
   {
-    *exceptionWait = CreateEvent( NULL,FALSE,FALSE,NULL );
-    DuplicateHandle( GetCurrentProcess(),*exceptionWait,
+    ad->exceptionWait = CreateEvent( NULL,FALSE,FALSE,NULL );
+    DuplicateHandle( GetCurrentProcess(),ad->exceptionWait,
         process,&data->exceptionWait,0,FALSE,
         DUPLICATE_SAME_ACCESS );
   }
@@ -1173,6 +1188,8 @@ static CODE_SEG(".text$2") HANDLE inject(
   // wait for finished injection {{{
   COORD consoleCoord;
   int errColor;
+  HANDLE in = ad->in;
+  HANDLE err = ad->err;
   if( in )
   {
     CONSOLE_SCREEN_BUFFER_INFO csbi;
@@ -1225,7 +1242,7 @@ static CODE_SEG(".text$2") HANDLE inject(
     CloseHandle( startMain );
     HeapFree( heap,0,fullData );
     printf( "$Wprocess killed\n" );
-    *heobExit = HEOB_PROCESS_KILLED;
+    *ad->heobExit = HEOB_PROCESS_KILLED;
     return( NULL );
   }
   // }}}
@@ -1241,7 +1258,7 @@ static CODE_SEG(".text$2") HANDLE inject(
       printf( "$Wonly works with dynamically linked CRT\n" );
     else
       printf( "$Wkernel32.dll is not loaded in target process\n" );
-    *heobExit = HEOB_NO_CRT;
+    *ad->heobExit = HEOB_NO_CRT;
   }
   else
   {
@@ -1257,12 +1274,12 @@ static CODE_SEG(".text$2") HANDLE inject(
 
   if( data->api )
   {
-    *api = HeapAlloc( heap,0,sizeof(attachedProcessInfo) );
-    ReadProcessMemory( process,data->api,*api,
+    ad->api = HeapAlloc( heap,0,sizeof(attachedProcessInfo) );
+    ReadProcessMemory( process,data->api,ad->api,
         sizeof(attachedProcessInfo),NULL );
   }
 
-  *recordingRemote = data->recordingRemote;
+  ad->recordingRemote = data->recordingRemote;
   // }}}
 
   HeapFree( heap,0,fullData );
@@ -2012,6 +2029,8 @@ static void printStackCount( void **framesV,int fc,
 {
   textColor *tc = ds->tc;
   if( !tc->out ) return;
+
+  ASSUME( mi_a || !mi_q );
 
   if( ft<FT_COUNT )
   {
@@ -2921,12 +2940,11 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
 // }}}
 // information of attached process {{{
 
-static void printAttachedProcessInfo(
-    const wchar_t *exePath,attachedProcessInfo *api,textColor *tc,
-    DWORD pid,DWORD ppid,DWORD dpid )
+static void printAttachedProcessInfo( appData *ad,textColor *tc )
 {
+  attachedProcessInfo *api = ad->api;
   if( !api ) return;
-  printf( "\n$Iapplication: $N%S\n",exePath );
+  printf( "\n$Iapplication: $N%S\n",ad->exePathW );
   if( api->type>=0 && api->type<=3 )
   {
     const char *types[4] = {
@@ -2948,17 +2966,17 @@ static void printAttachedProcessInfo(
   }
   if( api->currentDirectory[0] )
     printf( "$Idirectory: $N%S\n",api->currentDirectory );
-  printf( "$IPID: $N%u\n",pid );
-  if( ppid )
-    printf( "$Iparent PID: $N%u\n",ppid );
+  printf( "$IPID: $N%u\n",ad->pi.dwProcessId );
+  if( ad->ppid )
+    printf( "$Iparent PID: $N%u\n",ad->ppid );
   if( api->stdinName[0] )
     printf( "$Istdin: $N%S\n",api->stdinName );
   if( api->stdoutName[0] )
     printf( "$Istdout: $N%S\n",api->stdoutName );
   if( api->stderrName[0] )
     printf( "$Istderr: $N%S\n",api->stderrName );
-  if( dpid )
-    printf( "$Idebugger PID: $N%u\n",dpid );
+  if( ad->dbgPid )
+    printf( "$Idebugger PID: $N%u\n",ad->dbgPid );
   printf( "\n" );
 }
 
@@ -3263,10 +3281,7 @@ static void setHeobConsoleTitle( HANDLE heap,const wchar_t *prog )
 // }}}
 // xml {{{
 
-static textColor *writeXmlHeader( appData *ad,
-    char *delim,attachedProcessInfo *api,
-    const wchar_t *cmdLineW,const wchar_t *argsW,
-    DWORD ppid,DWORD dbgPid,DWORD startTicks )
+static textColor *writeXmlHeader( appData *ad,DWORD startTicks )
 {
   char **xmlName = &ad->xmlName;
   if( !xmlName || !*xmlName ) return( NULL );
@@ -3279,7 +3294,7 @@ static textColor *writeXmlHeader( appData *ad,
     *xmlName = NULL;
   }
 
-  char *ppidName = strreplacenum( fullName,"%P",ppid,heap );
+  char *ppidName = strreplacenum( fullName,"%P",ad->ppid,heap );
   if( ppidName )
   {
     HeapFree( heap,0,fullName );
@@ -3288,6 +3303,7 @@ static textColor *writeXmlHeader( appData *ad,
 
   char *exePath = ad->exePath;
   const wchar_t *exePathW = ad->exePathW;
+  char *delim = strrchr( ad->exePath,'\\' );
   if( delim ) delim++;
   else delim = exePath;
   char *lastPoint = strrchr( delim,'.' );
@@ -3319,6 +3335,7 @@ static textColor *writeXmlHeader( appData *ad,
   printf( "<protocoltool>memcheck</protocoltool>\n\n" );
   printf( "<preamble>\n" );
   printf( "  <line>heap-observer " HEOB_VER " (" BITS "bit)</line>\n" );
+  attachedProcessInfo *api = ad->api;
   if( api )
   {
     printf( "  <line>application: %S</line>\n",exePathW );
@@ -3350,12 +3367,14 @@ static textColor *writeXmlHeader( appData *ad,
     if( api->stderrName[0] )
       printf( "  <line>stderr: %S</line>\n",api->stderrName );
   }
-  if( dbgPid )
-    printf( "  <line>debugger PID: %u</line>\n",dbgPid );
+  if( ad->dbgPid )
+    printf( "  <line>debugger PID: %u</line>\n",ad->dbgPid );
   printf( "</preamble>\n\n" );
   printf( "<pid>%u</pid>\n<ppid>%u</ppid>\n<tool>heob</tool>\n\n",
-      ad->pi.dwProcessId,ppid );
+      ad->pi.dwProcessId,ad->ppid );
 
+  const wchar_t *cmdLineW = ad->cmdLineW;
+  const wchar_t *argsW = ad->argsW;
   const wchar_t *argva[2] = { cmdLineW,argsW };
   if( api ) argva[1] = api->commandLine;
   int l = (int)( argsW - cmdLineW );
@@ -3735,6 +3754,862 @@ static void writeXmlWrongDealloc( textColor *tc,dbgsym *ds,
 }
 
 // }}}
+// main loop {{{
+
+static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
+{
+  textColor *tcXml = writeXmlHeader( ad,startTicks );
+
+  HANDLE heap = ad->heap;
+  options *opt = ds->opt;
+  textColor *tc = ds->tc;
+  int type;
+  modInfo *mi_a = NULL;
+  int mi_q = 0;
+  int terminated = -2;
+  int alloc_show_q = 0;
+  int error_q = 0;
+#ifndef NO_THREADNAMES
+  int threadName_q = 0;
+  threadNameInfo *threadName_a = NULL;
+#endif
+  HANDLE in = ad->in;
+  if( !opt->leakRecording ) in = NULL;
+  HANDLE err = ad->err;
+  HANDLE readPipe = ad->readPipe;
+  int recording = opt->leakRecording!=1 ? 1 : -1;
+  int needData = 1;
+  OVERLAPPED ov;
+  ov.Offset = ov.OffsetHigh = 0;
+  ov.hEvent = CreateEvent( NULL,TRUE,FALSE,NULL );
+  HANDLE handles[2] = { ov.hEvent,in };
+  int waitCount = in ? 2 : 1;
+  int errColor = 0;
+  COORD consoleCoord = { 0,0 };
+  allocation *aa = HeapAlloc( heap,0,4*sizeof(allocation) );
+  exceptionInfo *eiPtr = HeapAlloc( heap,0,sizeof(exceptionInfo) );
+  DWORD flashStart = 0;
+  if( in ) showConsole();
+  while( 1 )
+  {
+    if( needData )
+    {
+      if( !ReadFile(readPipe,&type,sizeof(int),NULL,&ov) &&
+          GetLastError()!=ERROR_IO_PENDING ) break;
+      needData = 0;
+
+      if( in )
+        showRecording( err,recording,&consoleCoord,&errColor );
+    }
+
+    DWORD waitTime = INFINITE;
+    // timeout of clear/show text flash {{{
+    if( recording>=2 )
+    {
+#define FLASH_TIMEOUT 500
+      DWORD flashTime = GetTickCount() - flashStart;
+      if( flashTime>=FLASH_TIMEOUT )
+      {
+        flashStart = 0;
+        recording = 1;
+        clearRecording( err,consoleCoord,errColor );
+        showRecording( err,recording,&consoleCoord,&errColor );
+      }
+      else
+        waitTime = FLASH_TIMEOUT - flashTime;
+    }
+    // }}}
+    DWORD didread;
+    DWORD waitRet = WaitForMultipleObjects(
+        waitCount,handles,FALSE,waitTime );
+    if( waitRet==WAIT_TIMEOUT )
+    {
+      flashStart = GetTickCount() - 2*FLASH_TIMEOUT;
+      continue;
+    }
+    else if( waitRet==WAIT_OBJECT_0+1 )
+    {
+      // control leak recording {{{
+      INPUT_RECORD ir;
+      if( ReadConsoleInput(in,&ir,1,&didread) &&
+          ir.EventType==KEY_EVENT &&
+          ir.Event.KeyEvent.bKeyDown )
+      {
+        int cmd = -1;
+
+        switch( ir.Event.KeyEvent.wVirtualKeyCode )
+        {
+          case 'N':
+            if( recording>0 ) break;
+            cmd = HEOB_LEAK_RECORDING_START;
+            break;
+
+          case 'F':
+            if( recording<=0 ) break;
+            cmd = HEOB_LEAK_RECORDING_STOP;
+            break;
+
+          case 'C':
+            if( recording<0 ) break;
+            cmd = HEOB_LEAK_RECORDING_CLEAR;
+            break;
+
+          case 'S':
+            if( recording<0 ) break;
+            cmd = HEOB_LEAK_RECORDING_SHOW;
+            break;
+        }
+
+        if( cmd>=HEOB_LEAK_RECORDING_CLEAR )
+        {
+          WriteFile( ad->controlPipe,&cmd,sizeof(int),&didread,NULL );
+
+          // start flash of text to visualize clear/show was done {{{
+          if( recording>0 )
+          {
+            flashStart = GetTickCount();
+            recording = cmd;
+            clearRecording( err,consoleCoord,errColor );
+            showRecording( err,recording,&consoleCoord,&errColor );
+          }
+          // }}}
+        }
+        else if( cmd>=HEOB_LEAK_RECORDING_STOP )
+        {
+          // start & stop only set the recording flag, and by doing this
+          // directly, it also works if the target process is
+          // suspended in a debugger
+          WriteProcessMemory( ad->pi.hProcess,
+              ad->recordingRemote,&cmd,sizeof(int),NULL );
+
+          int prevRecording = recording;
+          if( cmd==HEOB_LEAK_RECORDING_START || recording>0 )
+            recording = cmd;
+          if( prevRecording!=recording )
+          {
+            clearRecording( err,consoleCoord,errColor );
+            showRecording( err,recording,&consoleCoord,&errColor );
+          }
+        }
+      }
+      continue;
+      // }}}
+    }
+
+    if( in )
+      clearRecording( err,consoleCoord,errColor );
+
+    if( !GetOverlappedResult(readPipe,&ov,&didread,TRUE) ||
+        didread<sizeof(int) )
+      break;
+    needData = 1;
+
+    switch( type )
+    {
+      // leaks {{{
+
+      case WRITE_LEAKS:
+        {
+          allocation *alloc_a = NULL;
+          int alloc_q = 0;
+          unsigned char *contents = NULL;
+          unsigned char **content_ptrs = NULL;
+          int alloc_ignore_q = 0;
+          size_t alloc_ignore_sum = 0;
+          int alloc_ignore_ind_q = 0;
+          size_t alloc_ignore_ind_sum = 0;
+
+          alloc_show_q = 0;
+
+          if( !readFile(readPipe,&alloc_q,sizeof(int),&ov) )
+            break;
+          if( !readFile(readPipe,&alloc_ignore_q,sizeof(int),&ov) )
+            break;
+          if( !readFile(readPipe,&alloc_ignore_sum,sizeof(size_t),&ov) )
+            break;
+          if( !readFile(readPipe,&alloc_ignore_ind_q,sizeof(int),&ov) )
+            break;
+          if( !readFile(readPipe,&alloc_ignore_ind_sum,sizeof(size_t),&ov) )
+            break;
+          if( alloc_q )
+          {
+            alloc_a = HeapAlloc( heap,0,alloc_q*sizeof(allocation) );
+            if( !readFile(readPipe,alloc_a,alloc_q*sizeof(allocation),&ov) )
+              break;
+          }
+
+          size_t content_size;
+          if( !readFile(readPipe,&content_size,sizeof(size_t),&ov) )
+            break;
+
+          int lc;
+          int lDetails = opt->leakDetails ?
+            ( (opt->leakDetails&1) ? LT_COUNT : LT_REACHABLE ) : 0;
+          for( lc=0; lc<alloc_q; lc++ )
+          {
+            allocation *a = alloc_a + lc;
+            if( a->lt>=lDetails ) continue;
+            alloc_show_q++;
+          }
+
+          if( content_size )
+          {
+            contents = HeapAlloc( heap,0,content_size );
+            if( !readFile(readPipe,contents,content_size,&ov) )
+            {
+              HeapFree( heap,0,contents );
+              break;
+            }
+            content_ptrs =
+              HeapAlloc( heap,0,alloc_q*sizeof(unsigned char*) );
+            size_t leakContents = opt->leakContents;
+            size_t content_pos = 0;
+            for( lc=0; lc<alloc_q; lc++ )
+            {
+              content_ptrs[lc] = contents + content_pos;
+              allocation *a = alloc_a + lc;
+              if( a->lt>=lDetails ) continue;
+              size_t s = a->size;
+              content_pos += s<leakContents ? s : leakContents;
+            }
+          }
+
+          printLeaks( alloc_a,alloc_q,
+              alloc_ignore_q,alloc_ignore_sum,
+              alloc_ignore_ind_q,alloc_ignore_ind_sum,
+              content_ptrs,mi_a,mi_q,
+#ifndef NO_THREADNAMES
+              threadName_a,threadName_q,
+#endif
+              opt,tc,ds,heap,tcXml,0 );
+
+          if( alloc_a ) HeapFree( heap,0,alloc_a );
+          if( contents ) HeapFree( heap,0,contents );
+          if( content_ptrs ) HeapFree( heap,0,content_ptrs );
+        }
+        break;
+
+        // }}}
+        // modules {{{
+
+      case WRITE_MODS:
+        if( !readFile(readPipe,&mi_q,sizeof(int),&ov) )
+          mi_q = 0;
+        if( !mi_q ) break;
+        if( mi_a ) HeapFree( heap,0,mi_a );
+        mi_a = HeapAlloc( heap,0,mi_q*sizeof(modInfo) );
+        if( !readFile(readPipe,mi_a,mi_q*sizeof(modInfo),&ov) )
+        {
+          mi_q = 0;
+          break;
+        }
+#ifndef NO_DBGHELP
+        if( ds->fSymGetModuleInfo64 && ds->fSymLoadModule64 )
+        {
+          int m;
+          IMAGEHLP_MODULE64 im;
+          im.SizeOfStruct = sizeof(IMAGEHLP_MODULE64);
+          for( m=0; m<mi_q; m++ )
+          {
+            if( !ds->fSymGetModuleInfo64(ds->process,mi_a[m].base,&im) )
+              ds->fSymLoadModule64( ds->process,NULL,mi_a[m].path,NULL,
+                  mi_a[m].base,0 );
+          }
+        }
+#endif
+        break;
+
+        // }}}
+        // exception {{{
+
+      case WRITE_EXCEPTION:
+        {
+#define ei (*eiPtr)
+          if( !readFile(readPipe,&ei,sizeof(exceptionInfo),&ov) )
+            break;
+          ei.throwName[sizeof(ei.throwName)-1] = 0;
+
+          cacheSymbolData( ei.aa,NULL,ei.aq,mi_a,mi_q,ds,1 );
+
+          // exception code {{{
+          const char *desc = NULL;
+          switch( ei.er.ExceptionCode )
+          {
+#define EXCEPTION_FATAL_APP_EXIT STATUS_FATAL_APP_EXIT
+#define EX_DESC( name ) \
+            case EXCEPTION_##name: \
+              desc = " (" #name ")"; break
+
+            EX_DESC( ACCESS_VIOLATION );
+            EX_DESC( ARRAY_BOUNDS_EXCEEDED );
+            EX_DESC( BREAKPOINT );
+            EX_DESC( DATATYPE_MISALIGNMENT );
+            EX_DESC( FLT_DENORMAL_OPERAND );
+            EX_DESC( FLT_DIVIDE_BY_ZERO );
+            EX_DESC( FLT_INEXACT_RESULT );
+            EX_DESC( FLT_INVALID_OPERATION );
+            EX_DESC( FLT_OVERFLOW );
+            EX_DESC( FLT_STACK_CHECK );
+            EX_DESC( FLT_UNDERFLOW );
+            EX_DESC( ILLEGAL_INSTRUCTION );
+            EX_DESC( IN_PAGE_ERROR );
+            EX_DESC( INT_DIVIDE_BY_ZERO );
+            EX_DESC( INT_OVERFLOW );
+            EX_DESC( INVALID_DISPOSITION );
+            EX_DESC( NONCONTINUABLE_EXCEPTION );
+            EX_DESC( PRIV_INSTRUCTION );
+            EX_DESC( SINGLE_STEP );
+            EX_DESC( STACK_OVERFLOW );
+            EX_DESC( FATAL_APP_EXIT );
+            EX_DESC( VC_CPP_EXCEPTION );
+          }
+          printf( "\n$Wunhandled exception code: %x%s\n",
+              ei.er.ExceptionCode,desc );
+          // }}}
+
+          if( opt->exceptionDetails && tc->out )
+          {
+            // assembly instruction {{{
+#ifndef NO_DBGENG
+            if( ad->exceptionWait &&
+                ei.er.ExceptionCode!=EXCEPTION_BREAKPOINT )
+            {
+              char *dis = disassemble(
+                  ad->pi.dwProcessId,ei.aa[0].frames[0],heap );
+              if( dis )
+              {
+                printf( "$S  assembly instruction:\n" );
+                char *space = strchr( dis,' ' );
+                if( space ) space[0] = 0;
+                printf( "    $O%s",dis );
+                if( space )
+                {
+                  space[0] = ' ';
+                  printf( "$N%s",space );
+                }
+                printf( "\n" );
+                HeapFree( heap,0,dis );
+              }
+            }
+#endif
+            // }}}
+
+            // registers {{{
+            printf( "$S  registers:\n" );
+#define PREG( name,reg,type,before,after ) \
+            printf( before "$I" name "$N=" type after,ei.c.reg )
+            if( ei.c.ContextFlags&CONTEXT_INTEGER )
+            {
+#ifndef _WIN64
+              PREG( "edi"   ,Edi   ,"%X","    "           ,     );
+              PREG( "esi"   ,Esi   ,"%X","       "        ,     );
+              PREG( "ebx"   ,Ebx   ,"%X","       "        ,"\n" );
+              PREG( "edx"   ,Edx   ,"%X","    "           ,     );
+              PREG( "ecx"   ,Ecx   ,"%X","       "        ,     );
+              PREG( "eax"   ,Eax   ,"%X","       "        ,"\n" );
+#else
+              PREG( "rax"   ,Rax   ,"%X","    "           ,     );
+              PREG( "rcx"   ,Rcx   ,"%X","  "             ,     );
+              PREG( "rdx"   ,Rdx   ,"%X","  "             ,"\n" );
+              PREG( "rbx"   ,Rbx   ,"%X","    "           ,     );
+              PREG( "rbp"   ,Rbp   ,"%X","  "             ,     );
+              PREG( "rsi"   ,Rsi   ,"%X","  "             ,"\n" );
+              PREG( "rdi"   ,Rdi   ,"%X","    "           ,     );
+              PREG( "r8"    ,R8    ,"%X","  "             ,     );
+              PREG( "r9"    ,R9    ,"%X","   "            ,"\n" );
+              PREG( "r10"   ,R10   ,"%X","    "           ,     );
+              PREG( "r11"   ,R11   ,"%X","  "             ,     );
+              PREG( "r12"   ,R12   ,"%X","  "             ,"\n" );
+              PREG( "r13"   ,R13   ,"%X","    "           ,     );
+              PREG( "r14"   ,R14   ,"%X","  "             ,     );
+              PREG( "r15"   ,R15   ,"%X","  "             ,"\n" );
+#endif
+            }
+            if( ei.c.ContextFlags&CONTEXT_CONTROL )
+            {
+#ifndef _WIN64
+              PREG( "ebp"   ,Ebp   ,"%X","    "           ,     );
+              PREG( "eip"   ,Eip   ,"%X","       "        ,     );
+              PREG( "cs"    ,SegCs ,"%w","       "        ,"\n" );
+              PREG( "eflags",EFlags,"%x","    "           ,     );
+              PREG( "esp"   ,Esp   ,"%X","    "           ,     );
+              PREG( "ss"    ,SegSs ,"%w","       "        ,"\n" );
+#else
+              PREG( "ss"    ,SegSs ,"%w","    "           ,     );
+              PREG( "rsp"   ,Rsp   ,"%X","               ", );
+              PREG( "cs"    ,SegCs ,"%w","  "             ,"\n" );
+              PREG( "rip"   ,Rip   ,"%X","    "           ,     );
+              PREG( "eflags",EFlags,"%x","  "             ,"\n" );
+#endif
+            }
+            if( ei.c.ContextFlags&CONTEXT_SEGMENTS )
+            {
+#ifndef _WIN64
+              PREG( "gs"    ,SegGs ,"%w","    "           ,     );
+              PREG( "fs"    ,SegFs ,"%w","     "          ,     );
+              PREG( "es"    ,SegEs ,"%w","     "          ,     );
+              PREG( "ds"    ,SegDs ,"%w","     "          ,"\n" );
+#else
+              PREG( "ds"    ,SegDs ,"%w","    "           ,     );
+              PREG( "es"    ,SegEs ,"%w","       "        ,     );
+              PREG( "fs"    ,SegFs ,"%w","       "        ,     );
+              PREG( "gs"    ,SegGs ,"%w","       "        ,"\n" );
+#endif
+            }
+            // }}}
+          }
+#ifndef NO_DBGENG
+          if( ad->exceptionWait &&
+              ei.er.ExceptionCode!=EXCEPTION_BREAKPOINT )
+            SetEvent( ad->exceptionWait );
+#endif
+
+          printf( "$S  exception on:" );
+          printThreadName( ei.aa[0].threadNameIdx );
+          printStackCount( ei.aa[0].frames,ei.aa[0].frameCount,
+              mi_a,mi_q,ds,FT_COUNT,0 );
+
+          char *addr = NULL;
+          const char *violationType = NULL;
+          const char *nearBlock = NULL;
+          const char *blockType = NULL;
+          // access violation {{{
+          if( ei.er.ExceptionCode==EXCEPTION_ACCESS_VIOLATION &&
+              ei.er.NumberParameters==2 )
+          {
+            ULONG_PTR flag = ei.er.ExceptionInformation[0];
+            addr = (char*)ei.er.ExceptionInformation[1];
+            violationType = flag==8 ? "data execution prevention" :
+              ( flag ? "write access" : "read access" );
+            printf( "$W  %s violation at %p\n",violationType,addr );
+
+            if( ei.aq>1 )
+            {
+              char *ptr = (char*)ei.aa[1].ptr;
+              size_t size = ei.aa[1].size;
+              nearBlock = ei.nearest ? "near " : "";
+              intptr_t accessPos = addr - ptr;
+              blockType = ei.aq>2 ? "freed block" :
+                ( accessPos>=0 && (size_t)accessPos<size ?
+                  "accessible (!) area of" : "protected area of" );
+              printf( "$I  %s%s %p (size %U, offset %s%D)\n",
+                  nearBlock,blockType,
+                  ptr,size,accessPos>0?"+":"",accessPos );
+              printf( "$S  allocated on: $N(#%U)",ei.aa[1].id );
+              printThreadName( ei.aa[1].threadNameIdx );
+              printStackCount( ei.aa[1].frames,ei.aa[1].frameCount,
+                  mi_a,mi_q,ds,ei.aa[1].ft,0 );
+
+              if( ei.aq>2 )
+              {
+                printf( "$S  freed on:" );
+                printThreadName( ei.aa[2].threadNameIdx );
+                printStackCount( ei.aa[2].frames,ei.aa[2].frameCount,
+                    mi_a,mi_q,ds,ei.aa[2].ft,0 );
+              }
+            }
+          }
+          // }}}
+          // VC c++ exception {{{
+          else if( ei.throwName[0] )
+          {
+            char *throwName = undecorateVCsymbol( ds,ei.throwName );
+            printf( "$I  VC c++ exception: $N%s\n",throwName );
+          }
+          // }}}
+
+          writeXmlException( tcXml,ds,eiPtr,desc,addr,violationType,
+              nearBlock,blockType,mi_a,mi_q );
+
+          terminated = -1;
+          *ad->heobExit = HEOB_EXCEPTION;
+          *ad->heobExitData = ei.er.ExceptionCode;
+#undef ei
+        }
+        break;
+
+        // }}}
+        // allocation failure {{{
+
+      case WRITE_ALLOC_FAIL:
+        {
+          size_t mul;
+          if( !readFile(readPipe,&mul,sizeof(size_t),&ov) )
+            break;
+          if( !readFile(readPipe,aa,sizeof(allocation),&ov) )
+            break;
+
+          cacheSymbolData( aa,NULL,1,mi_a,mi_q,ds,1 );
+
+          size_t product;
+          int mulOverflow = mul_overflow(aa->size,mul,&product);
+          if( !mulOverflow ) aa->size = product;
+
+          if( mulOverflow )
+            printf( "\n$Wmultiplication overflow in allocation"
+                " of %U * %U bytes\n",aa->size,mul );
+          else
+            printf( "\n$Wallocation failed of %U bytes\n",aa->size );
+          printf( "$S  called on: $N(#%U)",aa->id );
+          printThreadName( aa->threadNameIdx );
+          printStackCount( aa->frames,aa->frameCount,
+              mi_a,mi_q,ds,aa->ft,0 );
+
+          writeXmlAllocFail( tcXml,ds,mul,mulOverflow,aa,mi_a,mi_q );
+
+          error_q++;
+        }
+        break;
+
+        // }}}
+        // free of invalid pointer {{{
+
+      case WRITE_FREE_FAIL:
+        {
+          if( !readFile(readPipe,aa,4*sizeof(allocation),&ov) )
+            break;
+
+          modInfo *allocMi = NULL;
+          if( !aa[1].ptr && (aa[1].id==2 || aa[1].id==3) )
+          {
+            uintptr_t frame = (uintptr_t)aa[1].frames[0];
+            int k;
+            for( k=0; k<mi_q; k++ )
+            {
+              modInfo *mi = mi_a + k;
+              if( frame<mi->base || frame>=mi->base+mi->size ) continue;
+              allocMi = mi;
+              break;
+            }
+          }
+
+          cacheSymbolData( aa,NULL,4,mi_a,mi_q,ds,1 );
+
+          printf( "\n$Wdeallocation of invalid pointer %p\n",aa->ptr );
+          printf( "$S  called on:" );
+          printThreadName( aa->threadNameIdx );
+          printStackCount( aa->frames,aa->frameCount,
+              mi_a,mi_q,ds,aa->ft,0 );
+
+          // type of invalid pointer {{{
+          if( aa[1].ptr )
+          {
+            char *ptr = aa->ptr;
+            char *addr = aa[1].ptr;
+            size_t size = aa[1].size;
+            const char *block = aa[2].ptr ? "freed " : "";
+            printf( "$I  pointing to %sblock %p (size %U, offset %s%D)\n",
+                block,addr,size,ptr>addr?"+":"",ptr-addr );
+            printf( "$S  allocated on: $N(#%U)",aa[1].id );
+            printThreadName( aa[1].threadNameIdx );
+            printStackCount( aa[1].frames,aa[1].frameCount,
+                mi_a,mi_q,ds,aa[1].ft,0 );
+
+            if( aa[2].ptr )
+            {
+              printf( "$S  freed on:" );
+              printThreadName( aa[2].threadNameIdx );
+              printStackCount( aa[2].frames,aa[2].frameCount,
+                  mi_a,mi_q,ds,aa[2].ft,0 );
+            }
+          }
+          else if( aa[1].id==1 )
+          {
+            printf( "$I  pointing to stack\n" );
+            printf( "$S  possibly same frame as:" );
+            printThreadName( aa[1].threadNameIdx );
+            printStackCount( aa[1].frames,aa[1].frameCount,
+                mi_a,mi_q,ds,FT_COUNT,0 );
+          }
+          else if( aa[1].id==2 )
+          {
+            printf( "$I  allocated (size %U) from:\n",aa[1].size );
+            if( allocMi )
+              locOut( tc,allocMi->base,allocMi->path,
+                  DWST_BASE_ADDR,0,NULL,opt,0 );
+          }
+          else if( aa[1].id==3 )
+          {
+            printf( "$I  pointing to global area of:\n" );
+            if( allocMi )
+              locOut( tc,allocMi->base,allocMi->path,
+                  DWST_BASE_ADDR,0,NULL,opt,0 );
+          }
+          // }}}
+
+          if( aa[3].ptr )
+          {
+            printf( "$I  referenced by block %p (size %U, offset +%U)\n",
+                aa[3].ptr,aa[3].size,aa[2].size );
+            printf( "$S  allocated on: $N(#%U)",aa[3].id );
+            printThreadName( aa[3].threadNameIdx );
+            printStackCount( aa[3].frames,aa[3].frameCount,
+                mi_a,mi_q,ds,aa[3].ft,0 );
+          }
+
+          writeXmlFreeFail( tcXml,ds,allocMi,aa,mi_a,mi_q );
+
+          error_q++;
+        }
+        break;
+
+        // }}}
+        // double free {{{
+
+      case WRITE_DOUBLE_FREE:
+        {
+          if( !readFile(readPipe,aa,3*sizeof(allocation),&ov) )
+            break;
+
+          cacheSymbolData( aa,NULL,3,mi_a,mi_q,ds,1 );
+
+          printf( "\n$Wdouble free of %p (size %U)\n",aa[1].ptr,aa[1].size );
+          printf( "$S  called on:" );
+          printThreadName( aa[0].threadNameIdx );
+          printStackCount( aa[0].frames,aa[0].frameCount,
+              mi_a,mi_q,ds,aa[0].ft,0 );
+
+          printf( "$S  allocated on: $N(#%U)",aa[1].id );
+          printThreadName( aa[1].threadNameIdx );
+          printStackCount( aa[1].frames,aa[1].frameCount,
+              mi_a,mi_q,ds,aa[1].ft,0 );
+
+          printf( "$S  freed on:" );
+          printThreadName( aa[2].threadNameIdx );
+          printStackCount( aa[2].frames,aa[2].frameCount,
+              mi_a,mi_q,ds,aa[2].ft,0 );
+
+          writeXmlDoubleFree( tcXml,ds,aa,mi_a,mi_q );
+
+          error_q++;
+        }
+        break;
+
+        // }}}
+        // slack access {{{
+
+      case WRITE_SLACK:
+        {
+          if( !readFile(readPipe,aa,2*sizeof(allocation),&ov) )
+            break;
+
+          cacheSymbolData( aa,NULL,2,mi_a,mi_q,ds,1 );
+
+          printf( "\n$Wwrite access violation at %p\n",aa[1].ptr );
+          printf( "$I  slack area of %p (size %U, offset %s%D)\n",
+              aa[0].ptr,aa[0].size,
+              aa[1].ptr>aa[0].ptr?"+":"",(char*)aa[1].ptr-(char*)aa[0].ptr );
+          printf( "$S  allocated on: $N(#%U)",aa[0].id );
+          printThreadName( aa[0].threadNameIdx );
+          printStackCount( aa[0].frames,aa[0].frameCount,
+              mi_a,mi_q,ds,aa[0].ft,0 );
+          printf( "$S  freed on:" );
+          printThreadName( aa[1].threadNameIdx );
+          printStackCount( aa[1].frames,aa[1].frameCount,
+              mi_a,mi_q,ds,aa[1].ft,0 );
+
+          writeXmlSlack( tcXml,ds,aa,mi_a,mi_q );
+
+          error_q++;
+        }
+        break;
+
+        // }}}
+        // main allocation failure {{{
+
+      case WRITE_MAIN_ALLOC_FAIL:
+        printf( "\n$Wnot enough memory to keep track of allocations\n" );
+        terminated = -1;
+        *ad->heobExit = HEOB_OUT_OF_MEMORY;
+        break;
+
+        // }}}
+        // mismatching allocation/release method {{{
+
+      case WRITE_WRONG_DEALLOC:
+        {
+          if( !readFile(readPipe,aa,2*sizeof(allocation),&ov) )
+            break;
+
+          cacheSymbolData( aa,NULL,2,mi_a,mi_q,ds,1 );
+
+          printf( "\n$Wmismatching allocation/release method"
+              " of %p (size %U)\n",aa[0].ptr,aa[0].size );
+          printf( "$S  allocated on: $N(#%U)",aa[0].id );
+          printThreadName( aa[0].threadNameIdx );
+          printStackCount( aa[0].frames,aa[0].frameCount,
+              mi_a,mi_q,ds,aa[0].ft,0 );
+          printf( "$S  freed on:" );
+          printThreadName( aa[1].threadNameIdx );
+          printStackCount( aa[1].frames,aa[1].frameCount,
+              mi_a,mi_q,ds,aa[1].ft,0 );
+
+          writeXmlWrongDealloc( tcXml,ds,aa,mi_a,mi_q );
+
+          error_q++;
+        }
+        break;
+
+        // }}}
+        // exception of allocation # {{{
+
+      case WRITE_RAISE_ALLOCATION:
+        {
+          size_t id;
+          if( !readFile(readPipe,&id,sizeof(size_t),&ov) )
+            break;
+          funcType ft;
+          if( !readFile(readPipe,&ft,sizeof(funcType),&ov) )
+            break;
+
+          printf( "\n$Sreached allocation #%U $N[$I%s$N]\n",
+              id,ds->funcnames[ft] );
+        }
+        break;
+
+        // }}}
+        // thread names {{{
+
+#ifndef NO_THREADNAMES
+      case WRITE_THREAD_NAMES:
+        {
+          int add_q;
+          if( !readFile(readPipe,&add_q,sizeof(int),&ov) )
+            break;
+          int old_q = threadName_q;
+          threadName_q += add_q;
+          if( !threadName_a )
+            threadName_a = HeapAlloc( heap,0,
+                threadName_q*sizeof(threadNameInfo) );
+          else
+            threadName_a = HeapReAlloc( heap,0,
+                threadName_a,threadName_q*sizeof(threadNameInfo) );
+          if( !readFile(readPipe,threadName_a+old_q,
+                add_q*sizeof(threadNameInfo),&ov) )
+          {
+            threadName_q = 0;
+            break;
+          }
+        }
+        break;
+#endif
+
+        // }}}
+        // exit trace {{{
+
+      case WRITE_EXIT_TRACE:
+        {
+          allocation *exitTrace = eiPtr->aa;
+          if( !readFile(readPipe,exitTrace,sizeof(allocation),&ov) )
+            break;
+
+          cacheSymbolData( exitTrace,NULL,1,mi_a,mi_q,ds,1 );
+          printf( "$Sexit on:" );
+          printThreadName( exitTrace->threadNameIdx );
+          printStackCount( exitTrace->frames,exitTrace->frameCount,
+              mi_a,mi_q,ds,FT_COUNT,0 );
+        }
+        break;
+
+        // }}}
+        // exit information {{{
+
+      case WRITE_EXIT:
+        if( !readFile(readPipe,exitCode,sizeof(UINT),&ov) )
+        {
+          terminated = -2;
+          break;
+        }
+        if( !readFile(readPipe,&terminated,sizeof(int),&ov) )
+        {
+          terminated = -2;
+          break;
+        }
+
+        if( !terminated )
+          printf( "$Sexit code: %u (%x)\n",*exitCode,*exitCode );
+        else
+          printf( "\n$Stermination code: %u (%x)\n",*exitCode,*exitCode );
+
+        *ad->heobExitData = *exitCode;
+        if( opt->leakErrorExitCode )
+          *exitCode = alloc_show_q + error_q;
+        break;
+
+        // }}}
+        // leak recording {{{
+
+      case WRITE_RECORDING:
+        {
+          int cmd;
+          if( !readFile(readPipe,&cmd,sizeof(int),&ov) )
+            break;
+
+          switch( cmd )
+          {
+            case HEOB_LEAK_RECORDING_START:
+              recording = 1;
+              break;
+            case HEOB_LEAK_RECORDING_STOP:
+              if( recording>0 ) recording = 0;
+              break;
+            case HEOB_LEAK_RECORDING_CLEAR:
+            case HEOB_LEAK_RECORDING_SHOW:
+              if( !recording ) recording = -1;
+              break;
+          }
+        }
+        break;
+
+        // }}}
+        // sampling profiler {{{
+
+      case WRITE_SAMPLING:
+        {
+          allocation *samp_a = NULL;
+          int samp_q = 0;
+
+          if( !readFile(readPipe,&samp_q,sizeof(int),&ov) )
+            break;
+          if( samp_q )
+          {
+            samp_a = HeapAlloc( heap,0,samp_q*sizeof(allocation) );
+            if( !readFile(readPipe,samp_a,samp_q*sizeof(allocation),&ov) )
+              break;
+          }
+
+          printLeaks( samp_a,samp_q,0,0,0,0,NULL,mi_a,mi_q,
+#ifndef NO_THREADNAMES
+              threadName_a,threadName_q,
+#endif
+              opt,tc,ds,heap,tcXml,1 );
+
+          if( samp_a ) HeapFree( heap,0,samp_a );
+        }
+        break;
+
+        // }}}
+    }
+  }
+
+  if( terminated==-2 )
+  {
+    printf( "\n$Wunexpected end of application\n" );
+    *ad->heobExit = HEOB_UNEXPECTED_END;
+  }
+
+  CloseHandle( ov.hEvent );
+  HeapFree( heap,0,aa );
+  HeapFree( heap,0,eiPtr );
+  if( mi_a ) HeapFree( heap,0,mi_a );
+#ifndef NO_THREADNAMES
+  if( threadName_a ) HeapFree( heap,0,threadName_a );
+#endif
+
+  writeXmlFooter( tcXml,heap,startTicks );
+}
+
+// }}}
 // main {{{
 
 static const char *funcnames[FT_COUNT] = {
@@ -3765,8 +4640,8 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   DWORD startTicks = GetTickCount();
   HANDLE heap = GetProcessHeap();
   appData *ad = initHeob( heap );
-  HANDLE in = GetStdHandle( STD_INPUT_HANDLE );
-  if( !FlushConsoleInputBuffer(in) ) in = NULL;
+  ad->in = GetStdHandle( STD_INPUT_HANDLE );
+  if( !FlushConsoleInputBuffer(ad->in) ) ad->in = NULL;
 
   // command line arguments {{{
   char *cmdLine = GetCommandLineA();
@@ -3809,7 +4684,6 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   options opt = defopt;
   int fullhelp = 0;
   char badArg = 0;
-  DWORD ppid = 0;
   int keepSuspended = 0;
   int fakeAttached = 0;
   // permanent options {{{
@@ -3885,7 +4759,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
             start++;
           if( start[0]=='/' )
           {
-            ppid = (DWORD)atop( start+1 );
+            ad->ppid = (DWORD)atop( start+1 );
             while( start[0] && start[0]!=' ' && start[0]!='+' ) start++;
           }
           if( start[0]=='+' )
@@ -4079,7 +4953,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
 
     if( fc )
     {
-      waitForKeyIfConsoleOwner( tc,in );
+      waitForKeyIfConsoleOwner( tc,ad->in );
       exitHeob( ad,HEOB_TRACE,0,0 );
     }
     args = NULL;
@@ -4179,7 +5053,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     }
     printf( "    $I-H$N     show full help\n" );
     printf( "\n$Ohe$Nap-$Oob$Nserver " HEOB_VER " ($O" BITS "$Nbit)\n" );
-    waitForKeyIfConsoleOwner( tc,in );
+    waitForKeyIfConsoleOwner( tc,ad->in );
     exitHeob( ad,HEOB_HELP,0,0x7fffffff );
   }
   // }}}
@@ -4200,15 +5074,15 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   }
   // }}}
 
-  if( !in && (opt.attached || opt.newConsole<=1) )
+  if( !ad->in && (opt.attached || opt.newConsole<=1) )
     opt.pid = opt.leakRecording = 0;
 
   if( opt.leakRecording && !opt.newConsole )
     opt.newConsole = 1;
 
   // create target application {{{
-  wchar_t *cmdLineW = GetCommandLineW();
-  wchar_t *argsW = cmdLineW;
+  ad->cmdLineW = GetCommandLineW();
+  wchar_t *argsW = ad->cmdLineW;
   if( argsW[0]=='"' )
   {
     argsW++;
@@ -4235,6 +5109,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     }
     while( argsW[0] && argsW[0]!=' ' ) argsW++;
   }
+  ad->argsW = argsW;
 
   if( !opt.attached )
   {
@@ -4276,7 +5151,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
 
     opt.attached = fakeAttached;
   }
-  else if( ppid )
+  else if( ad->ppid )
     opt.newConsole = 0;
   // }}}
 
@@ -4379,7 +5254,8 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     }
     else
     {
-      char *fullName = strreplacenum( ad->outName,"%p",ad->pi.dwProcessId,heap );
+      char *fullName = strreplacenum(
+          ad->outName,"%p",ad->pi.dwProcessId,heap );
       char *usedName;
       if( !fullName )
         usedName = ad->outName;
@@ -4390,7 +5266,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
         opt.children = 1;
       }
 
-      char *ppidName = strreplacenum( usedName,"%P",ppid,heap );
+      char *ppidName = strreplacenum( usedName,"%P",ad->ppid,heap );
       if( ppidName )
         usedName = ppidName;
 
@@ -4445,41 +5321,31 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   if( opt.leakRecording )
   {
     DWORD flags;
-    if( GetConsoleMode(in,&flags) )
-      SetConsoleMode( in,flags & ~ENABLE_MOUSE_INPUT );
+    if( GetConsoleMode(ad->in,&flags) )
+      SetConsoleMode( ad->in,flags & ~ENABLE_MOUSE_INPUT );
   }
 
-  HANDLE readPipe = NULL;
-  HANDLE controlPipe = NULL;
-#ifndef NO_DBGENG
-  HANDLE exceptionWait = NULL;
-#endif
-  HANDLE err = GetStdHandle( STD_ERROR_HANDLE );
-  attachedProcessInfo *api = NULL;
+  ad->err = GetStdHandle( STD_ERROR_HANDLE );
   unsigned heobExit = HEOB_OK;
   unsigned heobExitData = 0;
-  wchar_t *exePathW = ad->exePathW;
-  int *recordingRemote = NULL;
+  ad->heobExit = &heobExit;
+  ad->heobExitData = &heobExitData;
   if( isWrongArch(ad->pi.hProcess) )
   {
     printf( "$Wonly " BITS "bit applications possible\n" );
     heobExit = HEOB_WRONG_BITNESS;
   }
   else
-    readPipe = inject( ad,&opt,&defopt,tc,&controlPipe,
-#ifndef NO_DBGENG
-        &exceptionWait,
-#endif
-        in,err,&api,subOutName,subXmlName,subCurDir,&heobExit,
-        &recordingRemote );
-  if( !readPipe )
+    ad->readPipe = inject( ad,&opt,&defopt,tc,
+        subOutName,subXmlName,subCurDir );
+  if( !ad->readPipe )
     TerminateProcess( ad->pi.hProcess,1 );
 
   UINT exitCode = 0x7fffffff;
-  if( readPipe )
+  if( ad->readPipe )
   {
     int count = WideCharToMultiByte( CP_ACP,0,
-        exePathW,-1,exePath,MAX_PATH,NULL,NULL );
+        ad->exePathW,-1,exePath,MAX_PATH,NULL,NULL );
     if( count<0 || count>=MAX_PATH ) count = 0;
     exePath[count] = 0;
     char *delim = strrchr( exePath,'\\' );
@@ -4490,7 +5356,6 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     if( delim ) delim[0] = '\\';
 
     // debugger PID {{{
-    DWORD dbgPid = 0;
     if( ad->writeProcessPid )
     {
       unsigned data[2] = { HEOB_PID_ATTACH,ad->pi.dwProcessId };
@@ -4502,19 +5367,18 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
         data[0] = HEOB_CONTROL_NONE;
         data[1] = 0;
       }
-      dbgPid = data[1];
+      ad->dbgPid = data[1];
     }
     // }}}
 
-    printAttachedProcessInfo( exePathW,api,tc,ad->pi.dwProcessId,ppid,dbgPid );
+    printAttachedProcessInfo( ad,tc );
     if( ad->tcOutOrig )
-      printAttachedProcessInfo( exePathW,api,ad->tcOutOrig,
-          ad->pi.dwProcessId,ppid,dbgPid );
+      printAttachedProcessInfo( ad,ad->tcOutOrig );
 
     // console title {{{
-    wchar_t *delimW = strrchrW( exePathW,'\\' );
+    wchar_t *delimW = strrchrW( ad->exePathW,'\\' );
     if( delimW ) delimW++;
-    else delimW = exePathW;
+    else delimW = ad->exePathW;
     wchar_t *lastPointW = strrchrW( delimW,'.' );
     if( lastPointW ) lastPointW[0] = 0;
     setHeobConsoleTitle( heap,delimW );
@@ -4523,12 +5387,12 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
 
     if( opt.pid )
     {
-      tc->out = err;
+      tc->out = ad->err;
       printf( "\n-------------------- PID %u --------------------\n",
           ad->pi.dwProcessId );
 
       showConsole();
-      waitForKey( tc,in );
+      waitForKey( tc,ad->in );
 
       printf( " done\n\n" );
       tc->out = out;
@@ -4536,16 +5400,13 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
 
     if( opt.handleException>=2 ) opt.leakRecording = 0;
 
-    if( in && !opt.leakRecording && tc->fTextColor!=&TextColorConsole )
+    if( ad->in && !opt.leakRecording && tc->fTextColor!=&TextColorConsole )
     {
       DWORD conPid;
       DWORD conPidCount = GetConsoleProcessList( &conPid,1 );
       if( conPidCount==1 )
         FreeConsole();
     }
-
-    textColor *tcXml = writeXmlHeader( ad,delim,api,
-        cmdLineW,argsW,ppid,dbgPid,startTicks );
 
     if( !keepSuspended )
       ResumeThread( ad->pi.hThread );
@@ -4557,851 +5418,10 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
       ad->attachEvent = NULL;
     }
 
-    // main loop {{{
-    int type;
-    modInfo *mi_a = NULL;
-    int mi_q = 0;
-    int terminated = -2;
-    int alloc_show_q = 0;
-    int error_q = 0;
-#ifndef NO_THREADNAMES
-    int threadName_q = 0;
-    threadNameInfo *threadName_a = NULL;
-#endif
-    if( !opt.leakRecording ) in = NULL;
-    int recording = opt.leakRecording!=1 ? 1 : -1;
-    int needData = 1;
-    OVERLAPPED ov;
-    ov.Offset = ov.OffsetHigh = 0;
-    ov.hEvent = CreateEvent( NULL,TRUE,FALSE,NULL );
-    HANDLE handles[2] = { ov.hEvent,in };
-    int waitCount = in ? 2 : 1;
-    int errColor = 0;
-    COORD consoleCoord = { 0,0 };
-    allocation *aa = HeapAlloc( heap,0,4*sizeof(allocation) );
-    exceptionInfo *eiPtr = HeapAlloc( heap,0,sizeof(exceptionInfo) );
-    DWORD flashStart = 0;
-    if( in ) showConsole();
-    while( 1 )
-    {
-      if( needData )
-      {
-        if( !ReadFile(readPipe,&type,sizeof(int),NULL,&ov) &&
-            GetLastError()!=ERROR_IO_PENDING ) break;
-        needData = 0;
-
-        if( in )
-          showRecording( err,recording,&consoleCoord,&errColor );
-      }
-
-      DWORD waitTime = INFINITE;
-      // timeout of clear/show text flash {{{
-      if( recording>=2 )
-      {
-#define FLASH_TIMEOUT 500
-        DWORD flashTime = GetTickCount() - flashStart;
-        if( flashTime>=FLASH_TIMEOUT )
-        {
-          flashStart = 0;
-          recording = 1;
-          clearRecording( err,consoleCoord,errColor );
-          showRecording( err,recording,&consoleCoord,&errColor );
-        }
-        else
-          waitTime = FLASH_TIMEOUT - flashTime;
-      }
-      // }}}
-      DWORD didread;
-      DWORD waitRet = WaitForMultipleObjects(
-          waitCount,handles,FALSE,waitTime );
-      if( waitRet==WAIT_TIMEOUT )
-      {
-        flashStart = GetTickCount() - 2*FLASH_TIMEOUT;
-        continue;
-      }
-      else if( waitRet==WAIT_OBJECT_0+1 )
-      {
-        // control leak recording {{{
-        INPUT_RECORD ir;
-        if( ReadConsoleInput(in,&ir,1,&didread) &&
-            ir.EventType==KEY_EVENT &&
-            ir.Event.KeyEvent.bKeyDown )
-        {
-          int cmd = -1;
-
-          switch( ir.Event.KeyEvent.wVirtualKeyCode )
-          {
-            case 'N':
-              if( recording>0 ) break;
-              cmd = HEOB_LEAK_RECORDING_START;
-              break;
-
-            case 'F':
-              if( recording<=0 ) break;
-              cmd = HEOB_LEAK_RECORDING_STOP;
-              break;
-
-            case 'C':
-              if( recording<0 ) break;
-              cmd = HEOB_LEAK_RECORDING_CLEAR;
-              break;
-
-            case 'S':
-              if( recording<0 ) break;
-              cmd = HEOB_LEAK_RECORDING_SHOW;
-              break;
-          }
-
-          if( cmd>=HEOB_LEAK_RECORDING_CLEAR )
-          {
-            WriteFile( controlPipe,&cmd,sizeof(int),&didread,NULL );
-
-            // start flash of text to visualize clear/show was done {{{
-            if( recording>0 )
-            {
-              flashStart = GetTickCount();
-              recording = cmd;
-              clearRecording( err,consoleCoord,errColor );
-              showRecording( err,recording,&consoleCoord,&errColor );
-            }
-            // }}}
-          }
-          else if( cmd>=HEOB_LEAK_RECORDING_STOP )
-          {
-            // start & stop only set the recording flag, and by doing this
-            // directly, it also works if the target process is
-            // suspended in a debugger
-            WriteProcessMemory( ad->pi.hProcess,
-                recordingRemote,&cmd,sizeof(int),NULL );
-
-            int prevRecording = recording;
-            if( cmd==HEOB_LEAK_RECORDING_START || recording>0 )
-              recording = cmd;
-            if( prevRecording!=recording )
-            {
-              clearRecording( err,consoleCoord,errColor );
-              showRecording( err,recording,&consoleCoord,&errColor );
-            }
-          }
-        }
-        continue;
-        // }}}
-      }
-
-      if( in )
-        clearRecording( err,consoleCoord,errColor );
-
-      if( !GetOverlappedResult(readPipe,&ov,&didread,TRUE) ||
-          didread<sizeof(int) )
-        break;
-      needData = 1;
-
-      switch( type )
-      {
-        // leaks {{{
-
-        case WRITE_LEAKS:
-          {
-            allocation *alloc_a = NULL;
-            int alloc_q = 0;
-            unsigned char *contents = NULL;
-            unsigned char **content_ptrs = NULL;
-            int alloc_ignore_q = 0;
-            size_t alloc_ignore_sum = 0;
-            int alloc_ignore_ind_q = 0;
-            size_t alloc_ignore_ind_sum = 0;
-
-            alloc_show_q = 0;
-
-            if( !readFile(readPipe,&alloc_q,sizeof(int),&ov) )
-              break;
-            if( !readFile(readPipe,&alloc_ignore_q,sizeof(int),&ov) )
-              break;
-            if( !readFile(readPipe,&alloc_ignore_sum,sizeof(size_t),&ov) )
-              break;
-            if( !readFile(readPipe,&alloc_ignore_ind_q,sizeof(int),&ov) )
-              break;
-            if( !readFile(readPipe,&alloc_ignore_ind_sum,sizeof(size_t),&ov) )
-              break;
-            if( alloc_q )
-            {
-              alloc_a = HeapAlloc( heap,0,alloc_q*sizeof(allocation) );
-              if( !readFile(readPipe,alloc_a,alloc_q*sizeof(allocation),&ov) )
-                break;
-            }
-
-            size_t content_size;
-            if( !readFile(readPipe,&content_size,sizeof(size_t),&ov) )
-              break;
-
-            int lc;
-            int lDetails = opt.leakDetails ?
-              ( (opt.leakDetails&1) ? LT_COUNT : LT_REACHABLE ) : 0;
-            for( lc=0; lc<alloc_q; lc++ )
-            {
-              allocation *a = alloc_a + lc;
-              if( a->lt>=lDetails ) continue;
-              alloc_show_q++;
-            }
-
-            if( content_size )
-            {
-              contents = HeapAlloc( heap,0,content_size );
-              if( !readFile(readPipe,contents,content_size,&ov) )
-                break;
-              content_ptrs =
-                HeapAlloc( heap,0,alloc_q*sizeof(unsigned char*) );
-              size_t leakContents = opt.leakContents;
-              size_t content_pos = 0;
-              for( lc=0; lc<alloc_q; lc++ )
-              {
-                content_ptrs[lc] = contents + content_pos;
-                allocation *a = alloc_a + lc;
-                if( a->lt>=lDetails ) continue;
-                size_t s = a->size;
-                content_pos += s<leakContents ? s : leakContents;
-              }
-            }
-
-            printLeaks( alloc_a,alloc_q,
-                alloc_ignore_q,alloc_ignore_sum,
-                alloc_ignore_ind_q,alloc_ignore_ind_sum,
-                content_ptrs,mi_a,mi_q,
-#ifndef NO_THREADNAMES
-                threadName_a,threadName_q,
-#endif
-                &opt,tc,&ds,heap,tcXml,0 );
-
-            if( alloc_a ) HeapFree( heap,0,alloc_a );
-            if( contents ) HeapFree( heap,0,contents );
-            if( content_ptrs ) HeapFree( heap,0,content_ptrs );
-          }
-          break;
-
-          // }}}
-          // modules {{{
-
-        case WRITE_MODS:
-          if( !readFile(readPipe,&mi_q,sizeof(int),&ov) )
-            mi_q = 0;
-          if( !mi_q ) break;
-          if( mi_a ) HeapFree( heap,0,mi_a );
-          mi_a = HeapAlloc( heap,0,mi_q*sizeof(modInfo) );
-          if( !readFile(readPipe,mi_a,mi_q*sizeof(modInfo),&ov) )
-          {
-            mi_q = 0;
-            break;
-          }
-#ifndef NO_DBGHELP
-          if( ds.fSymGetModuleInfo64 && ds.fSymLoadModule64 )
-          {
-            int m;
-            IMAGEHLP_MODULE64 im;
-            im.SizeOfStruct = sizeof(IMAGEHLP_MODULE64);
-            for( m=0; m<mi_q; m++ )
-            {
-              if( !ds.fSymGetModuleInfo64(ds.process,mi_a[m].base,&im) )
-                ds.fSymLoadModule64( ds.process,NULL,mi_a[m].path,NULL,
-                    mi_a[m].base,0 );
-            }
-          }
-#endif
-          break;
-
-          // }}}
-          // exception {{{
-
-        case WRITE_EXCEPTION:
-          {
-#define ei (*eiPtr)
-            if( !readFile(readPipe,&ei,sizeof(exceptionInfo),&ov) )
-              break;
-
-            cacheSymbolData( ei.aa,NULL,ei.aq,mi_a,mi_q,&ds,1 );
-
-            // exception code {{{
-            const char *desc = NULL;
-            switch( ei.er.ExceptionCode )
-            {
-#define EXCEPTION_FATAL_APP_EXIT STATUS_FATAL_APP_EXIT
-#define EX_DESC( name ) \
-              case EXCEPTION_##name: desc = " (" #name ")"; break
-
-              EX_DESC( ACCESS_VIOLATION );
-              EX_DESC( ARRAY_BOUNDS_EXCEEDED );
-              EX_DESC( BREAKPOINT );
-              EX_DESC( DATATYPE_MISALIGNMENT );
-              EX_DESC( FLT_DENORMAL_OPERAND );
-              EX_DESC( FLT_DIVIDE_BY_ZERO );
-              EX_DESC( FLT_INEXACT_RESULT );
-              EX_DESC( FLT_INVALID_OPERATION );
-              EX_DESC( FLT_OVERFLOW );
-              EX_DESC( FLT_STACK_CHECK );
-              EX_DESC( FLT_UNDERFLOW );
-              EX_DESC( ILLEGAL_INSTRUCTION );
-              EX_DESC( IN_PAGE_ERROR );
-              EX_DESC( INT_DIVIDE_BY_ZERO );
-              EX_DESC( INT_OVERFLOW );
-              EX_DESC( INVALID_DISPOSITION );
-              EX_DESC( NONCONTINUABLE_EXCEPTION );
-              EX_DESC( PRIV_INSTRUCTION );
-              EX_DESC( SINGLE_STEP );
-              EX_DESC( STACK_OVERFLOW );
-              EX_DESC( FATAL_APP_EXIT );
-              EX_DESC( VC_CPP_EXCEPTION );
-            }
-            printf( "\n$Wunhandled exception code: %x%s\n",
-                ei.er.ExceptionCode,desc );
-            // }}}
-
-            if( opt.exceptionDetails && tc->out )
-            {
-              // assembly instruction {{{
-#ifndef NO_DBGENG
-              if( exceptionWait && ei.er.ExceptionCode!=EXCEPTION_BREAKPOINT )
-              {
-                char *dis = disassemble(
-                    ad->pi.dwProcessId,ei.aa[0].frames[0],heap );
-                if( dis )
-                {
-                  printf( "$S  assembly instruction:\n" );
-                  char *space = strchr( dis,' ' );
-                  if( space ) space[0] = 0;
-                  printf( "    $O%s",dis );
-                  if( space )
-                  {
-                    space[0] = ' ';
-                    printf( "$N%s",space );
-                  }
-                  printf( "\n" );
-                  HeapFree( heap,0,dis );
-                }
-              }
-#endif
-              // }}}
-
-              // registers {{{
-              printf( "$S  registers:\n" );
-#define PREG( name,reg,type,before,after ) \
-              printf( before "$I" name "$N=" type after,ei.c.reg )
-              if( ei.c.ContextFlags&CONTEXT_INTEGER )
-              {
-#ifndef _WIN64
-                PREG( "edi"   ,Edi   ,"%X","    "           ,     );
-                PREG( "esi"   ,Esi   ,"%X","       "        ,     );
-                PREG( "ebx"   ,Ebx   ,"%X","       "        ,"\n" );
-                PREG( "edx"   ,Edx   ,"%X","    "           ,     );
-                PREG( "ecx"   ,Ecx   ,"%X","       "        ,     );
-                PREG( "eax"   ,Eax   ,"%X","       "        ,"\n" );
-#else
-                PREG( "rax"   ,Rax   ,"%X","    "           ,     );
-                PREG( "rcx"   ,Rcx   ,"%X","  "             ,     );
-                PREG( "rdx"   ,Rdx   ,"%X","  "             ,"\n" );
-                PREG( "rbx"   ,Rbx   ,"%X","    "           ,     );
-                PREG( "rbp"   ,Rbp   ,"%X","  "             ,     );
-                PREG( "rsi"   ,Rsi   ,"%X","  "             ,"\n" );
-                PREG( "rdi"   ,Rdi   ,"%X","    "           ,     );
-                PREG( "r8"    ,R8    ,"%X","  "             ,     );
-                PREG( "r9"    ,R9    ,"%X","   "            ,"\n" );
-                PREG( "r10"   ,R10   ,"%X","    "           ,     );
-                PREG( "r11"   ,R11   ,"%X","  "             ,     );
-                PREG( "r12"   ,R12   ,"%X","  "             ,"\n" );
-                PREG( "r13"   ,R13   ,"%X","    "           ,     );
-                PREG( "r14"   ,R14   ,"%X","  "             ,     );
-                PREG( "r15"   ,R15   ,"%X","  "             ,"\n" );
-#endif
-              }
-              if( ei.c.ContextFlags&CONTEXT_CONTROL )
-              {
-#ifndef _WIN64
-                PREG( "ebp"   ,Ebp   ,"%X","    "           ,     );
-                PREG( "eip"   ,Eip   ,"%X","       "        ,     );
-                PREG( "cs"    ,SegCs ,"%w","       "        ,"\n" );
-                PREG( "eflags",EFlags,"%x","    "           ,     );
-                PREG( "esp"   ,Esp   ,"%X","    "           ,     );
-                PREG( "ss"    ,SegSs ,"%w","       "        ,"\n" );
-#else
-                PREG( "ss"    ,SegSs ,"%w","    "           ,     );
-                PREG( "rsp"   ,Rsp   ,"%X","               ", );
-                PREG( "cs"    ,SegCs ,"%w","  "             ,"\n" );
-                PREG( "rip"   ,Rip   ,"%X","    "           ,     );
-                PREG( "eflags",EFlags,"%x","  "             ,"\n" );
-#endif
-              }
-              if( ei.c.ContextFlags&CONTEXT_SEGMENTS )
-              {
-#ifndef _WIN64
-                PREG( "gs"    ,SegGs ,"%w","    "           ,     );
-                PREG( "fs"    ,SegFs ,"%w","     "          ,     );
-                PREG( "es"    ,SegEs ,"%w","     "          ,     );
-                PREG( "ds"    ,SegDs ,"%w","     "          ,"\n" );
-#else
-                PREG( "ds"    ,SegDs ,"%w","    "           ,     );
-                PREG( "es"    ,SegEs ,"%w","       "        ,     );
-                PREG( "fs"    ,SegFs ,"%w","       "        ,     );
-                PREG( "gs"    ,SegGs ,"%w","       "        ,"\n" );
-#endif
-              }
-              // }}}
-            }
-#ifndef NO_DBGENG
-            if( exceptionWait && ei.er.ExceptionCode!=EXCEPTION_BREAKPOINT )
-              SetEvent( exceptionWait );
-#endif
-
-            printf( "$S  exception on:" );
-            printThreadName( ei.aa[0].threadNameIdx );
-            printStackCount( ei.aa[0].frames,ei.aa[0].frameCount,
-                mi_a,mi_q,&ds,FT_COUNT,0 );
-
-            char *addr = NULL;
-            const char *violationType = NULL;
-            const char *nearBlock = NULL;
-            const char *blockType = NULL;
-            // access violation {{{
-            if( ei.er.ExceptionCode==EXCEPTION_ACCESS_VIOLATION &&
-                ei.er.NumberParameters==2 )
-            {
-              ULONG_PTR flag = ei.er.ExceptionInformation[0];
-              addr = (char*)ei.er.ExceptionInformation[1];
-              violationType = flag==8 ? "data execution prevention" :
-                ( flag ? "write access" : "read access" );
-              printf( "$W  %s violation at %p\n",violationType,addr );
-
-              if( ei.aq>1 )
-              {
-                char *ptr = (char*)ei.aa[1].ptr;
-                size_t size = ei.aa[1].size;
-                nearBlock = ei.nearest ? "near " : "";
-                intptr_t accessPos = addr - ptr;
-                blockType = ei.aq>2 ? "freed block" :
-                  ( accessPos>=0 && (size_t)accessPos<size ?
-                    "accessible (!) area of" : "protected area of" );
-                printf( "$I  %s%s %p (size %U, offset %s%D)\n",
-                    nearBlock,blockType,
-                    ptr,size,accessPos>0?"+":"",accessPos );
-                printf( "$S  allocated on: $N(#%U)",ei.aa[1].id );
-                printThreadName( ei.aa[1].threadNameIdx );
-                printStackCount( ei.aa[1].frames,ei.aa[1].frameCount,
-                    mi_a,mi_q,&ds,ei.aa[1].ft,0 );
-
-                if( ei.aq>2 )
-                {
-                  printf( "$S  freed on:" );
-                  printThreadName( ei.aa[2].threadNameIdx );
-                  printStackCount( ei.aa[2].frames,ei.aa[2].frameCount,
-                      mi_a,mi_q,&ds,ei.aa[2].ft,0 );
-                }
-              }
-            }
-            // }}}
-            // VC c++ exception {{{
-            else if( ei.throwName[0] )
-            {
-              char *throwName = undecorateVCsymbol( &ds,ei.throwName );
-              printf( "$I  VC c++ exception: $N%s\n",throwName );
-            }
-            // }}}
-
-            writeXmlException( tcXml,&ds,eiPtr,desc,addr,violationType,
-                nearBlock,blockType,mi_a,mi_q );
-
-            terminated = -1;
-            heobExit = HEOB_EXCEPTION;
-            heobExitData = ei.er.ExceptionCode;
-#undef ei
-          }
-          break;
-
-          // }}}
-          // allocation failure {{{
-
-        case WRITE_ALLOC_FAIL:
-          {
-            size_t mul;
-            if( !readFile(readPipe,&mul,sizeof(size_t),&ov) )
-              break;
-            if( !readFile(readPipe,aa,sizeof(allocation),&ov) )
-              break;
-
-            cacheSymbolData( aa,NULL,1,mi_a,mi_q,&ds,1 );
-
-            size_t product;
-            int mulOverflow = mul_overflow(aa->size,mul,&product);
-            if( !mulOverflow ) aa->size = product;
-
-            if( mulOverflow )
-              printf( "\n$Wmultiplication overflow in allocation"
-                  " of %U * %U bytes\n",aa->size,mul );
-            else
-              printf( "\n$Wallocation failed of %U bytes\n",aa->size );
-            printf( "$S  called on: $N(#%U)",aa->id );
-            printThreadName( aa->threadNameIdx );
-            printStackCount( aa->frames,aa->frameCount,
-                mi_a,mi_q,&ds,aa->ft,0 );
-
-            writeXmlAllocFail( tcXml,&ds,mul,mulOverflow,aa,mi_a,mi_q );
-
-            error_q++;
-          }
-          break;
-
-          // }}}
-          // free of invalid pointer {{{
-
-        case WRITE_FREE_FAIL:
-          {
-            if( !readFile(readPipe,aa,4*sizeof(allocation),&ov) )
-              break;
-
-            modInfo *allocMi = NULL;
-            if( !aa[1].ptr && (aa[1].id==2 || aa[1].id==3) )
-            {
-              uintptr_t frame = (uintptr_t)aa[1].frames[0];
-              int k;
-              for( k=0; k<mi_q; k++ )
-              {
-                modInfo *mi = mi_a + k;
-                if( frame<mi->base || frame>=mi->base+mi->size ) continue;
-                allocMi = mi;
-                break;
-              }
-            }
-
-            cacheSymbolData( aa,NULL,4,mi_a,mi_q,&ds,1 );
-
-            printf( "\n$Wdeallocation of invalid pointer %p\n",aa->ptr );
-            printf( "$S  called on:" );
-            printThreadName( aa->threadNameIdx );
-            printStackCount( aa->frames,aa->frameCount,
-                mi_a,mi_q,&ds,aa->ft,0 );
-
-            // type of invalid pointer {{{
-            if( aa[1].ptr )
-            {
-              char *ptr = aa->ptr;
-              char *addr = aa[1].ptr;
-              size_t size = aa[1].size;
-              const char *block = aa[2].ptr ? "freed " : "";
-              printf( "$I  pointing to %sblock %p (size %U, offset %s%D)\n",
-                  block,addr,size,ptr>addr?"+":"",ptr-addr );
-              printf( "$S  allocated on: $N(#%U)",aa[1].id );
-              printThreadName( aa[1].threadNameIdx );
-              printStackCount( aa[1].frames,aa[1].frameCount,
-                  mi_a,mi_q,&ds,aa[1].ft,0 );
-
-              if( aa[2].ptr )
-              {
-                printf( "$S  freed on:" );
-                printThreadName( aa[2].threadNameIdx );
-                printStackCount( aa[2].frames,aa[2].frameCount,
-                    mi_a,mi_q,&ds,aa[2].ft,0 );
-              }
-            }
-            else if( aa[1].id==1 )
-            {
-              printf( "$I  pointing to stack\n" );
-              printf( "$S  possibly same frame as:" );
-              printThreadName( aa[1].threadNameIdx );
-              printStackCount( aa[1].frames,aa[1].frameCount,
-                  mi_a,mi_q,&ds,FT_COUNT,0 );
-            }
-            else if( aa[1].id==2 )
-            {
-              printf( "$I  allocated (size %U) from:\n",aa[1].size );
-              if( allocMi )
-                locOut( tc,allocMi->base,allocMi->path,
-                    DWST_BASE_ADDR,0,NULL,ds.opt,0 );
-            }
-            else if( aa[1].id==3 )
-            {
-              printf( "$I  pointing to global area of:\n" );
-              if( allocMi )
-                locOut( tc,allocMi->base,allocMi->path,
-                    DWST_BASE_ADDR,0,NULL,ds.opt,0 );
-            }
-            // }}}
-
-            if( aa[3].ptr )
-            {
-              printf( "$I  referenced by block %p (size %U, offset +%U)\n",
-                  aa[3].ptr,aa[3].size,aa[2].size );
-              printf( "$S  allocated on: $N(#%U)",aa[3].id );
-              printThreadName( aa[3].threadNameIdx );
-              printStackCount( aa[3].frames,aa[3].frameCount,
-                  mi_a,mi_q,&ds,aa[3].ft,0 );
-            }
-
-            writeXmlFreeFail( tcXml,&ds,allocMi,aa,mi_a,mi_q );
-
-            error_q++;
-          }
-          break;
-
-          // }}}
-          // double free {{{
-
-        case WRITE_DOUBLE_FREE:
-          {
-            if( !readFile(readPipe,aa,3*sizeof(allocation),&ov) )
-              break;
-
-            cacheSymbolData( aa,NULL,3,mi_a,mi_q,&ds,1 );
-
-            printf( "\n$Wdouble free of %p (size %U)\n",aa[1].ptr,aa[1].size );
-            printf( "$S  called on:" );
-            printThreadName( aa[0].threadNameIdx );
-            printStackCount( aa[0].frames,aa[0].frameCount,
-                mi_a,mi_q,&ds,aa[0].ft,0 );
-
-            printf( "$S  allocated on: $N(#%U)",aa[1].id );
-            printThreadName( aa[1].threadNameIdx );
-            printStackCount( aa[1].frames,aa[1].frameCount,
-                mi_a,mi_q,&ds,aa[1].ft,0 );
-
-            printf( "$S  freed on:" );
-            printThreadName( aa[2].threadNameIdx );
-            printStackCount( aa[2].frames,aa[2].frameCount,
-                mi_a,mi_q,&ds,aa[2].ft,0 );
-
-            writeXmlDoubleFree( tcXml,&ds,aa,mi_a,mi_q );
-
-            error_q++;
-          }
-          break;
-
-          // }}}
-          // slack access {{{
-
-        case WRITE_SLACK:
-          {
-            if( !readFile(readPipe,aa,2*sizeof(allocation),&ov) )
-              break;
-
-            cacheSymbolData( aa,NULL,2,mi_a,mi_q,&ds,1 );
-
-            printf( "\n$Wwrite access violation at %p\n",aa[1].ptr );
-            printf( "$I  slack area of %p (size %U, offset %s%D)\n",
-                aa[0].ptr,aa[0].size,
-                aa[1].ptr>aa[0].ptr?"+":"",(char*)aa[1].ptr-(char*)aa[0].ptr );
-            printf( "$S  allocated on: $N(#%U)",aa[0].id );
-            printThreadName( aa[0].threadNameIdx );
-            printStackCount( aa[0].frames,aa[0].frameCount,
-                mi_a,mi_q,&ds,aa[0].ft,0 );
-            printf( "$S  freed on:" );
-            printThreadName( aa[1].threadNameIdx );
-            printStackCount( aa[1].frames,aa[1].frameCount,
-                mi_a,mi_q,&ds,aa[1].ft,0 );
-
-            writeXmlSlack( tcXml,&ds,aa,mi_a,mi_q );
-
-            error_q++;
-          }
-          break;
-
-          // }}}
-          // main allocation failure {{{
-
-        case WRITE_MAIN_ALLOC_FAIL:
-          printf( "\n$Wnot enough memory to keep track of allocations\n" );
-          terminated = -1;
-          heobExit = HEOB_OUT_OF_MEMORY;
-          break;
-
-          // }}}
-          // mismatching allocation/release method {{{
-
-        case WRITE_WRONG_DEALLOC:
-          {
-            if( !readFile(readPipe,aa,2*sizeof(allocation),&ov) )
-              break;
-
-            cacheSymbolData( aa,NULL,2,mi_a,mi_q,&ds,1 );
-
-            printf( "\n$Wmismatching allocation/release method"
-                " of %p (size %U)\n",aa[0].ptr,aa[0].size );
-            printf( "$S  allocated on: $N(#%U)",aa[0].id );
-            printThreadName( aa[0].threadNameIdx );
-            printStackCount( aa[0].frames,aa[0].frameCount,
-                mi_a,mi_q,&ds,aa[0].ft,0 );
-            printf( "$S  freed on:" );
-            printThreadName( aa[1].threadNameIdx );
-            printStackCount( aa[1].frames,aa[1].frameCount,
-                mi_a,mi_q,&ds,aa[1].ft,0 );
-
-            writeXmlWrongDealloc( tcXml,&ds,aa,mi_a,mi_q );
-
-            error_q++;
-          }
-          break;
-
-          // }}}
-          // exception of allocation # {{{
-
-        case WRITE_RAISE_ALLOCATION:
-          {
-            size_t id;
-            if( !readFile(readPipe,&id,sizeof(size_t),&ov) )
-              break;
-            funcType ft;
-            if( !readFile(readPipe,&ft,sizeof(funcType),&ov) )
-              break;
-
-            printf( "\n$Sreached allocation #%U $N[$I%s$N]\n",
-                id,funcnames[ft] );
-          }
-          break;
-
-          // }}}
-          // thread names {{{
-
-#ifndef NO_THREADNAMES
-        case WRITE_THREAD_NAMES:
-          {
-            int add_q;
-            if( !readFile(readPipe,&add_q,sizeof(int),&ov) )
-              break;
-            int old_q = threadName_q;
-            threadName_q += add_q;
-            if( !threadName_a )
-              threadName_a = HeapAlloc( heap,0,
-                  threadName_q*sizeof(threadNameInfo) );
-            else
-              threadName_a = HeapReAlloc( heap,0,
-                  threadName_a,threadName_q*sizeof(threadNameInfo) );
-            if( !readFile(readPipe,threadName_a+old_q,
-                  add_q*sizeof(threadNameInfo),&ov) )
-            {
-              threadName_q = 0;
-              break;
-            }
-          }
-          break;
-#endif
-
-          // }}}
-          // exit trace {{{
-
-        case WRITE_EXIT_TRACE:
-          {
-            allocation *exitTrace = eiPtr->aa;
-            if( !readFile(readPipe,exitTrace,sizeof(allocation),&ov) )
-              break;
-
-            cacheSymbolData( exitTrace,NULL,1,mi_a,mi_q,&ds,1 );
-            printf( "$Sexit on:" );
-            printThreadName( exitTrace->threadNameIdx );
-            printStackCount( exitTrace->frames,exitTrace->frameCount,
-                mi_a,mi_q,&ds,FT_COUNT,0 );
-          }
-          break;
-
-          // }}}
-          // exit information {{{
-
-        case WRITE_EXIT:
-          if( !readFile(readPipe,&exitCode,sizeof(UINT),&ov) )
-          {
-            terminated = -2;
-            break;
-          }
-          if( !readFile(readPipe,&terminated,sizeof(int),&ov) )
-          {
-            terminated = -2;
-            break;
-          }
-
-          if( !terminated )
-            printf( "$Sexit code: %u (%x)\n",exitCode,exitCode );
-          else
-            printf( "\n$Stermination code: %u (%x)\n",exitCode,exitCode );
-
-          heobExitData = exitCode;
-          if( opt.leakErrorExitCode )
-            exitCode = alloc_show_q + error_q;
-          break;
-
-          // }}}
-          // leak recording {{{
-
-        case WRITE_RECORDING:
-          {
-            int cmd;
-            if( !readFile(readPipe,&cmd,sizeof(int),&ov) )
-              break;
-
-            switch( cmd )
-            {
-              case HEOB_LEAK_RECORDING_START:
-                recording = 1;
-                break;
-              case HEOB_LEAK_RECORDING_STOP:
-                if( recording>0 ) recording = 0;
-                break;
-              case HEOB_LEAK_RECORDING_CLEAR:
-              case HEOB_LEAK_RECORDING_SHOW:
-                if( !recording ) recording = -1;
-                break;
-            }
-          }
-          break;
-
-          // }}}
-          // sampling profiler {{{
-
-        case WRITE_SAMPLING:
-          {
-            allocation *samp_a = NULL;
-            int samp_q = 0;
-
-            if( !readFile(readPipe,&samp_q,sizeof(int),&ov) )
-              break;
-            if( samp_q )
-            {
-              samp_a = HeapAlloc( heap,0,samp_q*sizeof(allocation) );
-              if( !readFile(readPipe,samp_a,samp_q*sizeof(allocation),&ov) )
-                break;
-            }
-
-            printLeaks( samp_a,samp_q,0,0,0,0,NULL,mi_a,mi_q,
-#ifndef NO_THREADNAMES
-                threadName_a,threadName_q,
-#endif
-                &opt,tc,&ds,heap,tcXml,1 );
-
-            if( samp_a ) HeapFree( heap,0,samp_a );
-          }
-          break;
-
-          // }}}
-      }
-    }
-    CloseHandle( ov.hEvent );
-    HeapFree( heap,0,aa );
-    HeapFree( heap,0,eiPtr );
-    // }}}
-
-    if( terminated==-2 )
-    {
-      printf( "\n$Wunexpected end of application\n" );
-      heobExit = HEOB_UNEXPECTED_END;
-    }
-
-    writeXmlFooter( tcXml,heap,startTicks );
+    mainLoop( ad,&ds,startTicks,&exitCode );
 
     dbgsym_close( &ds );
-    if( mi_a ) HeapFree( heap,0,mi_a );
-#ifndef NO_THREADNAMES
-    if( threadName_a ) HeapFree( heap,0,threadName_a );
-#endif
-    CloseHandle( readPipe );
   }
-  if( controlPipe ) CloseHandle( controlPipe );
-#ifndef NO_DBGENG
-  if( exceptionWait ) CloseHandle( exceptionWait );
-#endif
-
-  if( api ) HeapFree( heap,0,api );
 
   exitHeob( ad,heobExit,heobExitData,exitCode );
 }
