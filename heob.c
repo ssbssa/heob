@@ -2683,7 +2683,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
     threadNameInfo *threadName_a,int threadName_q,
 #endif
     options *opt,textColor *tc,dbgsym *ds,HANDLE heap,textColor *tcXml,
-    uintptr_t threadInitAddr,int sampling )
+    int sampling )
 {
   if( !tc->out && !tcXml ) return;
 
@@ -2757,6 +2757,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
   if( leakDetails )
   {
     // leak sorting {{{
+    uintptr_t threadInitAddr = ds->threadInitAddr;
     for( i=0; i<combined_q; i++ )
     {
       allocation *a = alloc_a + alloc_idxs[i];
@@ -4769,7 +4770,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
 #ifndef NO_THREADNAMES
                 threadName_a,threadName_q,
 #endif
-                &opt,tc,&ds,heap,tcXml,(uintptr_t)RETURN_ADDRESS(),0 );
+                &opt,tc,&ds,heap,tcXml,0 );
 
             if( alloc_a ) HeapFree( heap,0,alloc_a );
             if( contents ) HeapFree( heap,0,contents );
@@ -5366,7 +5367,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
 #ifndef NO_THREADNAMES
                 threadName_a,threadName_q,
 #endif
-                &opt,tc,&ds,heap,tcXml,(uintptr_t)RETURN_ADDRESS(),1 );
+                &opt,tc,&ds,heap,tcXml,1 );
 
             if( samp_a ) HeapFree( heap,0,samp_a );
           }
