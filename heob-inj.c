@@ -231,6 +231,7 @@ typedef struct localData
   // protected by csSampling {{{
 
   HANDLE samplingInit;
+  int samplingEnabled;
   allocation *samp_a;
   int samp_q;
   int samp_s;
@@ -1813,7 +1814,7 @@ static VOID WINAPI new_ExitProcess( UINT c )
   if( samplingInterval )
   {
     EnterCriticalSection( &rd->csSampling );
-    rd->opt.samplingInterval = 0;
+    rd->samplingEnabled = 0;
     LeaveCriticalSection( &rd->csSampling );
   }
 
@@ -3738,7 +3739,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   if( rd->opt.samplingInterval )
   {
     EnterCriticalSection( &rd->csSampling );
-    rd->opt.samplingInterval = 0;
+    rd->samplingEnabled = 0;
     LeaveCriticalSection( &rd->csSampling );
   }
 
@@ -4075,7 +4076,7 @@ static CODE_SEG(".text$5") DWORD WINAPI samplingThread( LPVOID arg )
     Sleep( interval );
     EnterCriticalSection( &rd->csSampling );
 
-    if( !rd->opt.samplingInterval ) break;
+    if( !rd->samplingEnabled ) break;
 
     HeapLock( processHeap );
 
@@ -4722,6 +4723,9 @@ VOID CALLBACK heob( ULONG_PTR arg )
   if( ld->opt.samplingInterval )
   {
     ld->samplingInit = CreateEvent( NULL,FALSE,FALSE,NULL );
+    EnterCriticalSection( &ld->csSampling );
+    ld->samplingEnabled = 1;
+    LeaveCriticalSection( &ld->csSampling );
     HANDLE thread = CreateThread( NULL,0,&samplingThread,NULL,0,NULL );
     CloseHandle( thread );
     WaitForSingleObject( ld->samplingInit,INFINITE );
