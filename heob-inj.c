@@ -363,6 +363,9 @@ static void writeModsFind( allocation *alloc_a,int alloc_q,
         DWORD written;
         int type = WRITE_MAIN_ALLOC_FAIL;
         WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+
+        LeaveCriticalSection( &rd->csWrite );
+
         exitWait( 1,0 );
       }
       if( !GetModuleFileName((HMODULE)base,mi_a[mi_q-1].path,MAX_PATH) )
@@ -1592,6 +1595,7 @@ static void addModMem( const BYTE *start,const BYTE *end )
           rd->heap,0,rd->mod_mem_a,rd->mod_mem_s*sizeof(modMemType) );
     if( UNLIKELY(!mod_mem_an) )
     {
+      LeaveCriticalSection( &rd->csMod );
       EnterCriticalSection( &rd->csWrite );
 
       DWORD written;
@@ -2911,6 +2915,7 @@ static void addModule( HMODULE mod )
           rd->heap,0,rd->mod_a,rd->mod_s*sizeof(HMODULE) );
     if( UNLIKELY(!mod_an) )
     {
+      LeaveCriticalSection( &rd->csMod );
       EnterCriticalSection( &rd->csWrite );
 
       DWORD written;
@@ -2943,6 +2948,7 @@ static void addModule( HMODULE mod )
             rd->heap,0,rd->crt_mod_a,rd->crt_mod_s*sizeof(HMODULE) );
       if( UNLIKELY(!crt_mod_an) )
       {
+        LeaveCriticalSection( &rd->csMod );
         EnterCriticalSection( &rd->csWrite );
 
         DWORD written;
