@@ -542,14 +542,14 @@ static NOINLINE void trackFree(
 
         if( sf->freed_q>=sf->freed_s )
         {
-          sf->freed_s += 64;
+          int freed_sn = sf->freed_s + 64;
           freed *freed_an;
           if( !sf->freed_a )
             freed_an = HeapAlloc(
-                rd->heap,0,sf->freed_s*sizeof(freed) );
+                rd->heap,0,freed_sn*sizeof(freed) );
           else
             freed_an = HeapReAlloc(
-                rd->heap,0,sf->freed_a,sf->freed_s*sizeof(freed) );
+                rd->heap,0,sf->freed_a,freed_sn*sizeof(freed) );
           if( UNLIKELY(!freed_an) )
           {
             LeaveCriticalSection( &sf->cs );
@@ -563,6 +563,7 @@ static NOINLINE void trackFree(
 
             exitWait( 1,0 );
           }
+          sf->freed_s = freed_sn;
           sf->freed_a = freed_an;
         }
 
@@ -1055,14 +1056,14 @@ static NOINLINE void trackAllocSuccess(
 
     if( sa->alloc_q>=sa->alloc_s )
     {
-      sa->alloc_s += 64;
+      int alloc_sn = sa->alloc_s + 64;
       allocation *alloc_an;
       if( !sa->alloc_a )
         alloc_an = HeapAlloc(
-            rd->heap,0,sa->alloc_s*sizeof(allocation) );
+            rd->heap,0,alloc_sn*sizeof(allocation) );
       else
         alloc_an = HeapReAlloc(
-            rd->heap,0,sa->alloc_a,sa->alloc_s*sizeof(allocation) );
+            rd->heap,0,sa->alloc_a,alloc_sn*sizeof(allocation) );
       if( UNLIKELY(!alloc_an) )
       {
         LeaveCriticalSection( &sa->cs );
@@ -1076,6 +1077,7 @@ static NOINLINE void trackAllocSuccess(
 
         exitWait( 1,0 );
       }
+      sa->alloc_s = alloc_sn;
       sa->alloc_a = alloc_an;
     }
     RtlMoveMemory( sa->alloc_a+sa->alloc_q,&a,sizeof(allocation) );
@@ -1585,14 +1587,14 @@ static void addModMem( const BYTE *start,const BYTE *end )
 
   if( rd->mod_mem_q>=rd->mod_mem_s )
   {
-    rd->mod_mem_s += 64;
+    int mod_mem_sn = rd->mod_mem_s + 64;
     modMemType *mod_mem_an;
     if( !rd->mod_mem_a )
       mod_mem_an = HeapAlloc(
-          rd->heap,0,rd->mod_mem_s*sizeof(modMemType) );
+          rd->heap,0,mod_mem_sn*sizeof(modMemType) );
     else
       mod_mem_an = HeapReAlloc(
-          rd->heap,0,rd->mod_mem_a,rd->mod_mem_s*sizeof(modMemType) );
+          rd->heap,0,rd->mod_mem_a,mod_mem_sn*sizeof(modMemType) );
     if( UNLIKELY(!mod_mem_an) )
     {
       LeaveCriticalSection( &rd->csMod );
@@ -1606,6 +1608,7 @@ static void addModMem( const BYTE *start,const BYTE *end )
 
       exitWait( 1,0 );
     }
+    rd->mod_mem_s = mod_mem_sn;
     rd->mod_mem_a = mod_mem_an;
   }
 
@@ -2005,15 +2008,15 @@ static VOID WINAPI new_RaiseException(
         {
           if( rd->threadName_q>=rd->threadName_s )
           {
-            rd->threadName_s += 64;
+            int threadName_sn = rd->threadName_s + 64;
             threadNameInfo *threadName_an;
             if( !rd->threadName_a )
               threadName_an = HeapAlloc(
-                  rd->heap,0,rd->threadName_s*sizeof(threadNameInfo) );
+                  rd->heap,0,threadName_sn*sizeof(threadNameInfo) );
             else
               threadName_an = HeapReAlloc(
                   rd->heap,0,rd->threadName_a,
-                  rd->threadName_s*sizeof(threadNameInfo) );
+                  threadName_sn*sizeof(threadNameInfo) );
             if( UNLIKELY(!threadName_an) )
             {
               DWORD written;
@@ -2024,6 +2027,7 @@ static VOID WINAPI new_RaiseException(
 
               exitWait( 1,0 );
             }
+            rd->threadName_s = threadName_sn;
             rd->threadName_a = threadName_an;
           }
           threadNameInfo *threadName = &rd->threadName_a[rd->threadName_q++];
@@ -2375,14 +2379,14 @@ static BOOL WINAPI new_FreeLibrary( HMODULE mod )
 
   if( rd->freed_mod_q>=rd->freed_mod_s )
   {
-    rd->freed_mod_s += 64;
+    int freed_mod_sn = rd->freed_mod_s + 64;
     HMODULE *freed_mod_an;
     if( !rd->freed_mod_a )
       freed_mod_an = HeapAlloc(
-          rd->heap,0,rd->freed_mod_s*sizeof(HMODULE) );
+          rd->heap,0,freed_mod_sn*sizeof(HMODULE) );
     else
       freed_mod_an = HeapReAlloc(
-          rd->heap,0,rd->freed_mod_a,rd->freed_mod_s*sizeof(HMODULE) );
+          rd->heap,0,rd->freed_mod_a,freed_mod_sn*sizeof(HMODULE) );
     if( UNLIKELY(!freed_mod_an) )
     {
       LeaveCriticalSection( &rd->csFreedMod );
@@ -2396,6 +2400,7 @@ static BOOL WINAPI new_FreeLibrary( HMODULE mod )
 
       exitWait( 1,0 );
     }
+    rd->freed_mod_s = freed_mod_sn;
     rd->freed_mod_a = freed_mod_an;
   }
   rd->freed_mod_a[rd->freed_mod_q++] = mod;
@@ -2905,14 +2910,14 @@ static void addModule( HMODULE mod )
 
   if( rd->mod_q>=rd->mod_s )
   {
-    rd->mod_s += 64;
+    int mod_sn = rd->mod_s + 64;
     HMODULE *mod_an;
     if( !rd->mod_a )
       mod_an = HeapAlloc(
-          rd->heap,0,rd->mod_s*sizeof(HMODULE) );
+          rd->heap,0,mod_sn*sizeof(HMODULE) );
     else
       mod_an = HeapReAlloc(
-          rd->heap,0,rd->mod_a,rd->mod_s*sizeof(HMODULE) );
+          rd->heap,0,rd->mod_a,mod_sn*sizeof(HMODULE) );
     if( UNLIKELY(!mod_an) )
     {
       LeaveCriticalSection( &rd->csMod );
@@ -2926,6 +2931,7 @@ static void addModule( HMODULE mod )
 
       exitWait( 1,0 );
     }
+    rd->mod_s = mod_sn;
     rd->mod_a = mod_an;
   }
 
@@ -2938,14 +2944,14 @@ static void addModule( HMODULE mod )
   {
     if( rd->crt_mod_q>=rd->crt_mod_s )
     {
-      rd->crt_mod_s += 8;
+      int crt_mod_sn = rd->crt_mod_s + 8;
       HMODULE *crt_mod_an;
       if( !rd->crt_mod_a )
         crt_mod_an = HeapAlloc(
-            rd->heap,0,rd->crt_mod_s*sizeof(HMODULE) );
+            rd->heap,0,crt_mod_sn*sizeof(HMODULE) );
       else
         crt_mod_an = HeapReAlloc(
-            rd->heap,0,rd->crt_mod_a,rd->crt_mod_s*sizeof(HMODULE) );
+            rd->heap,0,rd->crt_mod_a,crt_mod_sn*sizeof(HMODULE) );
       if( UNLIKELY(!crt_mod_an) )
       {
         LeaveCriticalSection( &rd->csMod );
@@ -2959,6 +2965,7 @@ static void addModule( HMODULE mod )
 
         exitWait( 1,0 );
       }
+      rd->crt_mod_s = crt_mod_sn;
       rd->crt_mod_a = crt_mod_an;
     }
 
@@ -4094,14 +4101,14 @@ static CODE_SEG(".text$5") DWORD WINAPI samplingThread( LPVOID arg )
       // allocate sampling stack space {{{
       if( rd->samp_q>=rd->samp_s )
       {
-        rd->samp_s += 1024;
+        int samp_sn = rd->samp_s + 1024;
         allocation *samp_an;
         if( !rd->samp_a )
           samp_an = HeapAlloc(
-              rd->heap,0,rd->samp_s*sizeof(allocation) );
+              rd->heap,0,samp_sn*sizeof(allocation) );
         else
           samp_an = HeapReAlloc(
-              rd->heap,0,rd->samp_a,rd->samp_s*sizeof(allocation) );
+              rd->heap,0,rd->samp_a,samp_sn*sizeof(allocation) );
         if( UNLIKELY(!samp_an) )
         {
           LeaveCriticalSection( &rd->csSampling );
@@ -4115,6 +4122,7 @@ static CODE_SEG(".text$5") DWORD WINAPI samplingThread( LPVOID arg )
 
           exitWait( 1,0 );
         }
+        rd->samp_s = samp_sn;
         rd->samp_a = samp_an;
       }
       // }}}
@@ -4209,14 +4217,14 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
       // allocate sampling thread space {{{
       if( rd->thread_samp_q>=rd->thread_samp_s )
       {
-        rd->thread_samp_s += 64;
+        int thread_samp_sn = rd->thread_samp_s + 64;
         threadSamplingType *thread_samp_an;
         if( !rd->thread_samp_a )
           thread_samp_an = HeapAlloc(
-              rd->heap,0,rd->thread_samp_s*sizeof(threadSamplingType) );
+              rd->heap,0,thread_samp_sn*sizeof(threadSamplingType) );
         else
           thread_samp_an = HeapReAlloc( rd->heap,0,
-              rd->thread_samp_a,rd->thread_samp_s*sizeof(threadSamplingType) );
+              rd->thread_samp_a,thread_samp_sn*sizeof(threadSamplingType) );
         if( UNLIKELY(!thread_samp_an) )
         {
           LeaveCriticalSection( &rd->csSampling );
@@ -4230,6 +4238,7 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
 
           exitWait( 1,0 );
         }
+        rd->thread_samp_s = thread_samp_sn;
         rd->thread_samp_a = thread_samp_an;
       }
       // }}}
