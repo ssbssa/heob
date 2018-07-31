@@ -310,6 +310,22 @@ static NORETURN void exitWait( UINT c,int terminate )
   UNREACHABLE;
 }
 
+static NORETURN void exitOutOfMemory( int needLock )
+{
+  GET_REMOTEDATA( rd );
+
+  if( needLock )
+    EnterCriticalSection( &rd->csWrite );
+
+  DWORD written;
+  int type = WRITE_MAIN_ALLOC_FAIL;
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+
+  LeaveCriticalSection( &rd->csWrite );
+
+  exitWait( 1,0 );
+}
+
 // }}}
 // send module information {{{
 
@@ -359,15 +375,8 @@ static void writeModsFind( allocation *alloc_a,int alloc_q,
         mi_a = HeapReAlloc(
             rd->heap,0,mi_a,mi_q*sizeof(modInfo) );
       if( UNLIKELY(!mi_a) )
-      {
-        DWORD written;
-        int type = WRITE_MAIN_ALLOC_FAIL;
-        WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+        exitOutOfMemory( 0 );
 
-        LeaveCriticalSection( &rd->csWrite );
-
-        exitWait( 1,0 );
-      }
       if( !GetModuleFileName((HMODULE)base,mi_a[mi_q-1].path,MAX_PATH) )
       {
         mi_q--;
@@ -553,15 +562,8 @@ static NOINLINE void trackFree(
           if( UNLIKELY(!freed_an) )
           {
             LeaveCriticalSection( &sf->cs );
-            EnterCriticalSection( &rd->csWrite );
 
-            DWORD written;
-            int type = WRITE_MAIN_ALLOC_FAIL;
-            WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-
-            LeaveCriticalSection( &rd->csWrite );
-
-            exitWait( 1,0 );
+            exitOutOfMemory( 1 );
           }
           sf->freed_s = freed_sn;
           sf->freed_a = freed_an;
@@ -579,17 +581,7 @@ static NOINLINE void trackFree(
       {
         allocation *aa = HeapAlloc( rd->heap,0,2*sizeof(allocation) );
         if( UNLIKELY(!aa) )
-        {
-          EnterCriticalSection( &rd->csWrite );
-
-          DWORD written;
-          int type = WRITE_MAIN_ALLOC_FAIL;
-          WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-
-          LeaveCriticalSection( &rd->csWrite );
-
-          exitWait( 1,0 );
-        }
+          exitOutOfMemory( 1 );
 
         RtlMoveMemory( aa,&f.a,sizeof(allocation) );
         CAPTURE_STACK_TRACE( 2,PTRS,aa[1].frames,caller,rd->maxStackFrames );
@@ -647,17 +639,7 @@ static NOINLINE void trackFree(
 
           allocation *aa = HeapAlloc( rd->heap,0,3*sizeof(allocation) );
           if( UNLIKELY(!aa) )
-          {
-            EnterCriticalSection( &rd->csWrite );
-
-            DWORD written;
-            int type = WRITE_MAIN_ALLOC_FAIL;
-            WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-
-            LeaveCriticalSection( &rd->csWrite );
-
-            exitWait( 1,0 );
-          }
+            exitOutOfMemory( 1 );
 
           CAPTURE_STACK_TRACE( 2,PTRS,aa[0].frames,caller,rd->maxStackFrames );
           aa[0].ft = ft;
@@ -710,17 +692,7 @@ static NOINLINE void trackFree(
         allocation *aa = HeapAlloc(
             rd->heap,HEAP_ZERO_MEMORY,4*sizeof(allocation) );
         if( UNLIKELY(!aa) )
-        {
-          EnterCriticalSection( &rd->csWrite );
-
-          DWORD written;
-          int type = WRITE_MAIN_ALLOC_FAIL;
-          WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-
-          LeaveCriticalSection( &rd->csWrite );
-
-          exitWait( 1,0 );
-        }
+          exitOutOfMemory( 1 );
 
         aa->ptr = free_ptr;
         aa->size = 0;
@@ -1067,15 +1039,8 @@ static NOINLINE void trackAllocSuccess(
       if( UNLIKELY(!alloc_an) )
       {
         LeaveCriticalSection( &sa->cs );
-        EnterCriticalSection( &rd->csWrite );
 
-        DWORD written;
-        int type = WRITE_MAIN_ALLOC_FAIL;
-        WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-
-        LeaveCriticalSection( &rd->csWrite );
-
-        exitWait( 1,0 );
+        exitOutOfMemory( 1 );
       }
       sa->alloc_s = alloc_sn;
       sa->alloc_a = alloc_an;
@@ -1598,15 +1563,8 @@ static void addModMem( const BYTE *start,const BYTE *end )
     if( UNLIKELY(!mod_mem_an) )
     {
       LeaveCriticalSection( &rd->csMod );
-      EnterCriticalSection( &rd->csWrite );
 
-      DWORD written;
-      int type = WRITE_MAIN_ALLOC_FAIL;
-      WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-
-      LeaveCriticalSection( &rd->csWrite );
-
-      exitWait( 1,0 );
+      exitOutOfMemory( 1 );
     }
     rd->mod_mem_s = mod_mem_sn;
     rd->mod_mem_a = mod_mem_an;
@@ -2018,15 +1976,7 @@ static VOID WINAPI new_RaiseException(
                   rd->heap,0,rd->threadName_a,
                   threadName_sn*sizeof(threadNameInfo) );
             if( UNLIKELY(!threadName_an) )
-            {
-              DWORD written;
-              int type = WRITE_MAIN_ALLOC_FAIL;
-              WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-
-              LeaveCriticalSection( &rd->csWrite );
-
-              exitWait( 1,0 );
-            }
+              exitOutOfMemory( 0 );
             rd->threadName_s = threadName_sn;
             rd->threadName_a = threadName_an;
           }
@@ -2390,15 +2340,8 @@ static BOOL WINAPI new_FreeLibrary( HMODULE mod )
     if( UNLIKELY(!freed_mod_an) )
     {
       LeaveCriticalSection( &rd->csFreedMod );
-      EnterCriticalSection( &rd->csWrite );
 
-      DWORD written;
-      int type = WRITE_MAIN_ALLOC_FAIL;
-      WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-
-      LeaveCriticalSection( &rd->csWrite );
-
-      exitWait( 1,0 );
+      exitOutOfMemory( 1 );
     }
     rd->freed_mod_s = freed_mod_sn;
     rd->freed_mod_a = freed_mod_an;
@@ -2921,15 +2864,8 @@ static void addModule( HMODULE mod )
     if( UNLIKELY(!mod_an) )
     {
       LeaveCriticalSection( &rd->csMod );
-      EnterCriticalSection( &rd->csWrite );
 
-      DWORD written;
-      int type = WRITE_MAIN_ALLOC_FAIL;
-      WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-
-      LeaveCriticalSection( &rd->csWrite );
-
-      exitWait( 1,0 );
+      exitOutOfMemory( 1 );
     }
     rd->mod_s = mod_sn;
     rd->mod_a = mod_an;
@@ -2955,15 +2891,8 @@ static void addModule( HMODULE mod )
       if( UNLIKELY(!crt_mod_an) )
       {
         LeaveCriticalSection( &rd->csMod );
-        EnterCriticalSection( &rd->csWrite );
 
-        DWORD written;
-        int type = WRITE_MAIN_ALLOC_FAIL;
-        WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-
-        LeaveCriticalSection( &rd->csWrite );
-
-        exitWait( 1,0 );
+        exitOutOfMemory( 1 );
       }
       rd->crt_mod_s = crt_mod_sn;
       rd->crt_mod_a = crt_mod_an;
@@ -4112,15 +4041,8 @@ static CODE_SEG(".text$5") DWORD WINAPI samplingThread( LPVOID arg )
         if( UNLIKELY(!samp_an) )
         {
           LeaveCriticalSection( &rd->csSampling );
-          EnterCriticalSection( &rd->csWrite );
 
-          DWORD written;
-          int type = WRITE_MAIN_ALLOC_FAIL;
-          WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-
-          LeaveCriticalSection( &rd->csWrite );
-
-          exitWait( 1,0 );
+          exitOutOfMemory( 1 );
         }
         rd->samp_s = samp_sn;
         rd->samp_a = samp_an;
@@ -4228,15 +4150,8 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
         if( UNLIKELY(!thread_samp_an) )
         {
           LeaveCriticalSection( &rd->csSampling );
-          EnterCriticalSection( &rd->csWrite );
 
-          DWORD written;
-          int type = WRITE_MAIN_ALLOC_FAIL;
-          WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-
-          LeaveCriticalSection( &rd->csWrite );
-
-          exitWait( 1,0 );
+          exitOutOfMemory( 1 );
         }
         rd->thread_samp_s = thread_samp_sn;
         rd->thread_samp_a = thread_samp_an;
