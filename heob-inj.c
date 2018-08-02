@@ -1640,9 +1640,14 @@ static CODE_SEG(".text$5") DWORD WINAPI findLeakTypeThread( LPVOID arg )
   {
     WaitForSingleObject( startEvent,INFINITE );
 
-    findLeakTypeWork( ltti->lti );
+    leakTypeInfo *lti = ltti->lti;
+
+    if( lti )
+      findLeakTypeWork( lti );
 
     SetEvent( finishedEvent );
+
+    if( !lti ) break;
   }
 
   return( 0 );
@@ -1696,14 +1701,55 @@ static void findLeakTypes( void )
   {
     ltti = HeapAlloc( rd->heap,0,processors*sizeof(leakTypeThreadInfo) );
     finishedEvents = HeapAlloc( rd->heap,0,processors*sizeof(HANDLE) );
-    int t;
-    for( t=0; t<processors; t++ )
+    int t = 0;
+    if( ltti && finishedEvents )
     {
-      ltti[t].startEvent = CreateEvent( NULL,FALSE,FALSE,NULL );
-      ltti[t].finishedEvent = CreateEvent( NULL,FALSE,FALSE,NULL );
-      finishedEvents[t] = ltti[t].finishedEvent;
-      HANDLE thread = CreateThread( NULL,0,&findLeakTypeThread,ltti+t,0,NULL );
-      CloseHandle( thread );
+      for( t=0; t<processors; t++ )
+      {
+        ltti[t].startEvent = CreateEvent( NULL,FALSE,FALSE,NULL );
+        if( !ltti[t].startEvent ) break;
+        ltti[t].finishedEvent = CreateEvent( NULL,FALSE,FALSE,NULL );
+        if( !ltti[t].finishedEvent )
+        {
+          CloseHandle( ltti[t].startEvent );
+          break;
+        }
+        finishedEvents[t] = ltti[t].finishedEvent;
+        HANDLE thread = CreateThread( NULL,0,
+            &findLeakTypeThread,ltti+t,0,NULL );
+        if( !thread )
+        {
+          CloseHandle( ltti[t].startEvent );
+          CloseHandle( ltti[t].finishedEvent );
+          break;
+        }
+        CloseHandle( thread );
+      }
+    }
+    if( t<processors )
+    {
+      int stopThreads = t;
+      if( stopThreads )
+      {
+        // stop threads that started successfully, so ltti can be safely freed
+        for( t=0; t<stopThreads; t++ )
+        {
+          ltti[t].lti = NULL;
+          SetEvent( ltti[t].startEvent );
+        }
+        WaitForMultipleObjects( stopThreads,finishedEvents,TRUE,INFINITE );
+
+        for( t=0; t<stopThreads; t++ )
+        {
+          CloseHandle( ltti[t].startEvent );
+          CloseHandle( ltti[t].finishedEvent );
+        }
+      }
+
+      if( ltti ) HeapFree( rd->heap,0,ltti );
+      ltti = NULL;
+      if( finishedEvents ) HeapFree( rd->heap,0,finishedEvents );
+      finishedEvents = NULL;
     }
   }
 
