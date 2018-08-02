@@ -1786,14 +1786,31 @@ static void findLeakTypes( void )
 }
 
 // }}}
+// transfer sampling data {{{
+
+static void writeSamplingData( void )
+{
+  GET_REMOTEDATA( rd );
+
+  if( !rd->opt.samplingInterval ) return;
+
+  int type = WRITE_SAMPLING;
+  DWORD written;
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,&rd->samp_q,sizeof(int),&written,NULL );
+  if( rd->samp_q )
+    WriteFile( rd->master,rd->samp_a,rd->samp_q*sizeof(allocation),
+        &written,NULL );
+}
+
+// }}}
 // replacements for ExitProcess/TerminateProcess {{{
 
 static VOID WINAPI new_ExitProcess( UINT c )
 {
   GET_REMOTEDATA( rd );
 
-  int samplingInterval = rd->opt.samplingInterval;
-  if( samplingInterval )
+  if( rd->opt.samplingInterval )
   {
     EnterCriticalSection( &rd->csSampling );
     rd->samplingEnabled = 0;
@@ -1833,15 +1850,7 @@ static VOID WINAPI new_ExitProcess( UINT c )
 
   writeLeakMods( exitTracePtr,1 );
 
-  if( samplingInterval )
-  {
-    int type = WRITE_SAMPLING;
-    DWORD written;
-    WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-    WriteFile( rd->master,&rd->samp_q,sizeof(int),&written,NULL );
-    WriteFile( rd->master,rd->samp_a,rd->samp_q*sizeof(allocation),
-        &written,NULL );
-  }
+  writeSamplingData();
 
   // free modules {{{
   if( rd->freed_mod_q )
@@ -3829,9 +3838,15 @@ DLLEXPORT int heob_control( int cmd )
 {
   GET_REMOTEDATA( rd );
 
-  if( rd->noCRT ) return( -rd->noCRT );
+  int sampleRecording =
+    rd->opt.handleException>=2 && rd->opt.samplingInterval;
+
+  if( rd->noCRT && !sampleRecording )
+    return( -rd->noCRT );
 
   int prevRecording = rd->recording;
+  if( sampleRecording )
+    prevRecording += 2;
 
   switch( cmd )
   {
@@ -3845,6 +3860,14 @@ DLLEXPORT int heob_control( int cmd )
       // clear {{{
     case HEOB_LEAK_RECORDING_CLEAR:
       {
+        if( sampleRecording )
+        {
+          EnterCriticalSection( &rd->csSampling );
+          rd->samp_q = 0;
+          LeaveCriticalSection( &rd->csSampling );
+          break;
+        }
+
         int i;
         for( i=0; i<=SPLIT_MASK; i++ )
         {
@@ -3867,6 +3890,23 @@ DLLEXPORT int heob_control( int cmd )
       // show {{{
     case HEOB_LEAK_RECORDING_SHOW:
       {
+        if( sampleRecording )
+        {
+          EnterCriticalSection( &rd->csWrite );
+          EnterCriticalSection( &rd->csSampling );
+
+          if( rd->samp_q )
+            writeMods( rd->samp_a,rd->samp_q );
+
+          writeSamplingData();
+
+          rd->samp_q = 0;
+
+          LeaveCriticalSection( &rd->csSampling );
+          LeaveCriticalSection( &rd->csWrite );
+          break;
+        }
+
         int i;
         EnterCriticalSection( &rd->csWrite );
         for( i=0; i<=SPLIT_MASK; i++ )
@@ -3900,6 +3940,14 @@ DLLEXPORT int heob_control( int cmd )
       // count {{{
     case HEOB_LEAK_COUNT:
       {
+        if( sampleRecording )
+        {
+          EnterCriticalSection( &rd->csSampling );
+          int count = rd->samp_q;
+          LeaveCriticalSection( &rd->csSampling );
+          return( count );
+        }
+
         int i,j;
         int count = 0;
         for( i=0; i<=SPLIT_MASK; i++ )
@@ -3976,6 +4024,7 @@ static CODE_SEG(".text$5") DWORD WINAPI samplingThread( LPVOID arg )
     EnterCriticalSection( &rd->csSampling );
 
     if( !rd->samplingEnabled ) break;
+    if( rd->opt.handleException>=2 && !rd->recording ) continue;
 
     HeapLock( processHeap );
 

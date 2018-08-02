@@ -2282,7 +2282,7 @@ static int cmp_frame_allocation( const void *av,const void *bv )
 // }}}
 // leak recording status {{{
 
-static void showRecording( HANDLE err,int recording,
+static void showRecording( const char *title,HANDLE err,int recording,
     COORD *consoleCoord,int *errColorP )
 {
   DWORD didwrite;
@@ -2293,71 +2293,72 @@ static void showRecording( HANDLE err,int recording,
   *consoleCoord = csbi.dwCursorPosition;
   int errColor = *errColorP = csbi.wAttributes&0xff;
 
-  const char *recText = "leak recording:  on   off   clear   show ";
-  WriteFile( err,recText,16,&didwrite,NULL );
+  const char *recText = " on   off   clear   show ";
+  int titleLen = lstrlen( title );
+  WriteFile( err,title,titleLen,&didwrite,NULL );
   if( recording>0 )
   {
     SetConsoleTextAttribute( err,errColor^BACKGROUND_INTENSITY );
-    WriteFile( err,recText+16,4,&didwrite,NULL );
+    WriteFile( err,recText+0,4,&didwrite,NULL );
     SetConsoleTextAttribute( err,errColor );
-    WriteFile( err,recText+20,3,&didwrite,NULL );
+    WriteFile( err,recText+4,3,&didwrite,NULL );
     SetConsoleTextAttribute( err,
         errColor^(FOREGROUND_RED|FOREGROUND_BLUE|FOREGROUND_INTENSITY) );
-    WriteFile( err,recText+23,1,&didwrite,NULL );
+    WriteFile( err,recText+7,1,&didwrite,NULL );
     SetConsoleTextAttribute( err,errColor );
-    WriteFile( err,recText+24,2,&didwrite,NULL );
+    WriteFile( err,recText+8,2,&didwrite,NULL );
   }
   else
   {
-    WriteFile( err,recText+16,2,&didwrite,NULL );
+    WriteFile( err,recText+0,2,&didwrite,NULL );
     SetConsoleTextAttribute( err,
         errColor^(FOREGROUND_RED|FOREGROUND_BLUE|FOREGROUND_INTENSITY) );
-    WriteFile( err,recText+18,3,&didwrite,NULL );
+    WriteFile( err,recText+2,3,&didwrite,NULL );
     SetConsoleTextAttribute( err,errColor^BACKGROUND_INTENSITY );
-    WriteFile( err,recText+21,5,&didwrite,NULL );
+    WriteFile( err,recText+5,5,&didwrite,NULL );
     SetConsoleTextAttribute( err,errColor );
   }
-  WriteFile( err,recText+26,1,&didwrite,NULL );
+  WriteFile( err,recText+10,1,&didwrite,NULL );
   if( recording>=0 )
   {
     WORD highlight = FOREGROUND_RED | FOREGROUND_BLUE | FOREGROUND_INTENSITY;
     WORD xorClear = recording==2 ? BACKGROUND_GREEN : 0;
     WORD xorShow = recording==3 ? BACKGROUND_GREEN : 0;
     SetConsoleTextAttribute( err,errColor^xorClear );
-    WriteFile( err,recText+27,1,&didwrite,NULL );
+    WriteFile( err,recText+11,1,&didwrite,NULL );
     SetConsoleTextAttribute( err,errColor^(highlight|xorClear) );
-    WriteFile( err,recText+28,1,&didwrite,NULL );
+    WriteFile( err,recText+12,1,&didwrite,NULL );
     SetConsoleTextAttribute( err,errColor^xorClear );
-    WriteFile( err,recText+29,5,&didwrite,NULL );
+    WriteFile( err,recText+13,5,&didwrite,NULL );
     SetConsoleTextAttribute( err,errColor );
-    WriteFile( err,recText+34,1,&didwrite,NULL );
+    WriteFile( err,recText+18,1,&didwrite,NULL );
     SetConsoleTextAttribute( err,errColor^xorShow );
-    WriteFile( err,recText+35,1,&didwrite,NULL );
+    WriteFile( err,recText+19,1,&didwrite,NULL );
     SetConsoleTextAttribute( err,errColor^(highlight|xorShow) );
-    WriteFile( err,recText+36,1,&didwrite,NULL );
+    WriteFile( err,recText+20,1,&didwrite,NULL );
     SetConsoleTextAttribute( err,errColor^xorShow );
-    WriteFile( err,recText+37,4,&didwrite,NULL );
+    WriteFile( err,recText+21,4,&didwrite,NULL );
   }
   else
   {
     SetConsoleTextAttribute( err,errColor^BACKGROUND_INTENSITY );
-    WriteFile( err,recText+27,7,&didwrite,NULL );
+    WriteFile( err,recText+11,7,&didwrite,NULL );
     SetConsoleTextAttribute( err,errColor );
-    WriteFile( err,recText+34,1,&didwrite,NULL );
+    WriteFile( err,recText+18,1,&didwrite,NULL );
     SetConsoleTextAttribute( err,errColor^BACKGROUND_INTENSITY );
-    WriteFile( err,recText+35,6,&didwrite,NULL );
+    WriteFile( err,recText+19,6,&didwrite,NULL );
   }
   SetConsoleTextAttribute( err,errColor );
 }
 
-static void clearRecording( HANDLE err,
+static void clearRecording( const char *title,HANDLE err,
     COORD consoleCoord,int errColor )
 {
   COORD moveCoord = { consoleCoord.X,consoleCoord.Y-1 };
   SetConsoleCursorPosition( err,moveCoord );
 
   DWORD didwrite;
-  int recTextLen = 41;
+  int recTextLen = lstrlen( title ) + 25;
   FillConsoleOutputAttribute( err,errColor,recTextLen,consoleCoord,&didwrite );
   FillConsoleOutputCharacter( err,' ',recTextLen,consoleCoord,&didwrite );
 }
@@ -3790,6 +3791,8 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
   exceptionInfo *eiPtr = HeapAlloc( heap,0,sizeof(exceptionInfo) );
   DWORD flashStart = 0;
   if( in ) showConsole();
+  const char *title = opt->handleException>=2 ?
+    "profiling sample recording: " : "leak recording: ";
   while( 1 )
   {
     if( needData )
@@ -3799,7 +3802,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
       needData = 0;
 
       if( in )
-        showRecording( err,recording,&consoleCoord,&errColor );
+        showRecording( title,err,recording,&consoleCoord,&errColor );
     }
 
     DWORD waitTime = INFINITE;
@@ -3812,8 +3815,8 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
       {
         flashStart = 0;
         recording = 1;
-        clearRecording( err,consoleCoord,errColor );
-        showRecording( err,recording,&consoleCoord,&errColor );
+        clearRecording( title,err,consoleCoord,errColor );
+        showRecording( title,err,recording,&consoleCoord,&errColor );
       }
       else
         waitTime = FLASH_TIMEOUT - flashTime;
@@ -3869,8 +3872,8 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
           {
             flashStart = GetTickCount();
             recording = cmd;
-            clearRecording( err,consoleCoord,errColor );
-            showRecording( err,recording,&consoleCoord,&errColor );
+            clearRecording( title,err,consoleCoord,errColor );
+            showRecording( title,err,recording,&consoleCoord,&errColor );
           }
           // }}}
         }
@@ -3887,8 +3890,8 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
             recording = cmd;
           if( prevRecording!=recording )
           {
-            clearRecording( err,consoleCoord,errColor );
-            showRecording( err,recording,&consoleCoord,&errColor );
+            clearRecording( title,err,consoleCoord,errColor );
+            showRecording( title,err,recording,&consoleCoord,&errColor );
           }
         }
       }
@@ -3897,7 +3900,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
     }
 
     if( in )
-      clearRecording( err,consoleCoord,errColor );
+      clearRecording( title,err,consoleCoord,errColor );
 
     if( !GetOverlappedResult(readPipe,&ov,&didread,TRUE) ||
         didread<sizeof(int) )
@@ -5398,7 +5401,8 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
       tc->out = out;
     }
 
-    if( opt.handleException>=2 ) opt.leakRecording = 0;
+    if( opt.handleException>=2 && !opt.samplingInterval )
+      opt.leakRecording = 0;
 
     if( ad->in && !opt.leakRecording && tc->fTextColor!=&TextColorConsole )
     {
