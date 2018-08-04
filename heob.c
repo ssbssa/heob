@@ -1864,9 +1864,9 @@ static void locOut( textColor *tc,uintptr_t addr,
         printf( "    %X",addr );
       else
         printf( "      " PTR_SPACES );
-      printf( "   $O%s$N:%d",printFilename,lineno );
+      printf( "   $O%s$N:$S%d$N",printFilename,lineno );
       if( columnno>0 )
-        printf( ":$S%d$N",columnno );
+        printf( ":%d",columnno );
       if( funcname )
         printf( " [$I%s$N]",funcname );
       printf( "\n" );
