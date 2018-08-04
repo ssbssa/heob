@@ -2486,6 +2486,10 @@ static void printStackGroup( stackGroup *sg,
     unsigned char **content_ptrs,modInfo *mi_a,int mi_q,dbgsym *ds,
     int sampling )
 {
+  options *opt = ds->opt;
+  size_t minLeakSize = opt->minLeakSize;
+  if( sg->allocSumSize<minLeakSize ) return;
+
   int i;
   stackGroup *child_a = sg->child_a;
   int *childSorted_a = sg->childSorted_a;
@@ -2505,7 +2509,6 @@ static void printStackGroup( stackGroup *sg,
   int stackIndent = sg->stackIndent;
   allocation *a = alloc_a + alloc_idxs[allocStart];
   textColor *tc = ds->tc;
-  options *opt = ds->opt;
   int stackIsPrinted = 0;
   if( sg->stackStart+sg->stackCount==a->frameCount )
   {
@@ -2515,7 +2518,7 @@ static void printStackGroup( stackGroup *sg,
       a = alloc_a + idx;
 
       size_t combSize = a->size*a->count;
-      if( combSize<opt->minLeakSize ) continue;
+      if( combSize<minLeakSize ) continue;
 
       int indent = stackIndent + ( allocCount>1 );
       if( !sampling )
