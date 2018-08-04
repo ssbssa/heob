@@ -4011,6 +4011,7 @@ static CODE_SEG(".text$5") DWORD WINAPI samplingThread( LPVOID arg )
 #endif
 
   int interval = rd->opt.samplingInterval;
+  if( interval<0 ) interval = -interval;
   HANDLE processHeap = GetProcessHeap();
 
   SetEvent( rd->samplingInit );
@@ -4080,12 +4081,13 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
   (void)hinstDLL;
   (void)lpvReserved;
 
-  if( fdwReason!=DLL_THREAD_ATTACH && fdwReason!=DLL_THREAD_DETACH )
+  if( fdwReason!=DLL_THREAD_ATTACH && fdwReason!=DLL_THREAD_DETACH &&
+      fdwReason!=DLL_PROCESS_ATTACH )
     return( TRUE );
 
   GET_REMOTEDATA( rd );
 
-  if( fdwReason==DLL_THREAD_ATTACH )
+  if( fdwReason==DLL_THREAD_ATTACH || fdwReason==DLL_PROCESS_ATTACH )
   {
     HANDLE thread = GetCurrentThread();
 
@@ -4120,7 +4122,8 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
     // }}}
 
     // add sampling thread {{{
-    if( rd->opt.samplingInterval )
+    if( rd->opt.samplingInterval>0 ||
+        (rd->opt.samplingInterval<0 && fdwReason==DLL_PROCESS_ATTACH) )
     {
       EnterCriticalSection( &rd->csSampling );
 
@@ -4636,7 +4639,7 @@ VOID CALLBACK heob( ULONG_PTR arg )
   // setup loaded heob executable as dll with proper DllMain() {{{
   if( !ld->noCRT || ld->opt.samplingInterval )
   {
-    dllMain( ld->heobMod,DLL_THREAD_ATTACH,NULL );
+    dllMain( ld->heobMod,DLL_PROCESS_ATTACH,NULL );
 
     setupDllMain();
   }

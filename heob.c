@@ -3123,7 +3123,7 @@ char *readOption( char *args,options *opt,appData *ad,HANDLE heap )
       break;
 
     case 'I':
-      opt->samplingInterval = atoi( args+2 );
+      opt->samplingInterval = args[2]=='-' ? -atoi( args+3 ) : atoi( args+2 );
       break;
 
     default:
