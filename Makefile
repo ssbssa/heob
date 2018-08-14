@@ -1,9 +1,18 @@
 
-HEOB_VERSION:=2.2-dev-$(shell date +%Y%m%d)
+# detect if mingw32-make is used
+MINGW32_MAKE:=$(strip $(filter %mingw32-make,$(MAKE)) $(filter %mingw32-make.exe,$(MAKE)))
+ifeq ($(MINGW32_MAKE),)
+DATE:=$(shell date +%Y%m%d)
+else
+DATE:=$(strip $(subst .,,$(shell date /t)))
+endif
+
+HEOB_VERSION:=2.2-dev-$(DATE)
 HEOB_VER_NUM:=2,2,0,99
 HEOB_PRERELEASE:=1
 HEOB_COPYRIGHT_YEARS:=2014-2018
 
+ifeq ($(MINGW32_MAKE),)
 BITS=32
 ifeq ($(BITS),32)
   PREF=i686-w64-mingw32-
@@ -11,6 +20,14 @@ else ifeq ($(BITS),64)
   PREF=x86_64-w64-mingw32-
 else
   PREF=
+endif
+else
+ifeq ($(strip $(filter x86_64-%,$(shell gcc -dumpmachine))),)
+  BITS=32
+else
+  BITS=64
+endif
+PREF=
 endif
 
 CC=$(PREF)gcc
@@ -242,7 +259,11 @@ T_H84=-p1 -a8 -f0 -l2 -d0
 T_A84=46
 T_H85=-p1 -a8 -f0
 T_A85=48
+ifeq ($(MINGW32_MAKE),)
 TESTS:=$(shell seq -w 01 85)
+else
+TESTS:=01
+endif
 
 testres:
 	mkdir -p $@
