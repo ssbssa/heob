@@ -4617,6 +4617,106 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
 }
 
 // }}}
+// help text {{{
+
+static void showHelpText( appData *ad,options *defopt,int fullhelp )
+{
+  textColor *tc = ad->tcOut;
+  char *exePath = ad->exePath;
+  GetModuleFileName( NULL,exePath,MAX_PATH );
+  char *delim = strrchr( exePath,'\\' );
+  if( delim ) delim++;
+  else delim = exePath;
+  char *point = strrchr( delim,'.' );
+  if( point ) point[0] = 0;
+
+  printf( "Usage: $O%s $I[OPTION]... $SAPP [APP-OPTION]...\n",
+      delim );
+  if( fullhelp )
+    printf( "    $I-A$BX$N    attach to thread\n" );
+  printf( "    $I-o$BX$N    heob output"
+      " ($I0$N = none, $I1$N = stdout, $I2$N = stderr, $I...$N = file)"
+      " [$I%d$N]\n",
+      1 );
+  if( fullhelp )
+    printf( "    $I-x$BX$N    xml output\n" );
+  printf( "    $I-P$BX$N    show process ID and wait [$I%d$N]\n",
+      defopt->pid );
+  printf( "    $I-c$BX$N    create new console [$I%d$N]\n",
+      defopt->newConsole );
+  printf( "    $I-p$BX$N    page protection"
+      " ($I0$N = off, $I1$N = after, $I2$N = before) [$I%d$N]\n",
+      defopt->protect );
+  printf( "    $I-f$BX$N    freed memory protection [$I%d$N]\n",
+      defopt->protectFree );
+  printf( "    $I-d$BX$N    monitor dlls [$I%d$N]\n",
+      defopt->dlls );
+  if( fullhelp )
+  {
+    printf( "    $I-a$BX$N    alignment [$I%d$N]\n",
+        defopt->align );
+    printf( "    $I-M$BX$N    minimum page protection size [$I%d$N]\n",
+        defopt->minProtectSize );
+    printf( "    $I-i$BX$N    initial value [$I%d$N]\n",
+        (int)(defopt->init&0xff) );
+    printf( "    $I-s$BX$N    initial value for slack"
+        " ($I-1$N = off) [$I%d$N]\n",
+        defopt->slackInit );
+  }
+  printf( "    $I-h$BX$N    handle exceptions [$I%d$N]\n",
+      defopt->handleException );
+  printf( "    $I-R$BX$N    "
+      "raise breakpoint exception on allocation # [$I%d$N]\n",
+      0 );
+  printf( "    $I-r$BX$N    raise breakpoint exception on error [$I%d$N]\n",
+      defopt->raiseException );
+  if( fullhelp )
+  {
+    printf( "    $I-D$BX$N    show exception details [$I%d$N]\n",
+        defopt->exceptionDetails );
+    printf( "    $I-S$BX$N    use stack pointer in exception [$I%d$N]\n",
+        defopt->useSp );
+    printf( "    $I-m$BX$N    compare allocation/release method [$I%d$N]\n",
+        defopt->allocMethod );
+    printf( "    $I-n$BX$N    find nearest allocation [$I%d$N]\n",
+        defopt->findNearest );
+    printf( "    $I-g$BX$N    group identical leaks [$I%d$N]\n",
+        defopt->groupLeaks );
+  }
+  printf( "    $I-F$BX$N    show full path [$I%d$N]\n",
+      defopt->fullPath );
+  printf( "    $I-l$BX$N    show leak details [$I%d$N]\n",
+      defopt->leakDetails );
+  printf( "    $I-z$BX$N    minimum leak size [$I%U$N]\n",
+      defopt->minLeakSize );
+  printf( "    $I-k$BX$N    control leak recording [$I%d$N]\n",
+      defopt->leakRecording );
+  printf( "    $I-L$BX$N    show leak contents [$I%d$N]\n",
+      defopt->leakContents );
+  if( fullhelp )
+  {
+    printf( "    $I-C$BX$N    show source code [$I%d$N]\n",
+        defopt->sourceCode );
+    printf( "    $I-e$BX$N    show exit trace [$I%d$N]\n",
+        defopt->exitTrace );
+    printf( "    $I-E$BX$N    "
+        "use leak and error count for exit code [$I%d$N]\n",
+        defopt->leakErrorExitCode );
+    printf( "    $I-I$BX$N    sampling profiler interval [$I%d$N]\n",
+        defopt->samplingInterval );
+    printf( "    $I-O$BA$I:$BO$I; a$Npplication specific $Io$Nptions\n" );
+    printf( "    $I-X$N     "
+        "disable heob via application specific options\n" );
+    printf( "    $I-\"$BM$I\"$BB$N  trace mode:"
+        " load $Im$Nodule on $Ib$Nase address\n" );
+  }
+  printf( "    $I-H$N     show full help\n" );
+  printf( "\n$Ohe$Nap-$Oob$Nserver " HEOB_VER " ($O" BITS "$Nbit)\n" );
+  waitForKeyIfConsoleOwner( tc,ad->in );
+  exitHeob( ad,HEOB_HELP,0,0x7fffffff );
+}
+
+// }}}
 // main {{{
 
 static const char *funcnames[FT_COUNT] = {
@@ -4967,103 +5067,8 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   }
   // }}}
 
-  // help text {{{
   if( (!args || !args[0]) && !opt.attached )
-  {
-    char *exePath = ad->exePath;
-    GetModuleFileName( NULL,exePath,MAX_PATH );
-    char *delim = strrchr( exePath,'\\' );
-    if( delim ) delim++;
-    else delim = exePath;
-    char *point = strrchr( delim,'.' );
-    if( point ) point[0] = 0;
-
-    printf( "Usage: $O%s $I[OPTION]... $SAPP [APP-OPTION]...\n",
-        delim );
-    if( fullhelp )
-      printf( "    $I-A$BX$N    attach to thread\n" );
-    printf( "    $I-o$BX$N    heob output"
-        " ($I0$N = none, $I1$N = stdout, $I2$N = stderr, $I...$N = file)"
-        " [$I%d$N]\n",
-        1 );
-    if( fullhelp )
-      printf( "    $I-x$BX$N    xml output\n" );
-    printf( "    $I-P$BX$N    show process ID and wait [$I%d$N]\n",
-        defopt.pid );
-    printf( "    $I-c$BX$N    create new console [$I%d$N]\n",
-        defopt.newConsole );
-    printf( "    $I-p$BX$N    page protection"
-        " ($I0$N = off, $I1$N = after, $I2$N = before) [$I%d$N]\n",
-        defopt.protect );
-    printf( "    $I-f$BX$N    freed memory protection [$I%d$N]\n",
-        defopt.protectFree );
-    printf( "    $I-d$BX$N    monitor dlls [$I%d$N]\n",
-        defopt.dlls );
-    if( fullhelp )
-    {
-      printf( "    $I-a$BX$N    alignment [$I%d$N]\n",
-          defopt.align );
-      printf( "    $I-M$BX$N    minimum page protection size [$I%d$N]\n",
-          defopt.minProtectSize );
-      printf( "    $I-i$BX$N    initial value [$I%d$N]\n",
-          (int)(defopt.init&0xff) );
-      printf( "    $I-s$BX$N    initial value for slack"
-          " ($I-1$N = off) [$I%d$N]\n",
-          defopt.slackInit );
-    }
-    printf( "    $I-h$BX$N    handle exceptions [$I%d$N]\n",
-        defopt.handleException );
-    printf( "    $I-R$BX$N    "
-        "raise breakpoint exception on allocation # [$I%d$N]\n",
-        0 );
-    printf( "    $I-r$BX$N    raise breakpoint exception on error [$I%d$N]\n",
-        defopt.raiseException );
-    if( fullhelp )
-    {
-      printf( "    $I-D$BX$N    show exception details [$I%d$N]\n",
-          defopt.exceptionDetails );
-      printf( "    $I-S$BX$N    use stack pointer in exception [$I%d$N]\n",
-          defopt.useSp );
-      printf( "    $I-m$BX$N    compare allocation/release method [$I%d$N]\n",
-          defopt.allocMethod );
-      printf( "    $I-n$BX$N    find nearest allocation [$I%d$N]\n",
-          defopt.findNearest );
-      printf( "    $I-g$BX$N    group identical leaks [$I%d$N]\n",
-          defopt.groupLeaks );
-    }
-    printf( "    $I-F$BX$N    show full path [$I%d$N]\n",
-        defopt.fullPath );
-    printf( "    $I-l$BX$N    show leak details [$I%d$N]\n",
-        defopt.leakDetails );
-    printf( "    $I-z$BX$N    minimum leak size [$I%U$N]\n",
-        defopt.minLeakSize );
-    printf( "    $I-k$BX$N    control leak recording [$I%d$N]\n",
-        defopt.leakRecording );
-    printf( "    $I-L$BX$N    show leak contents [$I%d$N]\n",
-        defopt.leakContents );
-    if( fullhelp )
-    {
-      printf( "    $I-C$BX$N    show source code [$I%d$N]\n",
-          defopt.sourceCode );
-      printf( "    $I-e$BX$N    show exit trace [$I%d$N]\n",
-          defopt.exitTrace );
-      printf( "    $I-E$BX$N    "
-          "use leak and error count for exit code [$I%d$N]\n",
-          defopt.leakErrorExitCode );
-      printf( "    $I-I$BX$N    sampling profiler interval [$I%d$N]\n",
-          defopt.samplingInterval );
-      printf( "    $I-O$BA$I:$BO$I; a$Npplication specific $Io$Nptions\n" );
-      printf( "    $I-X$N     "
-          "disable heob via application specific options\n" );
-      printf( "    $I-\"$BM$I\"$BB$N  trace mode:"
-          " load $Im$Nodule on $Ib$Nase address\n" );
-    }
-    printf( "    $I-H$N     show full help\n" );
-    printf( "\n$Ohe$Nap-$Oob$Nserver " HEOB_VER " ($O" BITS "$Nbit)\n" );
-    waitForKeyIfConsoleOwner( tc,ad->in );
-    exitHeob( ad,HEOB_HELP,0,0x7fffffff );
-  }
-  // }}}
+    showHelpText( ad,&defopt,fullhelp );
   // }}}
 
   // wine detection {{{
