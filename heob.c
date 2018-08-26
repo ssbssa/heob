@@ -3247,17 +3247,18 @@ static void waitForKey( textColor *tc,HANDLE in )
     SetConsoleMode( in,flags );
 }
 
+static int isConsoleOwner( void )
+{
+  DWORD conPid;
+  return( GetConsoleProcessList(&conPid,1)==1 );
+}
+
 static void waitForKeyIfConsoleOwner( textColor *tc,HANDLE in )
 {
-  if( !in ) return;
+  if( !in || !isConsoleOwner() ) return;
 
-  DWORD conPid;
-  DWORD conPidCount = GetConsoleProcessList( &conPid,1 );
-  if( conPidCount==1 )
-  {
-    printf( "\n" );
-    waitForKey( tc,in );
-  }
+  printf( "\n" );
+  waitForKey( tc,in );
 }
 
 static void showConsole( void )
@@ -5407,13 +5408,9 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     if( opt.handleException>=2 && !opt.samplingInterval )
       opt.leakRecording = 0;
 
-    if( ad->in && !opt.leakRecording && tc->fTextColor!=&TextColorConsole )
-    {
-      DWORD conPid;
-      DWORD conPidCount = GetConsoleProcessList( &conPid,1 );
-      if( conPidCount==1 )
-        FreeConsole();
-    }
+    if( ad->in && !opt.leakRecording && tc->fTextColor!=&TextColorConsole &&
+        isConsoleOwner() )
+      FreeConsole();
 
     if( !keepSuspended )
       ResumeThread( ad->pi.hThread );
