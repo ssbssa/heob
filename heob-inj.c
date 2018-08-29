@@ -4192,7 +4192,7 @@ static void setupDllMain( void )
       // dll entry point
       ldrEntry->EntryPoint = &dllMain;
       // flags needed to get thread attach/detach notifications
-      ldrEntry->Flags = IMAGE_DLL | PROCESS_ATTACH_CALLED;
+      ldrEntry->Flags = IMAGE_DLL | ENTRY_PROCESSED | PROCESS_ATTACH_CALLED;
 
       heobEntry = &ldrEntry->InInitializationOrderModuleList;
       break;
