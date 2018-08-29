@@ -3308,7 +3308,7 @@ static textColor *writeXmlHeader( appData *ad,DWORD startTicks )
 
   char *exePath = ad->exePath;
   const wchar_t *exePathW = ad->exePathW;
-  char *delim = strrchr( ad->exePath,'\\' );
+  char *delim = strrchr( exePath,'\\' );
   if( delim ) delim++;
   else delim = exePath;
   char *lastPoint = strrchr( delim,'.' );
@@ -5170,8 +5170,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   // executable name {{{
   char *exePath = ad->exePath;
   if( ad->specificOptions || opt.attached ||
-      (ad->outName && strstr(ad->outName,"%n")) ||
-      (ad->xmlName && strstr(ad->xmlName,"%n")) )
+      (ad->outName && strstr(ad->outName,"%n")) )
   {
     func_NtQueryInformationProcess *fNtQueryInformationProcess =
       ntdll ? (func_NtQueryInformationProcess*)GetProcAddress(
