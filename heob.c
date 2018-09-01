@@ -949,6 +949,7 @@ typedef struct appData
   int raise_alloc_q;
   char *outName;
   char *xmlName;
+  char *svgName;
   char *specificOptions;
   modInfo *a2l_mi_a;
   int a2l_mi_q;
@@ -967,6 +968,7 @@ typedef struct appData
   unsigned *heobExit;
   unsigned *heobExitData;
   int *recordingRemote;
+  size_t svgSum;
 }
 appData;
 
@@ -996,6 +998,7 @@ static NORETURN void exitHeob( appData *ad,
   if( ad->raise_alloc_a ) HeapFree( heap,0,ad->raise_alloc_a );
   if( ad->outName ) HeapFree( heap,0,ad->outName );
   if( ad->xmlName ) HeapFree( heap,0,ad->xmlName );
+  if( ad->svgName ) HeapFree( heap,0,ad->svgName );
   if( ad->specificOptions ) HeapFree( heap,0,ad->specificOptions );
   if( ad->a2l_mi_a ) HeapFree( heap,0,ad->a2l_mi_a );
   if( ad->api ) HeapFree( heap,0,ad->api );
@@ -1045,7 +1048,8 @@ static CODE_SEG(".text$1") VOID NTAPI remoteCall(
 
 static CODE_SEG(".text$2") HANDLE inject(
     appData *ad,options *opt,options *globalopt,textColor *tc,
-    const char *subOutName,const char *subXmlName,const wchar_t *subCurDir )
+    const char *subOutName,const char *subXmlName,const char *subSvgName,
+    const wchar_t *subCurDir )
 {
   // injection data {{{
   func_inj *finj = &remoteCall;
@@ -1167,6 +1171,7 @@ static CODE_SEG(".text$2") HANDLE inject(
 
   if( subOutName ) lstrcpyn( data->subOutName,subOutName,MAX_PATH );
   if( subXmlName ) lstrcpyn( data->subXmlName,subXmlName,MAX_PATH );
+  if( subSvgName ) lstrcpyn( data->subSvgName,subSvgName,MAX_PATH );
   if( subCurDir ) lstrcpynW( data->subCurDir,subCurDir,MAX_PATH );
 
   data->raise_alloc_q = ad->raise_alloc_q;
@@ -2714,6 +2719,14 @@ static void freeStackGroup( stackGroup *sg,HANDLE heap )
     HeapFree( heap,0,sg->childSorted_a );
 }
 
+static void printFullStackGroupSvg( appData *ad,stackGroup *sg,textColor *tc,
+    allocation *alloc_a,const int *alloc_idxs,
+#ifndef NO_THREADNAMES
+    threadNameInfo *threadName_a,int threadName_q,
+#endif
+    modInfo *mi_a,int mi_q,dbgsym *ds,
+    const char *groupName,const char *groupTypeName,int sampling );
+
 static void printLeaks( allocation *alloc_a,int alloc_q,
     int alloc_ignore_q,size_t alloc_ignore_sum,
     int alloc_ignore_ind_q,size_t alloc_ignore_ind_sum,
@@ -2722,9 +2735,9 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
     threadNameInfo *threadName_a,int threadName_q,
 #endif
     options *opt,textColor *tc,dbgsym *ds,HANDLE heap,textColor *tcXml,
-    int sampling )
+    appData *ad,textColor *tcSvg,int sampling )
 {
-  if( !tc->out && !tcXml ) return;
+  if( !tc->out && !tcXml && !tcSvg ) return;
 
   printf( "\n" );
   if( opt->handleException>=2 && !sampling )
@@ -2917,14 +2930,13 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
   for( l=0; l<lMax; l++ )
   {
     stackGroup *sg = sg_a + l;
+    const char *groupName = !sampling ? "leaks" : "profiling samples";
+    const char *groupTypeName = leakTypeNamesRef ? leakTypeNamesRef[l] : NULL;
     if( sg->allocSum && tc->out )
     {
-      if( !sampling )
-        printf( "$Sleaks" );
-      else
-        printf( "$Sprofiling samples" );
-      if( leakTypeNamesRef )
-        printf( " (%s)",leakTypeNamesRef[l] );
+      printf( "$S%s",groupName );
+      if( groupTypeName )
+        printf( " (%s)",groupTypeName );
       printf( ":\n" );
       if( l<lDetails )
         printStackGroup( sg,alloc_a,alloc_idxs,
@@ -2948,6 +2960,12 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
           mi_a,mi_q,ds,leakTypeNames,xmlRecordNum,sampling );
       ds->tc = tcOrig;
     }
+    if( sg->allocSum && tcSvg && l<lDetails )
+      printFullStackGroupSvg( ad,sg,tcSvg,alloc_a,alloc_idxs,
+#ifndef NO_THREADNAMES
+          threadName_a,threadName_q,
+#endif
+          mi_a,mi_q,ds,groupName,groupTypeName,sampling );
     freeStackGroup( sg,heap );
   }
   // }}}
@@ -3806,11 +3824,351 @@ static void writeXmlWrongDealloc( textColor *tc,dbgsym *ds,
 }
 
 // }}}
+// svg {{{
+
+static void writeResource( textColor *tc,int resID )
+{
+  HRSRC hrsrc = FindResource( NULL,MAKEINTRESOURCE(resID),RT_RCDATA );
+  if( !hrsrc ) return;
+
+  HGLOBAL hglobal = LoadResource( NULL,hrsrc );
+  if( !hglobal ) return;
+
+  WriteText( tc,LockResource(hglobal),SizeofResource(NULL,hrsrc) );
+}
+
+static textColor *writeSvgHeader( appData *ad )
+{
+  if( !ad->svgName ) return( NULL );
+
+  char *fullName = expandFileNameVars( ad,ad->svgName,NULL );
+  if( !fullName )
+  {
+    fullName = ad->svgName;
+    ad->svgName = NULL;
+  }
+
+  HANDLE svg = CreateFile( fullName,GENERIC_WRITE,FILE_SHARE_READ,
+      NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
+  HeapFree( ad->heap,0,fullName );
+  if( svg==INVALID_HANDLE_VALUE ) return( NULL );
+
+  textColor *tc = HeapAlloc( ad->heap,HEAP_ZERO_MEMORY,sizeof(textColor) );
+  tc->fWriteText = &WriteText;
+  tc->fWriteSubText = &WriteTextHtml;
+  tc->fWriteSubTextW = &WriteTextHtmlW;
+  tc->fTextColor = NULL;
+  tc->out = svg;
+  tc->color = ATT_NORMAL;
+
+  printf( "<svg width=\"1280\" height=\"100\" onload=\"heobInit()\""
+      " xmlns=\"http://www.w3.org/2000/svg\">\n" );
+  printf( "  <style type=\"text/css\">\n" );
+  printf( "    .sample:hover { stroke:black; stroke-width:0.5;"
+      " cursor:pointer; }\n" );
+  printf( "  </style>\n" );
+  printf( "  <script type=\"text/ecmascript\">\n" );
+  printf( "    <![CDATA[\n" );
+
+  writeResource( tc,100 );
+
+  printf( "    ]]>\n" );
+  printf( "  </script>\n" );
+
+  char *exePath = ad->exePath;
+  char *delim = strrchr( exePath,'\\' );
+  if( delim ) delim++;
+  else delim = exePath;
+  char *lastPoint = strrchr( delim,'.' );
+  if( lastPoint ) lastPoint[0] = 0;
+
+  printf( "  <title>heob " HEOB_VER "</title>\n" );
+  printf( "  <text id=\"cmd\" heobCmd=\"%S\">%s</text>\n",
+      ad->cmdLineW,delim );
+
+  if( lastPoint ) lastPoint[0] = '.';
+
+  return( tc );
+}
+
+static void locSvg( textColor *tc,uintptr_t addr,int useAddr,
+    size_t samples,size_t ofs,int stack,int allocs,
+#ifndef NO_THREADNAMES
+    threadNameInfo *threadName_a,int threadName_q,int threadNameIdx,
+#endif
+    const char *filename,int lineno,const char *funcname,const char *modname )
+{
+  if( stack<=1 ) printf( "\n" );
+
+  printf( "  <svg heobSum=\"%U\" heobOfs=\"%U\" heobStack=\"%d\"",
+      samples,ofs,stack );
+  if( allocs )
+    printf( " heobAllocs=\"%d\"",allocs );
+  if( useAddr )
+    printf( " heobAddr=\"%X\"",addr );
+  if( lineno>0 )
+    printf( " heobSource=\"%s:%d\"",filename,lineno );
+  if( funcname )
+    printf( " heobFunc=\"%s\"",funcname );
+  if( modname )
+    printf( " heobMod=\"%s\"",modname );
+#ifndef NO_THREADNAMES
+  if( threadNameIdx>0 && threadNameIdx<=threadName_q )
+    printf( " heobThread=\"%s\"",threadName_a[threadNameIdx-1].name );
+  else if( threadNameIdx<0 )
+    printf( " heobThread=\"thread %u\"",(unsigned)-threadNameIdx );
+#endif
+  printf( "/>\n" );
+}
+
+static int printStackCountSvg( void **framesV,int fc,
+#ifndef NO_THREADNAMES
+    threadNameInfo *threadName_a,int threadName_q,int threadNameIdx,
+#endif
+    textColor *tc,modInfo *mi_a,int mi_q,dbgsym *ds,funcType ft,
+    size_t samples,size_t ofs,int stack,int allocs,int sampling )
+{
+  uintptr_t *frames = (uintptr_t*)framesV;
+  stackSourceLocation *ssl = ds->ssl;
+  int sslCount = ds->sslCount;
+  int stackCount = 0;
+  int j;
+  for( j=fc-1; j>=0; )
+  {
+    int k;
+    uintptr_t frame = frames[j];
+    for( k=0; k<mi_q && (frame<mi_a[k].base ||
+          frame>=mi_a[k].base+mi_a[k].size); k++ );
+    if( k>=mi_q )
+    {
+      locSvg( tc,frame,1,samples,ofs,stack+stackCount,sampling?0:allocs,
+#ifndef NO_THREADNAMES
+          threadName_a,threadName_q,threadNameIdx,
+#endif
+          NULL,0,NULL,NULL );
+      j--;
+      stackCount++;
+      continue;
+    }
+    modInfo *mi = mi_a + k;
+
+    int l;
+    for( l=j-1; l>=0 && frames[l]>=mi->base &&
+        frames[l]<mi->base+mi->size; l-- );
+
+    for( ; j>l; j-- )
+    {
+      frame = frames[j];
+      stackSourceLocation *s = findStackSourceLocation( frame,ssl,sslCount );
+      if( !s )
+      {
+        locSvg( tc,frame,1,samples,ofs,stack+stackCount,sampling?0:allocs,
+#ifndef NO_THREADNAMES
+            threadName_a,threadName_q,threadNameIdx,
+#endif
+            NULL,0,NULL,mi->path );
+        stackCount++;
+        continue;
+      }
+
+      int inlineCount = 0;
+      sourceLocation *sl = &s->sl;
+      while( 1 )
+      {
+        inlineCount++;
+        sourceLocation *nextSl = sl->inlineLocation;
+        if( !nextSl ) break;
+        sl = nextSl;
+      }
+      int stackPos = stack + stackCount;
+      // output first the bottom stack
+      locSvg( tc,frame,1,samples,ofs,stackPos,sampling?0:allocs,
+#ifndef NO_THREADNAMES
+          threadName_a,threadName_q,threadNameIdx,
+#endif
+          sl->filename,sl->lineno,sl->funcname,mi->path );
+      // then the rest from top to bottom+1
+      sl = &s->sl;
+      int inlinePos = inlineCount - 1;
+      while( inlinePos>0 )
+      {
+        locSvg( tc,0,0,samples,ofs,stackPos+inlinePos,sampling?0:allocs,
+#ifndef NO_THREADNAMES
+            threadName_a,threadName_q,threadNameIdx,
+#endif
+            sl->filename,sl->lineno,sl->funcname,mi->path );
+
+        inlinePos--;
+        sl = sl->inlineLocation;
+      }
+      stackCount += inlineCount;
+    }
+  }
+  if( ft<FT_COUNT )
+  {
+    locSvg( tc,0,0,samples,ofs,stack+stackCount,sampling?0:allocs,
+#ifndef NO_THREADNAMES
+        threadName_a,threadName_q,threadNameIdx,
+#endif
+        NULL,0,ds->funcnames[ft],NULL );
+    stackCount++;
+  }
+  return( stackCount );
+}
+
+static void printStackGroupSvg( stackGroup *sg,textColor *tc,
+    allocation *alloc_a,const int *alloc_idxs,
+#ifndef NO_THREADNAMES
+    threadNameInfo *threadName_a,int threadName_q,
+#endif
+    modInfo *mi_a,int mi_q,dbgsym *ds,size_t ofs,int stack,int sampling )
+{
+  int i;
+  int allocStart = sg->allocStart;
+  int allocCount = sg->allocCount;
+
+  allocation *a = alloc_a + alloc_idxs[allocStart];
+  if( sg->stackCount &&
+      (sg->stackStart+sg->stackCount!=a->frameCount ||
+       allocCount>1) )
+  {
+#ifndef NO_THREADNAMES
+    int threadNameIdx = 0;
+    for( i=0; i<allocCount; i++ )
+    {
+      int idx = alloc_idxs[allocStart+i];
+      allocation *aIdx = alloc_a + idx;
+      if( !threadNameIdx )
+        threadNameIdx = aIdx->threadNameIdx;
+      else if( threadNameIdx!=aIdx->threadNameIdx )
+      {
+        threadNameIdx = 0;
+        break;
+      }
+    }
+#endif
+
+    stack += printStackCountSvg(
+        a->frames+(a->frameCount-(sg->stackStart+sg->stackCount)),
+        sg->stackCount,
+#ifndef NO_THREADNAMES
+        threadName_a,threadName_q,threadNameIdx,
+#endif
+        tc,mi_a,mi_q,ds,FT_COUNT,
+        sg->allocSumSize,ofs,stack,sg->allocSum,sampling );
+  }
+
+  if( sg->stackStart+sg->stackCount==a->frameCount )
+  {
+    for( i=0; i<allocCount; i++ )
+    {
+      int idx = alloc_idxs[allocStart+i];
+      a = alloc_a + idx;
+      size_t combSize = a->size*a->count;
+      if( allocCount>1 )
+      {
+#ifndef NO_THREADNAMES
+        if( sampling )
+          locSvg( tc,0,0,combSize,ofs,stack,0,
+              threadName_a,threadName_q,a->threadNameIdx,
+              NULL,0,NULL,NULL );
+        else
+#endif
+          printStackCountSvg( NULL,0,
+#ifndef NO_THREADNAMES
+              threadName_a,threadName_q,a->threadNameIdx,
+#endif
+              tc,NULL,0,ds,a->ft,
+              combSize,ofs,stack,a->count,sampling );
+      }
+      else
+        stack += printStackCountSvg(
+            a->frames+(a->frameCount-(sg->stackStart+sg->stackCount)),
+            sg->stackCount,
+#ifndef NO_THREADNAMES
+            threadName_a,threadName_q,a->threadNameIdx,
+#endif
+            tc,mi_a,mi_q,ds,a->ft,
+            combSize,ofs,stack,a->count,sampling );
+      ofs += combSize;
+    }
+  }
+
+  stackGroup *child_a = sg->child_a;
+  int *childSorted_a = sg->childSorted_a;
+  int child_q = sg->child_q;
+  for( i=0; i<child_q; i++ )
+  {
+    int idx = childSorted_a ? childSorted_a[i] : i;
+    stackGroup *sgc = child_a + idx;
+    printStackGroupSvg( sgc,tc,alloc_a,alloc_idxs,
+#ifndef NO_THREADNAMES
+        threadName_a,threadName_q,
+#endif
+        mi_a,mi_q,ds,ofs,stack,sampling );
+    ofs += sgc->allocSumSize;
+  }
+}
+
+static void printFullStackGroupSvg( appData *ad,stackGroup *sg,textColor *tc,
+    allocation *alloc_a,const int *alloc_idxs,
+#ifndef NO_THREADNAMES
+    threadNameInfo *threadName_a,int threadName_q,
+#endif
+    modInfo *mi_a,int mi_q,dbgsym *ds,
+    const char *groupName,const char *groupTypeName,int sampling )
+{
+  char *fullTypeName = NULL;
+  const char *fullName = groupName;
+  if( groupTypeName )
+  {
+    fullTypeName = HeapAlloc( ad->heap,0,
+        lstrlen(groupName)+lstrlen(groupTypeName)+4 );
+    lstrcpy( fullTypeName,groupName );
+    lstrcat( fullTypeName," (" );
+    lstrcat( fullTypeName,groupTypeName );
+    lstrcat( fullTypeName,")" );
+    fullName = fullTypeName;
+  }
+  locSvg( tc,0,0,sg->allocSumSize,ad->svgSum,1,sampling?0:sg->allocSum,
+#ifndef NO_THREADNAMES
+      NULL,0,0,
+#endif
+      NULL,0,fullName,NULL );
+  if( fullTypeName ) HeapFree( ad->heap,0,fullTypeName );
+
+  printStackGroupSvg( sg,tc,alloc_a,alloc_idxs,
+#ifndef NO_THREADNAMES
+      threadName_a,threadName_q,
+#endif
+      mi_a,mi_q,ds,ad->svgSum,2,sampling );
+  ad->svgSum += sg->allocSumSize;
+}
+
+static void writeSvgFooter( textColor *tc,appData *ad )
+{
+  if( !tc ) return;
+
+  if( ad->svgSum )
+    locSvg( tc,0,0,ad->svgSum,0,0,0,
+#ifndef NO_THREADNAMES
+        NULL,0,0,
+#endif
+        NULL,0,"all",NULL );
+
+  printf( "</svg>\n" );
+
+  CloseHandle( tc->out );
+  HeapFree( ad->heap,0,tc );
+}
+
+// }}}
 // main loop {{{
 
 static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
 {
   textColor *tcXml = writeXmlHeader( ad,startTicks );
+  textColor *tcSvg = writeSvgHeader( ad );
 
   HANDLE heap = ad->heap;
   options *opt = ds->opt;
@@ -4035,7 +4393,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
 #ifndef NO_THREADNAMES
               threadName_a,threadName_q,
 #endif
-              opt,tc,ds,heap,tcXml,0 );
+              opt,tc,ds,heap,tcXml,ad,tcSvg,0 );
 
           if( alloc_a ) HeapFree( heap,0,alloc_a );
           if( contents ) HeapFree( heap,0,contents );
@@ -4636,7 +4994,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
 #ifndef NO_THREADNAMES
               threadName_a,threadName_q,
 #endif
-              opt,tc,ds,heap,tcXml,1 );
+              opt,tc,ds,heap,tcXml,ad,tcSvg,1 );
 
           if( samp_a ) HeapFree( heap,0,samp_a );
         }
@@ -4661,6 +5019,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
 #endif
 
   writeXmlFooter( tcXml,heap,startTicks );
+  writeSvgFooter( tcSvg,ad );
 }
 
 // }}}
@@ -4686,7 +5045,10 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
       " [$I%d$N]\n",
       1 );
   if( fullhelp )
+  {
     printf( "    $I-x$BX$N    xml output\n" );
+    printf( "    $I-v$BX$N    svg output\n" );
+  }
   printf( "    $I-P$BX$N    show process ID and wait [$I%d$N]\n",
       defopt->pid );
   printf( "    $I-c$BX$N    create new console [$I%d$N]\n",
@@ -4865,6 +5227,11 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
       case 'x':
         if( ad->xmlName ) break;
         ad->xmlName = getStringOption( args+2,heap );
+        break;
+
+      case 'v':
+        if( ad->svgName ) break;
+        ad->svgName = getStringOption( args+2,heap );
         break;
 
       case 'A':
@@ -5170,8 +5537,8 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
         (func_CreateProcessW*)GetProcAddress( kernel32,"CreateProcessW" );
       DWORD exitCode = 0;
       if( !heobSubProcess(0,&ad->pi,NULL,heap,&opt,fCreateProcessW,
-            ad->outName,ad->xmlName,NULL,ad->raise_alloc_q,ad->raise_alloc_a,
-            ad->specificOptions) )
+            ad->outName,ad->xmlName,ad->svgName,NULL,
+            ad->raise_alloc_q,ad->raise_alloc_a,ad->specificOptions) )
       {
         printf( "$Wcan't create process for 'heob'\n" );
         TerminateProcess( ad->pi.hProcess,1 );
@@ -5312,7 +5679,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
       checkOutputVariant( tc,out );
     }
   }
-  else if( ad->xmlName )
+  else if( ad->xmlName || ad->svgName )
   {
     out = tc->out = NULL;
     tc->fTextColor = NULL;
@@ -5330,6 +5697,12 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   if( ad->xmlName && strstr(ad->xmlName,"%p") )
   {
     subXmlName = ad->xmlName;
+    opt.children = 1;
+  }
+  const char *subSvgName = NULL;
+  if( ad->svgName && strstr(ad->svgName,"%p") )
+  {
+    subSvgName = ad->svgName;
     opt.children = 1;
   }
 
@@ -5360,7 +5733,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   }
   else
     ad->readPipe = inject( ad,&opt,&defopt,tc,
-        subOutName,subXmlName,subCurDir );
+        subOutName,subXmlName,subSvgName,subCurDir );
   if( !ad->readPipe )
     TerminateProcess( ad->pi.hProcess,1 );
 

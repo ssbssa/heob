@@ -169,6 +169,7 @@ typedef struct localData
 
   char subOutName[MAX_PATH];
   char subXmlName[MAX_PATH];
+  char subSvgName[MAX_PATH];
   wchar_t subCurDir[MAX_PATH];
 
 #if USE_STACKWALK
@@ -2061,7 +2062,8 @@ int heobSubProcess(
     DWORD creationFlags,LPPROCESS_INFORMATION processInformation,
     HMODULE heobMod,HANDLE heap,options *opt,
     func_CreateProcessW *fCreateProcessW,
-    const char *subOutName,const char *subXmlName,const wchar_t *subCurDir,
+    const char *subOutName,const char *subXmlName,const char *subSvgName,
+    const wchar_t *subCurDir,
     int raise_alloc_q,size_t *raise_alloc_a,const char *specificOptions )
 {
   wchar_t heobPath[MAX_PATH];
@@ -2111,6 +2113,11 @@ int heobSubProcess(
       {
         lstrcat( heobCmd," -x" );
         lstrcat( heobCmd,subXmlName );
+      }
+      if( subSvgName && subSvgName[0] )
+      {
+        lstrcat( heobCmd," -v" );
+        lstrcat( heobCmd,subSvgName );
       }
       ADD_OPTION( " -p",protect,1 );
       ADD_OPTION( " -a",align,MEMORY_ALLOCATION_ALIGNMENT );
@@ -2232,7 +2239,8 @@ BOOL WINAPI new_CreateProcessA(
 
   heobSubProcess( creationFlags,processInformation,
       rd->heobMod,rd->heap,&rd->globalopt,rd->fCreateProcessW,
-      rd->subOutName,rd->subXmlName,rd->subCurDir,0,NULL,rd->specificOptions );
+      rd->subOutName,rd->subXmlName,rd->subSvgName,
+      rd->subCurDir,0,NULL,rd->specificOptions );
 
   return( 1 );
 }
@@ -2260,7 +2268,8 @@ BOOL WINAPI new_CreateProcessW(
 
   heobSubProcess( creationFlags,processInformation,
       rd->heobMod,rd->heap,&rd->globalopt,rd->fCreateProcessW,
-      rd->subOutName,rd->subXmlName,rd->subCurDir,0,NULL,rd->specificOptions );
+      rd->subOutName,rd->subXmlName,rd->subSvgName,
+      rd->subCurDir,0,NULL,rd->specificOptions );
 
   return( 1 );
 }
@@ -4385,6 +4394,7 @@ VOID CALLBACK heob( ULONG_PTR arg )
 
   lstrcpy( ld->subOutName,rd->subOutName );
   lstrcpy( ld->subXmlName,rd->subXmlName );
+  lstrcpy( ld->subSvgName,rd->subSvgName );
   lstrcpyW( ld->subCurDir,rd->subCurDir );
 
   if( !ld->noCRT )

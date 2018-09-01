@@ -443,6 +443,7 @@ typedef struct remoteData
 
   char subOutName[MAX_PATH];
   char subXmlName[MAX_PATH];
+  char subSvgName[MAX_PATH];
   wchar_t subCurDir[MAX_PATH];
 
   int noCRT;
@@ -517,7 +518,8 @@ int heobSubProcess(
     DWORD creationFlags,LPPROCESS_INFORMATION processInformation,
     HMODULE heobMod,HANDLE heap,options *opt,
     func_CreateProcessW *fCreateProcessW,
-    const char *subOutName,const char *subXmlName,const wchar_t *subCurDir,
+    const char *subOutName,const char *subXmlName,const char *subSvgName,
+    const wchar_t *subCurDir,
     int raise_alloc_q,size_t *raise_alloc_a,const char *specificOptions );
 
 static inline int mul_overflow( size_t n,size_t s,size_t *res )

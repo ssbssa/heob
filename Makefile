@@ -52,7 +52,7 @@ all: heob$(BITS).exe allocer$(BITS).exe
 heob$(BITS).exe: heob.c heob-inj.c heob-internal.h heob.h heob-ver$(BITS).o
 	$(CC) $(CFLAGS_HEOB) -o$@ heob.c heob-inj.c heob-ver$(BITS).o $(LDFLAGS_HEOB) || { rm -f $@; exit 1; }
 
-heob-ver$(BITS).o: heob-ver.rc heob.manifest heob.ico Makefile
+heob-ver$(BITS).o: heob-ver.rc heob.manifest heob.ico svg.js Makefile
 	$(WINDRES) -DHEOB_VER_STR=\\\"$(HEOB_VERSION)\\\" -DHEOB_VER_NUM=$(HEOB_VER_NUM) -DHEOB_PRERELEASE=$(HEOB_PRERELEASE) -DHEOB_COPYRIGHT_YEARS=\\\"$(HEOB_COPYRIGHT_YEARS)\\\" $< $@
 
 allocer$(BITS).exe: allocer.cpp libheobcpp$(BITS).a dll-alloc$(BITS).dll dll-alloc-shared$(BITS).dll
