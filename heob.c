@@ -3171,6 +3171,44 @@ static char *getStringOption( const char *start,HANDLE heap )
   return( str );
 }
 
+static char *expandFileNameVars( appData *ad,const char *origName,
+    const char *exePath )
+{
+  HANDLE heap = ad->heap;
+  char *name = NULL;
+
+  char *replaced = strreplacenum( origName,"%p",ad->pi.dwProcessId,heap );
+  if( replaced )
+    origName = name = replaced;
+
+  replaced = strreplacenum( origName,"%P",ad->ppid,heap );
+  if( replaced )
+  {
+    if( name ) HeapFree( heap,0,name );
+    origName = name = replaced;
+  }
+
+  char *lastPoint = NULL;
+  if( !exePath )
+  {
+    char *delim = strrchr( ad->exePath,'\\' );
+    if( delim ) delim++;
+    else delim = ad->exePath;
+    lastPoint = strrchr( delim,'.' );
+    if( lastPoint ) lastPoint[0] = 0;
+    exePath = delim;
+  }
+  replaced = strreplace( origName,"%n",exePath,heap );
+  if( lastPoint ) lastPoint[0] = '.';
+  if( replaced )
+  {
+    if( name ) HeapFree( heap,0,name );
+    name = replaced;
+  }
+
+  return( name );
+}
+
 // }}}
 // disassembler {{{
 
@@ -3319,51 +3357,29 @@ static void setHeobConsoleTitle( HANDLE heap,const wchar_t *prog )
 
 static textColor *writeXmlHeader( appData *ad,DWORD startTicks )
 {
-  char **xmlName = &ad->xmlName;
-  if( !xmlName || !*xmlName ) return( NULL );
+  if( !ad->xmlName ) return( NULL );
 
-  HANDLE heap = ad->heap;
-  char *fullName = strreplacenum( *xmlName,"%p",ad->pi.dwProcessId,heap );
+  char *fullName = expandFileNameVars( ad,ad->xmlName,NULL );
   if( !fullName )
   {
-    fullName = *xmlName;
-    *xmlName = NULL;
-  }
-
-  char *ppidName = strreplacenum( fullName,"%P",ad->ppid,heap );
-  if( ppidName )
-  {
-    HeapFree( heap,0,fullName );
-    fullName = ppidName;
-  }
-
-  char *exePath = ad->exePath;
-  const wchar_t *exePathW = ad->exePathW;
-  char *delim = strrchr( exePath,'\\' );
-  if( delim ) delim++;
-  else delim = exePath;
-  char *lastPoint = strrchr( delim,'.' );
-  if( lastPoint ) lastPoint[0] = 0;
-  char *replaced = strreplace( fullName,"%n",delim,heap );
-  if( lastPoint ) lastPoint[0] = '.';
-  if( replaced )
-  {
-    HeapFree( heap,0,fullName );
-    fullName = replaced;
+    fullName = ad->xmlName;
+    ad->xmlName = NULL;
   }
 
   HANDLE xml = CreateFile( fullName,GENERIC_WRITE,FILE_SHARE_READ,
       NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
-  HeapFree( heap,0,fullName );
+  HeapFree( ad->heap,0,fullName );
   if( xml==INVALID_HANDLE_VALUE ) return( NULL );
 
-  textColor *tc = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(textColor) );
+  textColor *tc = HeapAlloc( ad->heap,HEAP_ZERO_MEMORY,sizeof(textColor) );
   tc->fWriteText = &WriteText;
   tc->fWriteSubText = &WriteTextHtml;
   tc->fWriteSubTextW = &WriteTextHtmlW;
   tc->fTextColor = NULL;
   tc->out = xml;
   tc->color = ATT_NORMAL;
+
+  const wchar_t *exePathW = ad->exePathW;
 
   printf( "<?xml version=\"1.0\"?>\n\n" );
   printf( "<valgrindoutput>\n\n" );
@@ -5274,33 +5290,20 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     }
     else
     {
-      char *fullName = strreplacenum(
-          ad->outName,"%p",ad->pi.dwProcessId,heap );
-      char *usedName;
-      if( !fullName )
-        usedName = ad->outName;
-      else
+      if( strstr(ad->outName,"%p") )
       {
-        usedName = fullName;
         subOutName = ad->outName;
         opt.children = 1;
       }
 
-      char *ppidName = strreplacenum( usedName,"%P",ad->ppid,heap );
-      if( ppidName )
-        usedName = ppidName;
-
-      char *replaced = strreplace( usedName,"%n",exePath,heap );
-      if( replaced )
-        usedName = replaced;
+      char *fullName = expandFileNameVars( ad,ad->outName,exePath );
+      char *usedName = fullName ? fullName : ad->outName;
 
       out = CreateFile( usedName,GENERIC_WRITE,FILE_SHARE_READ,
           NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
       if( out==INVALID_HANDLE_VALUE ) out = tc->out;
 
       if( fullName ) HeapFree( heap,0,fullName );
-      if( ppidName ) HeapFree( heap,0,ppidName );
-      if( replaced ) HeapFree( heap,0,replaced );
     }
     if( out!=tc->out )
     {
