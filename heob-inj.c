@@ -155,7 +155,7 @@ typedef struct localData
 
 #ifndef NO_THREADNAMES
   DWORD threadNameTls;
-  int threadNameIdx;
+  LONG threadNameIdx;
 #endif
 
   DWORD freeSizeTls;
@@ -4108,15 +4108,8 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
     DWORD threadNameTls = rd->threadNameTls;
     if( !TlsGetValue(threadNameTls) )
     {
-      EnterCriticalSection( &rd->csWrite );
-
-      if( !TlsGetValue(threadNameTls) )
-      {
-        int threadNameIdx = --rd->threadNameIdx;
-        TlsSetValue( threadNameTls,(void*)(uintptr_t)threadNameIdx );
-      }
-
-      LeaveCriticalSection( &rd->csWrite );
+      int threadNameIdx = InterlockedDecrement( &rd->threadNameIdx );
+      TlsSetValue( threadNameTls,(void*)(uintptr_t)threadNameIdx );
     }
 #endif
     // }}}
