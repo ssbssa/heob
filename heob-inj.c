@@ -342,6 +342,7 @@ static void *add_realloc( void *ptr,int *count_p,int add,size_t blockSize,
     ptr_n = HeapReAlloc( rd->heap,0,ptr,count_n*blockSize );
   if( UNLIKELY(!ptr_n) )
   {
+    if( !cs ) return( NULL );
     int needLock = cs!=&rd->csWrite;
     if( needLock )
       LeaveCriticalSection( cs );
@@ -4126,18 +4127,25 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
     {
       EnterCriticalSection( &rd->csSampling );
 
+      threadSamplingType *thread_samp_a = rd->thread_samp_a;
       if( rd->thread_samp_q>=rd->thread_samp_s )
-        rd->thread_samp_a = add_realloc(
-            rd->thread_samp_a,&rd->thread_samp_s,64,
-            sizeof(threadSamplingType),&rd->csSampling );
+      {
+        thread_samp_a = add_realloc( thread_samp_a,&rd->thread_samp_s,
+            64,sizeof(threadSamplingType),NULL );
+        if( thread_samp_a )
+          rd->thread_samp_a = thread_samp_a;
+      }
 
-      threadSamplingType *tst = &rd->thread_samp_a[rd->thread_samp_q++];
-      DuplicateHandle( GetCurrentProcess(),thread,
-          GetCurrentProcess(),&tst->thread,0,FALSE,DUPLICATE_SAME_ACCESS );
+      if( thread_samp_a )
+      {
+        threadSamplingType *tst = &thread_samp_a[rd->thread_samp_q++];
+        DuplicateHandle( GetCurrentProcess(),thread,
+            GetCurrentProcess(),&tst->thread,0,FALSE,DUPLICATE_SAME_ACCESS );
 #ifndef NO_THREADNAMES
-      tst->threadNameIdxSlot = getTlsSlotAddress( thread,threadNameTls );
+        tst->threadNameIdxSlot = getTlsSlotAddress( thread,threadNameTls );
 #endif
-      tst->threadId = GetCurrentThreadId();
+        tst->threadId = GetCurrentThreadId();
+      }
 
       LeaveCriticalSection( &rd->csSampling );
     }
