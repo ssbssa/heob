@@ -527,7 +527,7 @@ static NOINLINE void trackFree(
   {
     GET_REMOTEDATA( rd );
 
-    freed f;
+    allocation fa;
     int splitIdx = (((uintptr_t)free_ptr)>>rd->ptrShift)&SPLIT_MASK;
     splitAllocation *sa = rd->splits + splitIdx;
     size_t freeSize = -1;
@@ -539,7 +539,7 @@ static NOINLINE void trackFree(
     // successful free {{{
     if( LIKELY(i>=0 && (sa->alloc_a[i].frameCount || enable)) )
     {
-      RtlMoveMemory( &f.a,&sa->alloc_a[i],sizeof(allocation) );
+      RtlMoveMemory( &fa,&sa->alloc_a[i],sizeof(allocation) );
 
       if( !failed_realloc )
       {
@@ -552,17 +552,15 @@ static NOINLINE void trackFree(
 
       LeaveCriticalSection( &sa->cs );
 
-      freeSize = f.a.size;
+      freeSize = fa.size;
 
       // freed memory information {{{
       if( rd->opt.protectFree && !failed_realloc )
       {
-        f.a.ftFreed = ft;
+        fa.ftFreed = ft;
 #ifndef NO_THREADNAMES
-        f.threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
+        int threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
 #endif
-
-        CAPTURE_STACK_TRACE( 2,PTRS,f.frames,caller,rd->maxStackFrames );
 
         splitFreed *sf = rd->freeds + splitIdx;
 
@@ -572,7 +570,14 @@ static NOINLINE void trackFree(
           sf->freed_a = add_realloc(
               sf->freed_a,&sf->freed_s,64,sizeof(freed),&sf->cs );
 
-        RtlMoveMemory( sf->freed_a+sf->freed_q,&f,sizeof(freed) );
+        freed *f = sf->freed_a + sf->freed_q;
+        RtlMoveMemory( &f->a,&fa,sizeof(allocation) );
+#ifndef NO_THREADNAMES
+        f->threadNameIdx = threadNameIdx;
+#endif
+
+        CAPTURE_STACK_TRACE( 2,PTRS,f->frames,caller,rd->maxStackFrames );
+
         sf->freed_q++;
 
         LeaveCriticalSection( &sf->cs );
@@ -580,13 +585,13 @@ static NOINLINE void trackFree(
       // }}}
 
       // mismatching allocation/release method {{{
-      if( UNLIKELY(rd->opt.allocMethod && f.a.at!=at) )
+      if( UNLIKELY(rd->opt.allocMethod && fa.at!=at) )
       {
         allocation *aa = HeapAlloc( rd->heap,0,2*sizeof(allocation) );
         if( UNLIKELY(!aa) )
           exitOutOfMemory( 1 );
 
-        RtlMoveMemory( aa,&f.a,sizeof(allocation) );
+        RtlMoveMemory( aa,&fa,sizeof(allocation) );
         CAPTURE_STACK_TRACE( 2,PTRS,aa[1].frames,caller,rd->maxStackFrames );
         aa[1].ptr = free_ptr;
         aa[1].size = 0;
@@ -626,6 +631,11 @@ static NOINLINE void trackFree(
 
       LeaveCriticalSection( &rd->csFreedMod );
 
+      allocation *aa = HeapAlloc(
+          rd->heap,HEAP_ZERO_MEMORY,4*sizeof(allocation) );
+      if( UNLIKELY(!aa) )
+        exitOutOfMemory( 1 );
+
       // double free {{{
       if( rd->opt.protectFree )
       {
@@ -636,13 +646,16 @@ static NOINLINE void trackFree(
         for( i=sf->freed_q-1; i>=0 && sf->freed_a[i].a.ptr!=free_ptr; i-- );
         if( i>=0 )
         {
-          RtlMoveMemory( &f,&sf->freed_a[i],sizeof(freed) );
+          freed *f = &sf->freed_a[i];
+
+          RtlMoveMemory( &aa[1],&f->a,sizeof(allocation) );
+
+          RtlMoveMemory( aa[2].frames,f->frames,PTRS*sizeof(void*) );
+#ifndef NO_THREADNAMES
+          aa[2].threadNameIdx = f->threadNameIdx;
+#endif
 
           LeaveCriticalSection( &sf->cs );
-
-          allocation *aa = HeapAlloc( rd->heap,0,3*sizeof(allocation) );
-          if( UNLIKELY(!aa) )
-            exitOutOfMemory( 1 );
 
           CAPTURE_STACK_TRACE( 2,PTRS,aa[0].frames,caller,rd->maxStackFrames );
           aa[0].ft = ft;
@@ -651,13 +664,7 @@ static NOINLINE void trackFree(
             (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
 #endif
 
-          RtlMoveMemory( &aa[1],&f.a,sizeof(allocation) );
-
-          RtlMoveMemory( aa[2].frames,f.frames,PTRS*sizeof(void*) );
           aa[2].ft = aa[1].ftFreed;
-#ifndef NO_THREADNAMES
-          aa[2].threadNameIdx = f.threadNameIdx;
-#endif
 
           EnterCriticalSection( &rd->csWrite );
 
@@ -669,8 +676,6 @@ static NOINLINE void trackFree(
           WriteFile( rd->master,aa,3*sizeof(allocation),&written,NULL );
 
           LeaveCriticalSection( &rd->csWrite );
-
-          HeapFree( rd->heap,0,aa );
 
           if( rd->opt.raiseException )
             DebugBreak();
@@ -692,11 +697,6 @@ static NOINLINE void trackFree(
       }
       else if( !inExit )
       {
-        allocation *aa = HeapAlloc(
-            rd->heap,HEAP_ZERO_MEMORY,4*sizeof(allocation) );
-        if( UNLIKELY(!aa) )
-          exitOutOfMemory( 1 );
-
         aa->ptr = free_ptr;
         aa->size = 0;
         aa->at = at;
@@ -958,11 +958,11 @@ static NOINLINE void trackFree(
 
         LeaveCriticalSection( &rd->csWrite );
 
-        HeapFree( rd->heap,0,aa );
-
         if( rd->opt.raiseException )
           DebugBreak();
       }
+
+      HeapFree( rd->heap,0,aa );
     }
     // }}}
 
@@ -2454,13 +2454,16 @@ static NOINLINE void protect_free_m( void *b,funcType ft )
       int splitIdx = (((uintptr_t)b)>>rd->ptrShift)&SPLIT_MASK;
       splitAllocation *sa = rd->splits + splitIdx;
 
+      allocation *aa = HeapAlloc( rd->heap,0,2*sizeof(allocation) );
+      if( UNLIKELY(!aa) )
+        exitOutOfMemory( 1 );
+
       EnterCriticalSection( &sa->cs );
 
       int j;
       for( j=sa->alloc_q-1; j>=0 && sa->alloc_a[j].ptr!=b; j-- );
       if( j>=0 )
       {
-        allocation aa[2];
         RtlMoveMemory( aa,sa->alloc_a+j,sizeof(allocation) );
 
         LeaveCriticalSection( &sa->cs );
@@ -2488,6 +2491,8 @@ static NOINLINE void protect_free_m( void *b,funcType ft )
       }
       else
         LeaveCriticalSection( &sa->cs );
+
+      HeapFree( rd->heap,0,aa );
     }
   }
   // }}}
