@@ -615,6 +615,7 @@ static void WriteTextHtml( textColor *tc,const char *ts,size_t l )
   char lt[] = "&lt;";
   char gt[] = "&gt;";
   char amp[] = "&amp;";
+  char quot[] = "&quot;";
   DWORD written;
   for( next=t; next<end; next++ )
   {
@@ -629,7 +630,7 @@ static void WriteTextHtml( textColor *tc,const char *ts,size_t l )
       t = next + 1;
       continue;
     }
-    if( c!='<' && c!='>' && c!='&' ) continue;
+    if( c!='<' && c!='>' && c!='&' && c!='"' ) continue;
 
     if( next>t )
       WriteFile( tc->out,t,(DWORD)(next-t),&written,NULL );
@@ -637,8 +638,10 @@ static void WriteTextHtml( textColor *tc,const char *ts,size_t l )
       WriteFile( tc->out,lt,sizeof(lt)-1,&written,NULL );
     else if( c=='>' )
       WriteFile( tc->out,gt,sizeof(gt)-1,&written,NULL );
-    else
+    else if( c=='&' )
       WriteFile( tc->out,amp,sizeof(amp)-1,&written,NULL );
+    else
+      WriteFile( tc->out,quot,sizeof(quot)-1,&written,NULL );
     t = next + 1;
   }
   if( next>t )
@@ -652,6 +655,7 @@ static void WriteTextHtmlW( textColor *tc,const wchar_t *ts,size_t l )
   char lt[] = "&lt;";
   char gt[] = "&gt;";
   char amp[] = "&amp;";
+  char quot[] = "&quot;";
   DWORD written;
   size_t i;
   for( i=0; i<l; i++ )
@@ -674,6 +678,8 @@ static void WriteTextHtmlW( textColor *tc,const wchar_t *ts,size_t l )
       WriteFile( tc->out,gt,sizeof(gt)-1,&written,NULL );
     else if( c32=='&' )
       WriteFile( tc->out,amp,sizeof(amp)-1,&written,NULL );
+    else if( c32=='"' )
+      WriteFile( tc->out,quot,sizeof(quot)-1,&written,NULL );
     else
     {
       uint8_t c8 = c32;
