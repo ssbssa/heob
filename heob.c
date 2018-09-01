@@ -2239,6 +2239,11 @@ static int cmp_merge_allocation( const void *av,const void *bv )
   int c = memcmp( a->frames,b->frames,PTRS*sizeof(void*) );
   if( c ) return( c>0 ? 2 : -2 );
 
+#ifndef NO_THREADNAMES
+  if( a->threadNameIdx>b->threadNameIdx ) return( -2 );
+  if( a->threadNameIdx<b->threadNameIdx ) return( 2 );
+#endif
+
   return( a->id>b->id ? 1 : -1 );
 }
 
@@ -2281,6 +2286,11 @@ static int cmp_frame_allocation( const void *av,const void *bv )
 
   if( a->size>b->size ) return( -2 );
   if( a->size<b->size ) return( 2 );
+
+#ifndef NO_THREADNAMES
+  if( a->threadNameIdx>b->threadNameIdx ) return( -2 );
+  if( a->threadNameIdx<b->threadNameIdx ) return( 2 );
+#endif
 
   return( a->id>b->id ? 1 : -1 );
 }
