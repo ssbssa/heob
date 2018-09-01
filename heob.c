@@ -3156,6 +3156,21 @@ static char *readOption( char *args,options *opt,appData *ad,HANDLE heap )
   return( args );
 }
 
+static char *getStringOption( const char *start,HANDLE heap )
+{
+  const char *end = start;
+  while( *end && *end!=' ' ) end++;
+  if( end<=start ) return( NULL );
+
+  size_t len = end - start;
+  char *str = HeapAlloc( heap,0,len+1 );
+  if( !str ) return( NULL );
+
+  RtlMoveMemory( str,start,len );
+  str[len] = 0;
+  return( str );
+}
+
 // }}}
 // disassembler {{{
 
@@ -4827,35 +4842,13 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
         break;
 
       case 'o':
-        {
-          if( ad->outName ) break;
-          char *start = args + 2;
-          char *end = start;
-          while( *end && *end!=' ' ) end++;
-          if( end>start )
-          {
-            size_t len = end - start;
-            ad->outName = HeapAlloc( heap,0,len+1 );
-            RtlMoveMemory( ad->outName,start,len );
-            ad->outName[len] = 0;
-          }
-        }
+        if( ad->outName ) break;
+        ad->outName = getStringOption( args+2,heap );
         break;
 
       case 'x':
-        {
-          if( ad->xmlName ) break;
-          char *start = args + 2;
-          char *end = start;
-          while( *end && *end!=' ' ) end++;
-          if( end>start )
-          {
-            size_t len = end - start;
-            ad->xmlName = HeapAlloc( heap,0,len+1 );
-            RtlMoveMemory( ad->xmlName,start,len );
-            ad->xmlName[len] = 0;
-          }
-        }
+        if( ad->xmlName ) break;
+        ad->xmlName = getStringOption( args+2,heap );
         break;
 
       case 'A':
