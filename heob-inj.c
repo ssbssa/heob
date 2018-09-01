@@ -454,6 +454,21 @@ static void writeMods( allocation *alloc_a,int alloc_q )
     HeapFree( rd->heap,0,mi_a );
 }
 
+static void writeAllocs( allocation *alloc_a,int alloc_q,int type )
+{
+  GET_REMOTEDATA( rd );
+
+  EnterCriticalSection( &rd->csWrite );
+
+  writeMods( alloc_a,alloc_q );
+
+  DWORD written;
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,alloc_a,alloc_q*sizeof(allocation),&written,NULL );
+
+  LeaveCriticalSection( &rd->csWrite );
+}
+
 // }}}
 // memory allocation tracking {{{
 
@@ -602,16 +617,7 @@ static NOINLINE void trackFree(
         aa[1].threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
 #endif
 
-        EnterCriticalSection( &rd->csWrite );
-
-        writeMods( aa,2 );
-
-        int type = WRITE_WRONG_DEALLOC;
-        DWORD written;
-        WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-        WriteFile( rd->master,aa,2*sizeof(allocation),&written,NULL );
-
-        LeaveCriticalSection( &rd->csWrite );
+        writeAllocs( aa,2,WRITE_WRONG_DEALLOC );
 
         HeapFree( rd->heap,0,aa );
 
@@ -654,16 +660,7 @@ static NOINLINE void trackFree(
 
         aa[2].ft = FT_COUNT;
 
-        EnterCriticalSection( &rd->csWrite );
-
-        writeMods( aa,3 );
-
-        int type = WRITE_DOUBLE_FREE;
-        DWORD written;
-        WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-        WriteFile( rd->master,aa,3*sizeof(allocation),&written,NULL );
-
-        LeaveCriticalSection( &rd->csWrite );
+        writeAllocs( aa,3,WRITE_DOUBLE_FREE );
 
         if( rd->opt.raiseException )
           DebugBreak();
@@ -697,16 +694,7 @@ static NOINLINE void trackFree(
 
           aa[2].ft = aa[1].ftFreed;
 
-          EnterCriticalSection( &rd->csWrite );
-
-          writeMods( aa,3 );
-
-          int type = WRITE_DOUBLE_FREE;
-          DWORD written;
-          WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-          WriteFile( rd->master,aa,3*sizeof(allocation),&written,NULL );
-
-          LeaveCriticalSection( &rd->csWrite );
+          writeAllocs( aa,3,WRITE_DOUBLE_FREE );
 
           if( rd->opt.raiseException )
             DebugBreak();
@@ -978,16 +966,7 @@ static NOINLINE void trackFree(
         }
         // }}}
 
-        EnterCriticalSection( &rd->csWrite );
-
-        writeMods( aa,4 );
-
-        DWORD written;
-        int type = WRITE_FREE_FAIL;
-        WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-        WriteFile( rd->master,aa,4*sizeof(allocation),&written,NULL );
-
-        LeaveCriticalSection( &rd->csWrite );
+        writeAllocs( aa,4,WRITE_FREE_FAIL );
 
         if( rd->opt.raiseException )
           DebugBreak();
@@ -2506,16 +2485,7 @@ static NOINLINE void protect_free_m( void *b,funcType ft )
         aa[1].threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
 #endif
 
-        EnterCriticalSection( &rd->csWrite );
-
-        writeMods( aa,2 );
-
-        int type = WRITE_SLACK;
-        DWORD written;
-        WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-        WriteFile( rd->master,aa,2*sizeof(allocation),&written,NULL );
-
-        LeaveCriticalSection( &rd->csWrite );
+        writeAllocs( aa,2,WRITE_SLACK );
 
         if( rd->opt.raiseException )
           DebugBreak();
