@@ -182,6 +182,16 @@ static void heob_find( char *ptr )
 }
 
 
+static DWORD WINAPI freeThread( LPVOID arg )
+{
+  void **data = (void**)arg;
+  WaitForSingleObject( data[0],INFINITE );
+  void *ptr = realloc( data[1],32 );
+  free( ptr );
+  return( 0 );
+}
+
+
 void choose( int arg )
 {
   printf( "allocer: main()\n" );
@@ -884,6 +894,25 @@ void choose( int arg )
             NULL,0,&namedThread,NULL,0,NULL );
         WaitForSingleObject( thread,INFINITE );
         CloseHandle( thread );
+      }
+      break;
+
+    case 49:
+      // check for realloc race condition of same pointer
+      {
+#define T_COUNT 4
+        HANDLE threads[T_COUNT];
+        void *threadData[2];
+        threadData[0] = CreateEvent( NULL,TRUE,FALSE,NULL );
+        threadData[1] = malloc( 16 );
+        for( int i=0; i<T_COUNT; i++ )
+          threads[i] = CreateThread( NULL,0,
+              &freeThread,threadData,0,NULL );
+        Sleep( 100 );
+        SetEvent( threadData[0] );
+        WaitForMultipleObjects( T_COUNT,threads,TRUE,INFINITE );
+        for( int i=0; i<T_COUNT; i++ )
+          CloseHandle( threads[i] );
       }
       break;
   }

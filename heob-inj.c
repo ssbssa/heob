@@ -624,6 +624,9 @@ static NOINLINE void trackFree(
     // free of invalid pointer {{{
     else
     {
+      if( i>=0 )
+        RtlMoveMemory( &fa,&sa->alloc_a[i],sizeof(allocation) );
+
       LeaveCriticalSection( &sa->cs );
       EnterCriticalSection( &rd->csFreedMod );
 
@@ -637,7 +640,35 @@ static NOINLINE void trackFree(
         exitOutOfMemory( 1 );
 
       // double free {{{
-      if( rd->opt.protectFree )
+      if( i>=0 )
+      {
+        // this block was realloc()'d at the same time in another thread
+        CAPTURE_STACK_TRACE( 2,PTRS,aa[0].frames,caller,rd->maxStackFrames );
+        aa[0].ft = ft;
+#ifndef NO_THREADNAMES
+        aa[0].threadNameIdx =
+          (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
+#endif
+
+        RtlMoveMemory( &aa[1],&fa,sizeof(allocation) );
+
+        aa[2].ft = FT_COUNT;
+
+        EnterCriticalSection( &rd->csWrite );
+
+        writeMods( aa,3 );
+
+        int type = WRITE_DOUBLE_FREE;
+        DWORD written;
+        WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+        WriteFile( rd->master,aa,3*sizeof(allocation),&written,NULL );
+
+        LeaveCriticalSection( &rd->csWrite );
+
+        if( rd->opt.raiseException )
+          DebugBreak();
+      }
+      else if( rd->opt.protectFree )
       {
         splitFreed *sf = rd->freeds + splitIdx;
 
