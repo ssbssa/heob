@@ -2130,7 +2130,7 @@ static char *undecorateVCsymbol( dbgsym *ds,char *decorName )
 // thread name {{{
 
 #ifndef NO_THREADNAMES
-void printThreadName( int threadNameIdx,
+static void printThreadName( int threadNameIdx,
     textColor *tc,int threadName_q,threadNameInfo *threadName_a )
 {
   if( threadNameIdx>0 && threadNameIdx<=threadName_q )
@@ -3003,7 +3003,7 @@ static void printAttachedProcessInfo( appData *ad,textColor *tc )
 // }}}
 // common options {{{
 
-char *readOption( char *args,options *opt,appData *ad,HANDLE heap )
+static char *readOption( char *args,options *opt,appData *ad,HANDLE heap )
 {
   if( !args || args[0]!='-' ) return( NULL );
 
