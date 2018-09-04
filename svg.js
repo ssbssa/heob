@@ -18,6 +18,12 @@ var addressTextReset = '';
 var infoTextReset = '';
 var threadTextReset = '';
 var lastZoomers;
+var mapType;
+
+var addrMap = new Map();
+var addrSumArray = new Array();
+var threadMap = new Map();
+var threadArray = new Array();
 
 function heobInit()
 {
@@ -31,10 +37,7 @@ function heobInit()
 
   maxStack = -1;
   let bottom, zoomSvg;
-  let addrMap = new Map();
-  let threadMap = new Map();
   let firstSvg;
-  let mapType;
   let minStack = 0;
   let sumSamples = 0;
   let sumAllocs = 0;
@@ -46,16 +49,21 @@ function heobInit()
     let ofs = parseInt(svg.attributes['heobOfs'].value);
     let stack = parseInt(svg.attributes['heobStack'].value);
     let samples = parseInt(svg.attributes['heobSum'].value);
+    let allocs = 0;
+    let svgType = svg.attributes['heobAllocs'] == undefined;
+    if (!svgType)
+      allocs = parseInt(svg.attributes['heobAllocs'].value);
+    if (mapType == undefined)
+      mapType = svgType;
 
     if (firstSvg == undefined && stack > 0)
       firstSvg = svg;
 
     if (stack == 1)
     {
-      if (svg.attributes['heobAllocs'] == undefined)
+      if (!svgType)
         sumSamples += samples;
-      else
-        sumAllocs += parseInt(svg.attributes['heobAllocs'].value);
+      sumAllocs += allocs;
     }
 
     if (stack == 1 && zoomSvg == undefined)
@@ -79,7 +87,9 @@ function heobInit()
     let color;
     let threadColor;
     let arrayInMap;
-    let addrMapKey = getAddrMapKey(svg);
+    let addrMapKey;
+    if (stack > 1)
+      addrMapKey = getAddrMapKey(svg);
     if (addrMapKey != undefined)
     {
       arrayInMap = addrMap.get(addrMapKey);
@@ -157,28 +167,16 @@ function heobInit()
 
     if (arrayInMap != undefined && stack > 1 &&
         // only the first entry of an address in a stacktrace is used
-        ofs + 0.1 >= arrayInMap[2])
+        ofs + 0.1 >= arrayInMap[2] && mapType == svgType)
     {
-      let svgType = svg.attributes['heobAllocs'] == undefined;
-      if (mapType == undefined)
-        mapType = svgType;
-
-      if (mapType == svgType)
-      {
-        arrayInMap[0] += samples;
-        arrayInMap[1]++;
-        arrayInMap[2] = ofs + samples;
-        if (!svgType)
-          arrayInMap[4] += parseInt(svg.attributes['heobAllocs'].value);
-      }
+      arrayInMap[0] += samples;
+      arrayInMap[1]++;
+      arrayInMap[2] = ofs + samples;
+      arrayInMap[4] += allocs;
     }
 
     if (svg.attributes['heobThread'] != undefined)
     {
-      let svgType = svg.attributes['heobAllocs'] == undefined;
-      if (mapType == undefined)
-        mapType = svgType;
-
       let thread = svg.attributes['heobThread'].value;
       let mapEntry = threadMap.get(thread);
       if (mapEntry == undefined)
@@ -199,8 +197,7 @@ function heobInit()
       {
         mapEntry[0] += samples;
         mapEntry[1] = ofs + samples;
-        if (!svgType)
-          mapEntry[3] += parseInt(svg.attributes['heobAllocs'].value);
+        mapEntry[3] += allocs;
       }
     }
   }
@@ -239,7 +236,6 @@ function heobInit()
   fullWidth = svgWidth - 2 * spacer;
   let fullHeight = headerHeight + maxStack * 16 + footerHeight;
 
-  let addrSumArray = new Array();
   addrMap.forEach(
     function (value, key, map)
     {
@@ -251,8 +247,8 @@ function heobInit()
     {
       return addrMap.get(b)[0] - addrMap.get(a)[0];
     });
+  let addrCount = Math.min(addrSumArray.length, ADDR_SUM_COUNT);
 
-  let threadArray = new Array();
   threadMap.forEach(
     function (value, key, map)
     {
@@ -271,8 +267,7 @@ function heobInit()
   if (threadArray.length == 1)
     threadArray.pop();
 
-  let extraCount = Math.max(Math.min(addrSumArray.length, ADDR_SUM_COUNT),
-      threadArray.length);
+  let extraCount = Math.max(addrCount, threadArray.length);
   let svgHeight = fullHeight;
   if (extraCount > 0)
     svgHeight += 40 + extraCount * 16;
@@ -280,87 +275,47 @@ function heobInit()
   svg.setAttribute('viewBox', '0 0 ' + svgWidth + ' ' + svgHeight);
 
   let halfWidth = fullWidth;
-  if (addrSumArray.length > 0 && threadArray.length > 0)
+  if (addrCount > 0 && threadArray.length > 0)
     halfWidth = (fullWidth - spacer) / 2;
 
-  let addrCount = 0;
-  let maxAddrSamples = 0;
-  for (let i = 0; i < addrSumArray.length; i++)
+  for (let i = 0; i < addrCount; i++)
   {
-    if (addrCount >= ADDR_SUM_COUNT) break;
-
-    let key = addrSumArray[i];
-    let value = addrMap.get(key);
-
-    let sum = value[0];
-    let refSvg = value[3];
-
-    if (maxAddrSamples == 0)
-      maxAddrSamples = sum;
-
     let x = spacer;
-    let y = fullHeight + 31 + addrCount * 16;
-    let width = Math.max(sum * halfWidth / maxAddrSamples, 2);
-    let height = 16;
-    let color = refSvg.attributes['heobColor'].value;
+    let y = fullHeight + 31 + i * 16;
 
-    let newSvg = createSvg(svgNs, x, y, width, height);
+    let newSvg = createSvg(svgNs, x, y, halfWidth, 16, 'addr' + i);
 
-    let t = withNL(funcAttribute(refSvg)) + withNL(sourceAttribute(refSvg)) +
-      withNL(addrModAttribute(refSvg)) +
-      sumText(mapType ? sum : 0, mapType ? 0 : sum, value[4]);
-    addTitle(newSvg, svgNs, t);
+    addTitle(newSvg, svgNs, '');
 
     addRectBg(newSvg, svgNs, rect0);
 
-    addRect(newSvg, svgNs, color);
+    addRect(newSvg, svgNs);
 
-    addText(newSvg, svgNs, refSvg.getElementsByTagName('text')[0].textContent);
+    addText(newSvg, svgNs, '');
 
-    newSvg.setAttribute('heobKey', key);
     newSvg.setAttribute('onmouseover', 'addrInfoSet(this)');
     newSvg.setAttribute('onmouseout', 'addrInfoClear()');
     newSvg.setAttribute('onclick', 'addrZoom(evt, this)');
     newSvg.setAttribute('onmousedown', 'delAddrZoom(evt, this)');
 
     svg.appendChild(newSvg);
-
-    addrCount++;
   }
 
-  let maxThreadSamples = 0;
   for (let i = 0; i < threadArray.length; i++)
   {
-    let key = threadArray[i];
-    let value = threadMap.get(key);
-
-    let sum = value[0];
-    let refSvg = value[2];
-    let color = value[4];
-    if (color == undefined)
-      color = refSvg.attributes['heobColor'].value;
-
-    if (maxThreadSamples == 0)
-      maxThreadSamples = sum;
-
-    let width = Math.max(sum * halfWidth / maxThreadSamples, 2);
-    let height = 16;
-    let x = spacer + fullWidth - width;
+    let x = spacer + fullWidth - halfWidth;
     let y = fullHeight + 31 + i * 16;
 
-    let newSvg = createSvg(svgNs, x, y, width, height);
+    let newSvg = createSvg(svgNs, x, y, halfWidth, 16, 'thread' + i);
 
-    let t = withNL(key) +
-      sumText(mapType ? sum : 0, mapType ? 0 : sum, value[3]);
-    addTitle(newSvg, svgNs, t);
+    addTitle(newSvg, svgNs, '');
 
     addRectBg(newSvg, svgNs, rect0);
 
-    addRect(newSvg, svgNs, color);
+    addRect(newSvg, svgNs);
 
-    addText(newSvg, svgNs, key);
+    addText(newSvg, svgNs, '');
 
-    newSvg.setAttribute('heobKey', key);
     newSvg.setAttribute('onmouseover', 'threadInfoSet(this)');
     newSvg.setAttribute('onmouseout', 'addrInfoClear()');
     newSvg.setAttribute('onclick', 'threadZoom(evt, this)');
@@ -436,7 +391,7 @@ function createThreadColor()
   return createColor(0x020200, 0x10, 0x0000ff);
 }
 
-function createSvg(svgNs, x, y, width, height)
+function createSvg(svgNs, x, y, width, height, id)
 {
   let newSvg = document.createElementNS(svgNs, 'svg');
   newSvg.setAttribute('class', 'sample');
@@ -444,6 +399,7 @@ function createSvg(svgNs, x, y, width, height)
   newSvg.setAttribute('y', y);
   newSvg.setAttribute('width', width);
   newSvg.setAttribute('height', height);
+  newSvg.setAttribute('id', id);
   newSvg.style['display'] = 'block';
   return newSvg;
 }
@@ -801,6 +757,22 @@ function zoomArr(zoomers)
   for (let i = 0; i < zoomers.length; i++)
     zoomSamples += zoomers[i][2];
 
+  addrMap.forEach(
+    function (value, key, map)
+    {
+      value[0] = 0;
+      value[1] = 0;
+      value[2] = 0;
+      value[4] = 0;
+    });
+  threadMap.forEach(
+    function (value, key, map)
+    {
+      value[0] = 0;
+      value[1] = 0;
+      value[3] = 0;
+    });
+
   let svgs = document.getElementsByTagName('svg');
   let zidx = 0;
   let pos = 0;
@@ -826,7 +798,8 @@ function zoomArr(zoomers)
     let stack = parseInt(svg.attributes['heobStack'].value);
     let samples = parseInt(svg.attributes['heobSum'].value);
     let allocs = 0;
-    if (svg.attributes['heobAllocs'] != undefined)
+    let svgType = svg.attributes['heobAllocs'] == undefined;
+    if (!svgType)
       allocs = parseInt(svg.attributes['heobAllocs'].value);
 
     if (zidx < zoomers.length &&
@@ -852,10 +825,40 @@ function zoomArr(zoomers)
       else
         x2 += ofs + samples - zoomers[j][0];
     }
+    let shownSamples = x2 - x1;
+
+    if (mapType == svgType)
+    {
+      let addrMapKey = getAddrMapKey(svg);
+      if (addrMapKey != undefined)
+      {
+        let arrayInMap = addrMap.get(addrMapKey);
+        if (arrayInMap != undefined && ofs + 0.1 >= arrayInMap[2])
+        {
+          arrayInMap[0] += shownSamples;
+          arrayInMap[1]++;
+          arrayInMap[2] = ofs + samples;
+          arrayInMap[4] += allocs;
+        }
+      }
+
+      let thread;
+      if (svg.attributes['heobThread'] != undefined)
+        thread = svg.attributes['heobThread'].value;
+      let mapEntry;
+      if (thread != undefined)
+        mapEntry = threadMap.get(thread);
+      if (mapEntry != undefined && ofs + 0.1 >= mapEntry[1])
+      {
+        mapEntry[0] += shownSamples;
+        mapEntry[1] = ofs + samples;
+        mapEntry[3] += allocs;
+      }
+    }
 
     let x = spacer + x1 * fullWidth / zoomSamples;
     let y = headerHeight + (maxStack - stack - 1) * 16;
-    let width = (x2 - x1) * fullWidth / zoomSamples;
+    let width = shownSamples * fullWidth / zoomSamples;
     let height = 16;
     let opacity = stack >= zoomers[zidx][1] ? 1 : 0.5;
 
@@ -874,7 +877,7 @@ function zoomArr(zoomers)
     if (ofs + 0.1 > maxExtention && stack > 0)
     {
       if (allocs > 0.1)
-        sumBytes += x2 - x1;
+        sumBytes += shownSamples;
       maxExtention = ofs + samples;
     }
 
@@ -893,6 +896,133 @@ function zoomArr(zoomers)
         cend = cpos + zoomers[cidx][2];
       }
     }
+  }
+
+  addrSumArray.sort(
+    function (a, b)
+    {
+      let valueA = addrMap.get(a);
+      let valueB = addrMap.get(b);
+      if ((valueA[1] >= 2) == (valueB[1] >= 2))
+        return valueB[0] - valueA[0];
+      return valueA[1] >= 2 ? -1 : 1;
+    });
+  let addrCount = addrSumArray.length;
+  if (addrCount > 0 && (addrMap.get(addrSumArray[0])[0] == 0 ||
+        addrMap.get(addrSumArray[0])[1] < 2))
+    addrCount = 0;
+
+  threadArray.sort(
+    function (a, b)
+    {
+      let sumSamplesA = threadMap.get(a)[0];
+      let sumSamplesB = threadMap.get(b)[0];
+      if (sumSamplesA != sumSamplesB)
+        return sumSamplesB - sumSamplesA;
+      return a.localeCompare(b, undefined, {numeric: true});
+    });
+  let threadCount = threadArray.length;
+  if (threadCount > 1 && threadMap.get(threadArray[1])[0] == 0)
+    threadCount = 0;
+
+  let halfWidth = fullWidth;
+  if (addrCount > 0 && threadCount > 0)
+    halfWidth = (fullWidth - spacer) / 2;
+
+  let maxAddrSamples = 0;
+  for (let i = 0; i < addrSumArray.length; i++)
+  {
+    let key = addrSumArray[i];
+    let value = addrMap.get(key);
+
+    let svg = document.getElementById('addr' + i);
+    if (svg == undefined) break;
+
+    let sum = value[0];
+    if (sum == 0 || value[1] < 2)
+    {
+      svg.style['display'] = 'none';
+      continue;
+    }
+
+    if (maxAddrSamples == 0)
+      maxAddrSamples = sum;
+
+    let refSvg = value[3];
+
+    let width = Math.max(sum * halfWidth / maxAddrSamples, 2);
+    let color = refSvg.attributes['heobColor'].value;
+
+    let title = svg.getElementsByTagName('title')[0];
+    let rects = svg.getElementsByTagName('rect');
+    let rectBg = rects[0];
+    let rect = rects[1];
+    let text = svg.getElementsByTagName('text')[0];
+
+    let t = withNL(funcAttribute(refSvg)) + withNL(sourceAttribute(refSvg)) +
+      withNL(addrModAttribute(refSvg)) +
+      sumText(mapType ? sum : 0, mapType ? 0 : sum, value[4]);
+    title.textContent = t;
+
+    svg.style['display'] = 'block';
+    svg.setAttribute('heobKey', key);
+    svg.setAttribute('width', width);
+
+    rectBg.setAttribute('width', width);
+
+    rect.setAttribute('fill', color);
+    rect.setAttribute('width', width);
+
+    text.textContent = refSvg.getElementsByTagName('text')[0].textContent;
+  }
+
+  let maxThreadSamples = 0;
+  for (let i = 0; i < threadArray.length; i++)
+  {
+    let key = threadArray[i];
+    let value = threadMap.get(key);
+
+    let svg = document.getElementById('thread' + i);
+
+    let sum = value[0];
+    if (sum == 0 || i >= threadCount)
+    {
+      svg.style['display'] = 'none';
+      continue;
+    }
+
+    if (maxThreadSamples == 0)
+      maxThreadSamples = sum;
+
+    let refSvg = value[2];
+
+    let width = Math.max(sum * halfWidth / maxThreadSamples, 2);
+    let x = spacer + fullWidth - width;
+    let color = value[4];
+    if (color == undefined)
+      color = refSvg.attributes['heobColor'].value;
+
+    let title = svg.getElementsByTagName('title')[0];
+    let rects = svg.getElementsByTagName('rect');
+    let rectBg = rects[0];
+    let rect = rects[1];
+    let text = svg.getElementsByTagName('text')[0];
+
+    let t = withNL(key) +
+      sumText(mapType ? sum : 0, mapType ? 0 : sum, value[3]);
+    title.textContent = t;
+
+    svg.style['display'] = 'block';
+    svg.setAttribute('heobKey', key);
+    svg.setAttribute('width', width);
+    svg.setAttribute('x', x);
+
+    rectBg.setAttribute('width', width);
+
+    rect.setAttribute('fill', color);
+    rect.setAttribute('width', width);
+
+    text.textContent = key;
   }
 
   if (cpos + 0.1 < cfinish)
