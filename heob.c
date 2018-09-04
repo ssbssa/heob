@@ -4145,16 +4145,13 @@ static void printFullStackGroupSvg( appData *ad,stackGroup *sg,textColor *tc,
   ad->svgSum += sg->allocSumSize;
 }
 
-static void writeSvgFooter( textColor *tc,appData *ad )
+static void writeSvgFooter( textColor *tc,appData *ad,int sample_times )
 {
   if( !tc ) return;
 
   if( ad->svgSum )
-    locSvg( tc,0,0,ad->svgSum,0,0,0,
-#ifndef NO_THREADNAMES
-        NULL,0,0,
-#endif
-        NULL,0,"all",NULL );
+    printf( "\n  <svg heobSum=\"%U\" heobOfs=\"0\" heobStack=\"0\""
+        " heobFunc=\"all\" heobSamples=\"%d\"/>\n",ad->svgSum,sample_times );
 
   printf( "</svg>\n" );
 
@@ -4199,6 +4196,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
   allocation *aa = HeapAlloc( heap,0,4*sizeof(allocation) );
   exceptionInfo *eiPtr = HeapAlloc( heap,0,sizeof(exceptionInfo) );
   DWORD flashStart = 0;
+  int sample_times = 0;
   if( in ) showConsole();
   const char *title = opt->handleException>=2 ?
     "profiling sample recording: " : "leak recording: ";
@@ -4978,9 +4976,12 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
 
       case WRITE_SAMPLING:
         {
+          int sample_times_cur = 0;
           allocation *samp_a = NULL;
           int samp_q = 0;
 
+          if( !readFile(readPipe,&sample_times_cur,sizeof(int),&ov) )
+            break;
           if( !readFile(readPipe,&samp_q,sizeof(int),&ov) )
             break;
           if( samp_q )
@@ -4989,6 +4990,8 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
             if( !readFile(readPipe,samp_a,samp_q*sizeof(allocation),&ov) )
               break;
           }
+
+          sample_times += sample_times_cur;
 
           printLeaks( samp_a,samp_q,0,0,0,0,NULL,mi_a,mi_q,
 #ifndef NO_THREADNAMES
@@ -5019,7 +5022,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
 #endif
 
   writeXmlFooter( tcXml,heap,startTicks );
-  writeSvgFooter( tcSvg,ad );
+  writeSvgFooter( tcSvg,ad,sample_times );
 }
 
 // }}}

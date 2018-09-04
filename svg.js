@@ -5,7 +5,7 @@ var footerHeight = 90;
 var spacer = 10;
 
 var maxStack = 0;
-var sumSamples = 0;
+var sampleTimes = 0;
 var fullWidth = 0;
 var functionText;
 var sourceText;
@@ -36,6 +36,7 @@ function heobInit()
   let firstSvg;
   let mapType;
   let minStack = 0;
+  let sumSamples = 0;
   let sumAllocs = 0;
   for (let i = 0; i < svgs.length; i++)
   {
@@ -66,6 +67,8 @@ function heobInit()
         zoomSvg = svg;
       else
         minStack = 1;
+
+      sampleTimes = parseInt(svg.attributes['heobSamples'].value);
 
       svg.setAttribute('heobText',
           sumText(sumSamples, samples - sumSamples, sumAllocs));
@@ -126,15 +129,13 @@ function heobInit()
     svg.setAttribute('heobColor', color);
     svg.setAttribute('onmousedown', 'delZoom(evt, this)');
 
-    let t = withNL(funcAttribute(svg)) + withNL(sourceAttribute(svg)) +
-      withNL(addrModAttribute(svg)) + withNL(sumAttribute(svg)) +
-      withNL(threadAttribute(svg));
-    addTitle(svg, svgNs, t);
+    addTitle(svg, svgNs, '');
 
     addRectBg(svg, svgNs, rect0);
 
     addRect(svg, svgNs, color);
 
+    let t;
     if (svg.attributes['heobFunc'] != undefined)
       t = svg.attributes['heobFunc'].value;
     else if (svg.attributes['heobSource'] != undefined)
@@ -217,6 +218,16 @@ function heobInit()
           parseInt(svg.attributes['heobStack'].value) - 1);
     }
     maxStack--;
+  }
+  for (let i = 0; i < svgs.length; i++)
+  {
+    let svg = svgs[i];
+    if (svg.attributes['heobSum'] == undefined) continue;
+
+    let t = withNL(funcAttribute(svg)) + withNL(sourceAttribute(svg)) +
+      withNL(addrModAttribute(svg)) + withNL(sumAttribute(svg)) +
+      withNL(threadAttribute(svg));
+    svg.getElementsByTagName('title')[0].textContent = t;
   }
 
   let svg = svgs[0];
@@ -485,10 +496,7 @@ function addRectBg(par, svgNs, rect0)
 
 function addRect(par, svgNs, color)
 {
-  let newRect = document.createElementNS(svgNs, 'rect');
-  newRect.setAttribute('width', '100%');
-  newRect.setAttribute('height', '15');
-  newRect.setAttribute('fill', color);
+  let newRect = addRectPara(svgNs, '100%', '15', color);
   newRect.setAttribute('rx', '3');
   newRect.setAttribute('ry', '3');
   par.appendChild(newRect);
@@ -529,7 +537,7 @@ function sumText(samples, bytes, allocs)
   let t = '';
   if (samples > 0.1)
     t += samples + ' samples (' +
-        (100 * samples / sumSamples).toFixed(2) + '%)';
+        (100 * samples / sampleTimes).toFixed(2) + '%)';
   if (samples > 0.1 && bytes > 0.1)
     t += '  &  ';
   if (bytes > 0.1)

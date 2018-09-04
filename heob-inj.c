@@ -233,6 +233,7 @@ typedef struct localData
 
   HANDLE samplingInit;
   int samplingEnabled;
+  int sample_times;
   allocation *samp_a;
   int samp_q;
   int samp_s;
@@ -1809,6 +1810,7 @@ static void writeSamplingData( void )
   int type = WRITE_SAMPLING;
   DWORD written;
   WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,&rd->sample_times,sizeof(int),&written,NULL );
   WriteFile( rd->master,&rd->samp_q,sizeof(int),&written,NULL );
   if( rd->samp_q )
     WriteFile( rd->master,rd->samp_a,rd->samp_q*sizeof(allocation),
@@ -3879,6 +3881,7 @@ DLLEXPORT int heob_control( int cmd )
         if( sampleRecording )
         {
           EnterCriticalSection( &rd->csSampling );
+          rd->sample_times = 0;
           rd->samp_q = 0;
           LeaveCriticalSection( &rd->csSampling );
           break;
@@ -3916,6 +3919,7 @@ DLLEXPORT int heob_control( int cmd )
 
           writeSamplingData();
 
+          rd->sample_times = 0;
           rd->samp_q = 0;
 
           LeaveCriticalSection( &rd->csSampling );
@@ -4080,6 +4084,8 @@ static CODE_SEG(".text$5") DWORD WINAPI samplingThread( LPVOID arg )
 
       rd->samp_q++;
     }
+
+    rd->sample_times++;
 
     HeapUnlock( processHeap );
   }
