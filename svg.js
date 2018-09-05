@@ -691,8 +691,42 @@ function getThreadZoomers(key)
   return zoomers;
 }
 
-function zoomersAndNot(zoomers)
+function zoomersAndNot(zoomers, invert)
 {
+  if (invert && lastZoomers.length > 0)
+  {
+    let left = lastZoomers[0][0];
+    let last = lastZoomers[lastZoomers.length - 1];
+    let right = last[0] + last[2];
+    let invZoomers = new Array();
+    for (let i = 0; i < zoomers.length; i++)
+    {
+      let z = zoomers[i];
+      let ofs = z[0];
+      let samples = z[2];
+
+      if (left + 0.1 < ofs)
+      {
+        let zoomer = new Array(3);
+        zoomer[0] = left;
+        zoomer[1] = 0;
+        zoomer[2] = ofs - left;
+        invZoomers.push(zoomer);
+      }
+
+      left = ofs + samples;
+    }
+    if (left + 0.1 < right)
+    {
+      let zoomer = new Array(3);
+      zoomer[0] = left;
+      zoomer[1] = 0;
+      zoomer[2] = right - left;
+      invZoomers.push(zoomer);
+    }
+    zoomers = invZoomers;
+  }
+
   for (let i = 0; i < lastZoomers.length; i++)
   {
     let lz = lastZoomers[i];
@@ -1047,7 +1081,7 @@ function delZoom(e, svg)
   if (e.button != 1) return;
 
   let zoomers = getZoomers(svg);
-  zoomers = zoomersAndNot(zoomers);
+  zoomers = zoomersAndNot(zoomers, e.ctrlKey);
   zoomArr(zoomers);
   infoClear();
 }
@@ -1079,7 +1113,7 @@ function delAddrZoom(e, svg)
   let zoomers = zoomersRet[0];
   let foundSvg = zoomersRet[1];
 
-  zoomers = zoomersAndNot(zoomers);
+  zoomers = zoomersAndNot(zoomers, e.ctrlKey);
   zoomArr(zoomers);
   infoClear();
 }
@@ -1105,7 +1139,7 @@ function delThreadZoom(e, svg)
 
   let key = svg.attributes['heobKey'].value;
   let zoomers = getThreadZoomers(key);
-  zoomers = zoomersAndNot(zoomers);
+  zoomers = zoomersAndNot(zoomers, e.ctrlKey);
   zoomArr(zoomers);
   infoClear();
 }
