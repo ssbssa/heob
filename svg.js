@@ -565,6 +565,7 @@ function addrInfoSet(svg)
   {
     let svgEntry = svgs[i];
     if (svgEntry.attributes['heobSum'] == undefined) continue;
+    if (svgEntry.style['display'] == 'none') continue;
 
     let opacity = parseFloat(svgEntry.attributes['heobOpacity'].value);
     let entryKey = getAddrMapKey(svgEntry);
@@ -583,6 +584,7 @@ function addrInfoClear()
   {
     let svgEntry = svgs[i];
     if (svgEntry.attributes['heobSum'] == undefined) continue;
+    if (svgEntry.style['display'] == 'none') continue;
 
     let opacity = parseFloat(svgEntry.attributes['heobOpacity'].value);
     svgEntry.style['opacity'] = opacity;
@@ -597,6 +599,7 @@ function threadInfoSet(svg)
   {
     let svgEntry = svgs[i];
     if (svgEntry.attributes['heobSum'] == undefined) continue;
+    if (svgEntry.style['display'] == 'none') continue;
 
     let opacity = parseFloat(svgEntry.attributes['heobOpacity'].value);
     if (svgEntry.attributes['heobThread'] == undefined ||
