@@ -5207,6 +5207,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   int fakeAttached = 0;
   // permanent options {{{
   opt.groupLeaks = -1;
+  opt.handleException = -1;
   while( args )
   {
     while( args[0]==' ' ) args++;
@@ -5381,6 +5382,9 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   // enable extended stack grouping for svg by default
   if( !ad->xmlName && ad->svgName ) defopt.groupLeaks = 2;
   if( opt.groupLeaks<0 ) opt.groupLeaks = defopt.groupLeaks;
+  // disable heap monitoring for sampling profiler by default
+  if( opt.samplingInterval ) defopt.handleException = 2;
+  if( opt.handleException<0 ) opt.handleException = defopt.handleException;
   // }}}
   if( opt.align<MEMORY_ALLOCATION_ALIGNMENT )
   {
