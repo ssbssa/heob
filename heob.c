@@ -5206,6 +5206,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   int keepSuspended = 0;
   int fakeAttached = 0;
   // permanent options {{{
+  opt.groupLeaks = -1;
   while( args )
   {
     while( args[0]==' ' ) args++;
@@ -5377,6 +5378,9 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     }
     while( args && args[0] && args[0]!=' ' ) args++;
   }
+  // enable extended stack grouping for svg by default
+  if( !ad->xmlName && ad->svgName ) defopt.groupLeaks = 2;
+  if( opt.groupLeaks<0 ) opt.groupLeaks = defopt.groupLeaks;
   // }}}
   if( opt.align<MEMORY_ALLOCATION_ALIGNMENT )
   {
