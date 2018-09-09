@@ -2252,6 +2252,22 @@ static int cmp_merge_allocation( const void *av,const void *bv )
   return( a->id>b->id ? 1 : -1 );
 }
 
+static int cmp_time_allocation( const void *av,const void *bv )
+{
+  const allocation *a = av;
+  const allocation *b = bv;
+
+  if( a->lt>b->lt ) return( 2 );
+  if( a->lt<b->lt ) return( -2 );
+
+#ifndef NO_THREADNAMES
+  if( a->threadNameIdx>b->threadNameIdx ) return( -2 );
+  if( a->threadNameIdx<b->threadNameIdx ) return( 2 );
+#endif
+
+  return( a->id>b->id ? 1 : -1 );
+}
+
 static int cmp_type_allocation( const void *av,const void *bv )
 {
   const allocation *a = av;
@@ -2769,8 +2785,12 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
   // merge identical leaks {{{
   if( opt->groupLeaks && leakDetails )
   {
-    sort_allocations( alloc_a,alloc_idxs,alloc_q,sizeof(allocation),
-        heap,cmp_merge_allocation );
+    if( opt->groupLeaks!=3 )
+      sort_allocations( alloc_a,alloc_idxs,alloc_q,sizeof(allocation),
+          heap,cmp_merge_allocation );
+    else
+      sort_allocations( alloc_a,alloc_idxs,alloc_q,sizeof(allocation),
+          heap,cmp_time_allocation );
     combined_q = 0;
     for( i=0; i<alloc_q; )
     {
@@ -2821,7 +2841,8 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
         frames[c]--;
       a->frameCount = c;
     }
-    if( opt->groupLeaks>1 )
+    if( opt->groupLeaks==3 );
+    else if( opt->groupLeaks>1 )
       sort_allocations( alloc_a,alloc_idxs,combined_q,sizeof(allocation),
           heap,cmp_frame_allocation );
     else
@@ -2858,7 +2879,8 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
               startIdx,heap,sg,
               0,1 );
         }
-        sortStackGroup( sg,heap );
+        if( opt->groupLeaks!=3 )
+          sortStackGroup( sg,heap );
       }
     }
     // }}}
