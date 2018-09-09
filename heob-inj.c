@@ -4047,17 +4047,21 @@ static CODE_SEG(".text$5") DWORD WINAPI samplingThread( LPVOID arg )
     if( !rd->samplingEnabled ) break;
     if( rd->opt.handleException>=2 && !rd->recording ) continue;
 
-    HeapLock( processHeap );
-
     threadSamplingType *thread_samp_a = rd->thread_samp_a;
     int thread_samp_q = rd->thread_samp_q;
+
+    int samp_sum_q = rd->samp_q + thread_samp_q;
+    int samp_add = 0;
+    while( samp_sum_q > rd->samp_s + samp_add ) samp_add += 1024;
+    if( samp_add>0 )
+      rd->samp_a = add_realloc(
+          rd->samp_a,&rd->samp_s,samp_add,sizeof(allocation),&rd->csSampling );
+
+    HeapLock( processHeap );
+
     int ts;
     for( ts=0; ts<thread_samp_q; ts++ )
     {
-      if( rd->samp_q>=rd->samp_s )
-        rd->samp_a = add_realloc(
-            rd->samp_a,&rd->samp_s,1024,sizeof(allocation),&rd->csSampling );
-
       allocation *a = &rd->samp_a[rd->samp_q];
       RtlZeroMemory( a,sizeof(allocation) );
       a->size = 1;
