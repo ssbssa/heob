@@ -4080,6 +4080,7 @@ static void printStackGroupSvg( stackGroup *sg,textColor *tc,
         sg->allocSumSize,ofs,stack,sg->allocSum,sampling );
   }
 
+  size_t minLeakSize = ds->opt->minLeakSize;
   if( sg->stackStart+sg->stackCount==a->frameCount )
   {
     for( i=0; i<allocCount; i++ )
@@ -4087,6 +4088,7 @@ static void printStackGroupSvg( stackGroup *sg,textColor *tc,
       int idx = alloc_idxs[allocStart+i];
       a = alloc_a + idx;
       size_t combSize = a->size*a->count;
+      if( combSize<minLeakSize ) continue;
       if( allocCount>1 )
       {
 #ifndef NO_THREADNAMES
@@ -4123,12 +4125,14 @@ static void printStackGroupSvg( stackGroup *sg,textColor *tc,
   {
     int idx = childSorted_a ? childSorted_a[i] : i;
     stackGroup *sgc = child_a + idx;
+    size_t allocSumSize = sgc->allocSumSize;
+    if( allocSumSize<minLeakSize ) continue;
     printStackGroupSvg( sgc,tc,alloc_a,alloc_idxs,
 #ifndef NO_THREADNAMES
         threadName_a,threadName_q,
 #endif
         mi_a,mi_q,ds,ofs,stack,sampling );
-    ofs += sgc->allocSumSize;
+    ofs += allocSumSize;
   }
 }
 
