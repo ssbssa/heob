@@ -727,7 +727,7 @@ static void setTextColorTerminal( textColor *tc )
   TextColorTerminal( tc,ATT_NORMAL );
 }
 
-static void checkOutputVariant( textColor *tc,HANDLE out )
+static void checkOutputVariant( textColor *tc,HANDLE out,const char *exeName )
 {
   // default
   tc->fWriteText = &WriteText;
@@ -826,7 +826,9 @@ static void checkOutputVariant( textColor *tc,HANDLE out )
           ".warn { color:red; }\n"
           ".base { color:black; background-color:grey; }\n"
           "</style>\n"
-          "<title>heob " HEOB_VER "</title>\n"
+          "<title>";
+        const char *styleInit1 =
+          "heob " HEOB_VER "</title>\n"
           "</head><body>\n"
           "<h3>";
         const char *styleInit2 =
@@ -834,6 +836,12 @@ static void checkOutputVariant( textColor *tc,HANDLE out )
           "<pre>\n";
         DWORD written;
         WriteFile( tc->out,styleInit,lstrlen(styleInit),&written,NULL );
+        if( exeName )
+        {
+          WriteFile( tc->out,exeName,lstrlen(exeName),&written,NULL );
+          WriteFile( tc->out," - ",3,&written,NULL );
+        }
+        WriteFile( tc->out,styleInit1,lstrlen(styleInit1),&written,NULL );
         const wchar_t *cmdLineW = GetCommandLineW();
         WriteTextHtmlW( tc,cmdLineW,lstrlenW(cmdLineW) );
         WriteFile( tc->out,styleInit2,lstrlen(styleInit2),&written,NULL );
@@ -3904,7 +3912,7 @@ static textColor *writeSvgHeader( appData *ad )
   char *lastPoint = strrchr( delim,'.' );
   if( lastPoint ) lastPoint[0] = 0;
 
-  printf( "  <title>heob " HEOB_VER "</title>\n" );
+  printf( "  <title>%s - heob " HEOB_VER "</title>\n",delim );
   printf( "  <text id=\"cmd\" heobCmd=\"%S\">%s</text>\n",
       ad->cmdLineW,delim );
 
@@ -5420,7 +5428,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   HANDLE out = GetStdHandle( STD_OUTPUT_HANDLE );
   ad->tcOut = HeapAlloc( heap,0,sizeof(textColor) );
   textColor *tc = ad->tcOut;
-  checkOutputVariant( tc,out );
+  checkOutputVariant( tc,out,NULL );
 
   // bad argument {{{
   if( badArg )
@@ -5598,8 +5606,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
 
   // executable name {{{
   char *exePath = ad->exePath;
-  if( ad->specificOptions || opt.attached ||
-      (ad->outName && strstr(ad->outName,"%n")) )
+  if( ad->specificOptions || opt.attached || ad->outName )
   {
     func_NtQueryInformationProcess *fNtQueryInformationProcess =
       ntdll ? (func_NtQueryInformationProcess*)GetProcAddress(
@@ -5690,7 +5697,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     {
       out = ad->outName[0]=='0' ? NULL : GetStdHandle(
           ad->outName[0]=='1' ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE );
-      checkOutputVariant( tc,out );
+      checkOutputVariant( tc,out,NULL );
     }
     else
     {
@@ -5713,7 +5720,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     {
       ad->tcOutOrig = ad->tcOut;
       tc = ad->tcOut = HeapAlloc( heap,0,sizeof(textColor) );
-      checkOutputVariant( tc,out );
+      checkOutputVariant( tc,out,ad->exePath );
     }
   }
   else if( ad->xmlName || ad->svgName )
@@ -5724,7 +5731,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   if( !tc->out && !ad->tcOutOrig && opt.attached )
   {
     ad->tcOutOrig = HeapAlloc( heap,0,sizeof(textColor) );
-    checkOutputVariant( ad->tcOutOrig,GetStdHandle(STD_OUTPUT_HANDLE) );
+    checkOutputVariant( ad->tcOutOrig,GetStdHandle(STD_OUTPUT_HANDLE),NULL );
   }
   if( !out )
     opt.sourceCode = opt.leakContents = 0;
