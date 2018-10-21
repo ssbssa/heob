@@ -85,7 +85,7 @@ typedef struct localData
   func_GetProcAddress *fGetProcAddress;
   func_ExitProcess *fExitProcess;
   func_TerminateProcess *fTerminateProcess;
-  func_FreeLibraryAndExitThread *fFreeLibraryAET;
+  func_FreeLibraryAndExitThread *fFreeLibraryAndExitThread;
   func_CreateProcessA *fCreateProcessA;
   func_CreateProcessW *fCreateProcessW;
 
@@ -2373,7 +2373,7 @@ static BOOL WINAPI new_FreeLibrary( HMODULE mod )
   return( TRUE );
 }
 
-static VOID WINAPI new_FreeLibraryAET( HMODULE mod,DWORD exitCode )
+static VOID WINAPI new_FreeLibraryAndExitThread( HMODULE mod,DWORD exitCode )
 {
   new_FreeLibrary( mod );
 
@@ -3068,12 +3068,6 @@ static void replaceModFuncs( void )
 {
   GET_REMOTEDATA( rd );
 
-  const char *fname_malloc = "malloc";
-  const char *fname_calloc = "calloc";
-  const char *fname_free = "free";
-  const char *fname_realloc = "realloc";
-  const char *fname_strdup = "_strdup";
-  const char *fname_wcsdup = "_wcsdup";
 #ifndef _WIN64
   const char *fname_op_new = "??2@YAPAXI@Z";
   const char *fname_op_delete = "??3@YAXPAX@Z";
@@ -3085,81 +3079,62 @@ static void replaceModFuncs( void )
   const char *fname_op_new_a = "??_U@YAPEAX_K@Z";
   const char *fname_op_delete_a = "??_V@YAXPEAX@Z";
 #endif
-  const char *fname_getcwd = "_getcwd";
-  const char *fname_wgetcwd = "_wgetcwd";
-  const char *fname_getdcwd = "_getdcwd";
-  const char *fname_wgetdcwd = "_wgetdcwd";
-  const char *fname_fullpath = "_fullpath";
-  const char *fname_wfullpath = "_wfullpath";
-  const char *fname_tempnam = "_tempnam";
-  const char *fname_wtempnam = "_wtempnam";
-  const char *fname_free_dbg = "_free_dbg";
-  const char *fname_recalloc = "_recalloc";
-  const char *fname_exit = "exit";
-  const char *fname_msize = "_msize";
   void *fexit = NULL;
   void *fmsize = NULL;
+#define REP_FUNC_N(func,name) \
+  { name, &rd->f##func, &new_##func }
+#define REP_FUNC(func) \
+  REP_FUNC_N(func, #func)
+#define REP_FUNC_(func) \
+  REP_FUNC_N(func, "_" #func)
   replaceData rep[] = {
-    { fname_malloc         ,&rd->fmalloc         ,&new_malloc          },
-    { fname_calloc         ,&rd->fcalloc         ,&new_calloc          },
-    { fname_free           ,&rd->ffree           ,&new_free            },
-    { fname_realloc        ,&rd->frealloc        ,&new_realloc         },
-    { fname_strdup         ,&rd->fstrdup         ,&new_strdup          },
-    { fname_wcsdup         ,&rd->fwcsdup         ,&new_wcsdup          },
-    { fname_op_new         ,&rd->fop_new         ,&new_op_new          },
-    { fname_op_delete      ,&rd->fop_delete      ,&new_op_delete       },
-    { fname_op_new_a       ,&rd->fop_new_a       ,&new_op_new_a        },
-    { fname_op_delete_a    ,&rd->fop_delete_a    ,&new_op_delete_a     },
-    { fname_getcwd         ,&rd->fgetcwd         ,&new_getcwd          },
-    { fname_wgetcwd        ,&rd->fwgetcwd        ,&new_wgetcwd         },
-    { fname_getdcwd        ,&rd->fgetdcwd        ,&new_getdcwd         },
-    { fname_wgetdcwd       ,&rd->fwgetdcwd       ,&new_wgetdcwd        },
-    { fname_fullpath       ,&rd->ffullpath       ,&new_fullpath        },
-    { fname_wfullpath      ,&rd->fwfullpath      ,&new_wfullpath       },
-    { fname_tempnam        ,&rd->ftempnam        ,&new_tempnam         },
-    { fname_wtempnam       ,&rd->fwtempnam       ,&new_wtempnam        },
-    { fname_free_dbg       ,&rd->ffree_dbg       ,&new_free_dbg        },
-    { fname_recalloc       ,&rd->frecalloc       ,&new_recalloc        },
-    { fname_exit           ,&fexit               ,NULL                 },
+    REP_FUNC(malloc),
+    REP_FUNC(calloc),
+    REP_FUNC(free),
+    REP_FUNC(realloc),
+    REP_FUNC_(strdup),
+    REP_FUNC_(wcsdup),
+    REP_FUNC_N(op_new,      fname_op_new),
+    REP_FUNC_N(op_new_a,    fname_op_new_a),
+    REP_FUNC_N(op_delete,   fname_op_delete),
+    REP_FUNC_N(op_delete_a, fname_op_delete_a),
+    REP_FUNC_(getcwd),
+    REP_FUNC_(wgetcwd),
+    REP_FUNC_(getdcwd),
+    REP_FUNC_(wgetdcwd),
+    REP_FUNC_(fullpath),
+    REP_FUNC_(wfullpath),
+    REP_FUNC_(tempnam),
+    REP_FUNC_(wtempnam),
+    REP_FUNC_(free_dbg),
+    REP_FUNC_(recalloc),
+    { "exit"               ,&fexit               ,NULL                 },
     // needs to be last, only used with page protection
-    { fname_msize          ,&fmsize              ,&protect_msize       },
+    { "_msize"             ,&fmsize              ,&protect_msize       },
   };
   unsigned int repcount = sizeof(rep)/sizeof(replaceData);
   if( !rd->opt.protect ) repcount--;
 
-  const char *fname_ExitProcess = "ExitProcess";
-  const char *fname_TerminateProcess = "TerminateProcess";
-#ifndef NO_THREADNAMES
-  const char *fname_RaiseException = "RaiseException";
-#endif
-  const char *fname_CreateProcessA = "CreateProcessA";
-  const char *fname_CreateProcessW = "CreateProcessW";
   replaceData rep2[] = {
-    { fname_ExitProcess      ,&rd->fExitProcess      ,&new_ExitProcess      },
-    { fname_TerminateProcess ,&rd->fTerminateProcess ,&new_TerminateProcess },
+    REP_FUNC(ExitProcess),
+    REP_FUNC(TerminateProcess),
 #ifndef NO_THREADNAMES
-    { fname_RaiseException   ,&rd->fRaiseException   ,&new_RaiseException   },
+    REP_FUNC(RaiseException),
 #endif
     // only used with children hook
-    { fname_CreateProcessA   ,&rd->fCreateProcessA   ,&new_CreateProcessA   },
-    { fname_CreateProcessW   ,&rd->fCreateProcessW   ,&new_CreateProcessW   },
+    REP_FUNC(CreateProcessA),
+    REP_FUNC(CreateProcessW),
   };
   unsigned int rep2count = sizeof(rep2)/sizeof(replaceData);
   if( rd->opt.children<1 ) rep2count -= 2;
 
-  const char *fname_LoadLibraryA = "LoadLibraryA";
-  const char *fname_LoadLibraryW = "LoadLibraryW";
-  const char *fname_LoadLibraryExA = "LoadLibraryExA";
-  const char *fname_LoadLibraryExW = "LoadLibraryExW";
-  const char *fname_FreeLibrary = "FreeLibrary";
-  const char *fname_FreeLibraryAET = "FreeLibraryAndExitThread";
   replaceData repLL[] = {
-    { fname_LoadLibraryA   ,&rd->fLoadLibraryA   ,&new_LoadLibraryA    },
-    { fname_LoadLibraryW   ,&rd->fLoadLibraryW   ,&new_LoadLibraryW    },
-    { fname_LoadLibraryExA ,&rd->fLoadLibraryExA ,&new_LoadLibraryExA  },
-    { fname_LoadLibraryExW ,&rd->fLoadLibraryExW ,&new_LoadLibraryExW  },
-    { fname_FreeLibrary    ,&rd->fFreeLibrary    ,&new_FreeLibrary     },
-    { fname_FreeLibraryAET ,&rd->fFreeLibraryAET ,&new_FreeLibraryAET  },
+    REP_FUNC(LoadLibraryA),
+    REP_FUNC(LoadLibraryW),
+    REP_FUNC(LoadLibraryExA),
+    REP_FUNC(LoadLibraryExW),
+    REP_FUNC(FreeLibrary),
+    REP_FUNC(FreeLibraryAndExitThread),
   };
 
   HMODULE msvcrt = rd->msvcrt;
@@ -3212,17 +3187,17 @@ static void replaceModFuncs( void )
 
       if( dll_msvcrt && rd->opt.protect )
       {
-        rd->ofree = rd->fGetProcAddress( dll_msvcrt,fname_free );
+        rd->ofree = rd->fGetProcAddress( dll_msvcrt,"free" );
         rd->oop_delete = rd->fGetProcAddress( dll_msvcrt,fname_op_delete );
         rd->oop_delete_a = rd->fGetProcAddress( dll_msvcrt,fname_op_delete_a );
-        rd->ogetcwd = rd->fGetProcAddress( dll_msvcrt,fname_getcwd );
-        rd->owgetcwd = rd->fGetProcAddress( dll_msvcrt,fname_wgetcwd );
-        rd->ogetdcwd = rd->fGetProcAddress( dll_msvcrt,fname_getdcwd );
-        rd->owgetdcwd = rd->fGetProcAddress( dll_msvcrt,fname_wgetdcwd );
-        rd->ofullpath = rd->fGetProcAddress( dll_msvcrt,fname_fullpath );
-        rd->owfullpath = rd->fGetProcAddress( dll_msvcrt,fname_wfullpath );
-        rd->otempnam = rd->fGetProcAddress( dll_msvcrt,fname_tempnam );
-        rd->owtempnam = rd->fGetProcAddress( dll_msvcrt,fname_wtempnam );
+        rd->ogetcwd = rd->fGetProcAddress( dll_msvcrt,"_getcwd" );
+        rd->owgetcwd = rd->fGetProcAddress( dll_msvcrt,"_wgetcwd" );
+        rd->ogetdcwd = rd->fGetProcAddress( dll_msvcrt,"_getdcwd" );
+        rd->owgetdcwd = rd->fGetProcAddress( dll_msvcrt,"_wgetdcwd" );
+        rd->ofullpath = rd->fGetProcAddress( dll_msvcrt,"_fullpath" );
+        rd->owfullpath = rd->fGetProcAddress( dll_msvcrt,"_wfullpath" );
+        rd->otempnam = rd->fGetProcAddress( dll_msvcrt,"_tempnam" );
+        rd->owtempnam = rd->fGetProcAddress( dll_msvcrt,"_wtempnam" );
 
         HANDLE (*fget_heap_handle)( void ) =
           rd->fGetProcAddress( dll_msvcrt,"_get_heap_handle" );
