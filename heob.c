@@ -4513,6 +4513,16 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
 
           if( opt->exceptionDetails && tc->out )
           {
+            // modules {{{
+            if( opt->exceptionDetails>2 )
+            {
+              printf( "$S  modules:\n" );
+              int m;
+              for( m=0; m<mi_q; m++ )
+                printf( "    %X   %s\n",mi_a[m].base,mi_a[m].path );
+            }
+            // }}}
+
             // assembly instruction {{{
 #ifndef NO_DBGENG
             if( ad->exceptionWait &&
