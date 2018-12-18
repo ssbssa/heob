@@ -216,7 +216,7 @@ typedef struct _LDR_DATA_TABLE_ENTRY
   LIST_ENTRY InInitializationOrderModuleList;
   PVOID DllBase;
   PVOID EntryPoint;
-  PVOID Reserved3;
+  ULONG SizeOfImage;
   UNICODE_STRING FullDllName;
   UNICODE_STRING BaseDllName;
   ULONG Flags;

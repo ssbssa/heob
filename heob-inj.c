@@ -357,64 +357,67 @@ static void *add_realloc( void *ptr,int *count_p,int add,size_t blockSize,
 // }}}
 // send module information {{{
 
-static void writeModsFind( allocation *alloc_a,int alloc_q,
-    modInfo **p_mi_a,int *p_mi_q )
+static void writeModsFind( modInfo **p_mi_a,int *p_mi_q )
 {
   GET_REMOTEDATA( rd );
 
-  int mi_q = *p_mi_q;
-  modInfo *mi_a = *p_mi_a;
+  HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
+  typedef LONG NTAPI func_LdrLockLoaderLock( ULONG,PULONG,PULONG_PTR );
+  typedef LONG NTAPI func_LdrUnlockLoaderLock( ULONG,ULONG_PTR );
+  func_LdrLockLoaderLock *fLdrLockLoaderLock =
+    rd->fGetProcAddress( ntdll,"LdrLockLoaderLock" );
+  func_LdrUnlockLoaderLock *fLdrUnlockLoaderLock =
+    rd->fGetProcAddress( ntdll,"LdrUnlockLoaderLock" );
 
-  int i,j,k;
-  for( i=0; i<alloc_q; i++ )
+  ULONG_PTR ldrLockCookie;
+  fLdrLockLoaderLock( 0,NULL,&ldrLockCookie );
+
+  PEB *peb = GET_PEB();
+  PEB_LDR_DATA *ldrData = peb->Ldr;
+  LIST_ENTRY *head = &ldrData->InMemoryOrderModuleList;
+  LIST_ENTRY *entry = head;
+  int mi_q = 0;
+  do
   {
-    allocation *a = alloc_a + i;
-    for( j=0; j<PTRS; j++ )
-    {
-      size_t ptr = (size_t)a->frames[j];
-      if( !ptr ) break;
-
-      for( k=0; k<mi_q; k++ )
-      {
-        if( ptr>=mi_a[k].base && ptr<mi_a[k].base+mi_a[k].size )
-          break;
-      }
-      if( k<mi_q ) continue;
-
-      MEMORY_BASIC_INFORMATION mbi;
-      if( !VirtualQuery((void*)ptr,&mbi,
-            sizeof(MEMORY_BASIC_INFORMATION)) ||
-          !(mbi.Protect&(PAGE_EXECUTE_READ|PAGE_EXECUTE_READWRITE)) )
-        continue;
-      size_t base = (size_t)mbi.AllocationBase;
-      size_t size = (size_t)mbi.BaseAddress + mbi.RegionSize - base;
-
-      for( k=0; k<mi_q && mi_a[k].base!=base; k++ );
-      if( k<mi_q )
-      {
-        mi_a[k].size = size;
-        continue;
-      }
-
-      mi_a = add_realloc(
-          mi_a,&mi_q,1,sizeof(modInfo),&rd->csWrite );
-
-      if( !GetModuleFileName((HMODULE)base,mi_a[mi_q-1].path,MAX_PATH) )
-      {
-        mi_q--;
-        continue;
-      }
-
-      PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)base;
-      PIMAGE_NT_HEADERS inh = (PIMAGE_NT_HEADERS)REL_PTR( idh,idh->e_lfanew );
-      PIMAGE_OPTIONAL_HEADER ioh = (PIMAGE_OPTIONAL_HEADER)REL_PTR(
-          inh,sizeof(DWORD)+sizeof(IMAGE_FILE_HEADER) );
-      if( ioh->SizeOfImage>size ) size = ioh->SizeOfImage;
-
-      mi_a[mi_q-1].base = base;
-      mi_a[mi_q-1].size = size;
-    }
+    LDR_DATA_TABLE_ENTRY *ldrEntry = CONTAINING_RECORD(
+        entry,LDR_DATA_TABLE_ENTRY,InMemoryOrderModuleList );
+    if( ldrEntry->DllBase )
+      mi_q++;
+    entry = entry->Flink;
   }
+  while( entry!=head );
+
+  modInfo *mi_a = HeapAlloc( rd->heap,0,mi_q*sizeof(modInfo) );
+  if( !mi_a )
+  {
+    fLdrUnlockLoaderLock( 0,ldrLockCookie );
+    return;
+  }
+
+  mi_q = 0;
+  do
+  {
+    LDR_DATA_TABLE_ENTRY *ldrEntry = CONTAINING_RECORD(
+        entry,LDR_DATA_TABLE_ENTRY,InMemoryOrderModuleList );
+    if( ldrEntry->DllBase )
+    {
+      modInfo *mi = mi_a + mi_q;
+      mi->base = (size_t)ldrEntry->DllBase;
+      mi->size = ldrEntry->SizeOfImage;
+      int count = WideCharToMultiByte( CP_ACP,0,
+          ldrEntry->FullDllName.Buffer,ldrEntry->FullDllName.Length/2,
+          mi->path,MAX_PATH,NULL,NULL );
+      if( count>0 && count<MAX_PATH )
+      {
+        mi->path[count] = 0;
+        mi_q++;
+      }
+    }
+    entry = entry->Flink;
+  }
+  while( entry!=head );
+
+  fLdrUnlockLoaderLock( 0,ldrLockCookie );
 
   *p_mi_q = mi_q;
   *p_mi_a = mi_a;
@@ -430,6 +433,8 @@ static void writeModsSend( modInfo *mi_a,int mi_q )
   WriteFile( rd->master,&mi_q,sizeof(int),&written,NULL );
   if( mi_q )
     WriteFile( rd->master,mi_a,mi_q*sizeof(modInfo),&written,NULL );
+  if( mi_a )
+    HeapFree( rd->heap,0,mi_a );
 
 #ifndef NO_THREADNAMES
   if( rd->threadName_q>rd->threadName_w )
@@ -445,25 +450,17 @@ static void writeModsSend( modInfo *mi_a,int mi_q )
 #endif
 }
 
-static void writeMods( allocation *alloc_a,int alloc_q )
+static void writeAllocs( allocation *alloc_a,int alloc_q,int type )
 {
   GET_REMOTEDATA( rd );
 
   int mi_q = 0;
   modInfo *mi_a = NULL;
-  writeModsFind( alloc_a,alloc_q,&mi_a,&mi_q );
-  writeModsSend( mi_a,mi_q );
-  if( mi_a )
-    HeapFree( rd->heap,0,mi_a );
-}
-
-static void writeAllocs( allocation *alloc_a,int alloc_q,int type )
-{
-  GET_REMOTEDATA( rd );
+  writeModsFind( &mi_a,&mi_q );
 
   EnterCriticalSection( &rd->csWrite );
 
-  writeMods( alloc_a,alloc_q );
+  writeModsSend( mi_a,mi_q );
 
   DWORD written;
   WriteFile( rd->master,&type,sizeof(int),&written,NULL );
@@ -1086,9 +1083,13 @@ static NOINLINE void trackAllocFailure(
       LeaveCriticalSection( &rd->csAllocId );
     }
 
+    int mi_q = 0;
+    modInfo *mi_a = NULL;
+    writeModsFind( &mi_a,&mi_q );
+
     EnterCriticalSection( &rd->csWrite );
 
-    writeMods( &a,1 );
+    writeModsSend( mi_a,mi_q );
 
     DWORD written;
     int type = WRITE_ALLOC_FAIL;
@@ -1369,30 +1370,6 @@ static void *new_recalloc( void *b,size_t n,size_t s )
 
 // }}}
 // transfer leak data {{{
-
-static void writeLeakMods( allocation *exitTrace,int sampling )
-{
-  GET_REMOTEDATA( rd );
-
-  int i;
-  int mi_q = 0;
-  modInfo *mi_a = NULL;
-  if( rd->splits )
-  {
-    for( i=0; i<=SPLIT_MASK; i++ )
-    {
-      splitAllocation *sa = rd->splits + i;
-      writeModsFind( sa->alloc_a,sa->alloc_q,&mi_a,&mi_q );
-    }
-  }
-  if( sampling && rd->samp_q )
-    writeModsFind( rd->samp_a,rd->samp_q,&mi_a,&mi_q );
-  if( exitTrace )
-    writeModsFind( exitTrace,1,&mi_a,&mi_q );
-  writeModsSend( mi_a,mi_q );
-  if( mi_a )
-    HeapFree( rd->heap,0,mi_a );
-}
 
 static void writeLeakData( void )
 {
@@ -1851,6 +1828,10 @@ static VOID WINAPI new_ExitProcess( UINT c )
   }
   // }}}
 
+  int mi_q = 0;
+  modInfo *mi_a = NULL;
+  writeModsFind( &mi_a,&mi_q );
+
   int i;
   EnterCriticalSection( &rd->csWrite );
   if( rd->splits )
@@ -1862,7 +1843,7 @@ static VOID WINAPI new_ExitProcess( UINT c )
   if( rd->opt.leakDetails>1 )
     findLeakTypes();
 
-  writeLeakMods( exitTracePtr,1 );
+  writeModsSend( mi_a,mi_q );
 
   writeSamplingData();
 
@@ -3737,9 +3718,13 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   RtlMoveMemory( &ei.er,ep->ExceptionRecord,sizeof(EXCEPTION_RECORD) );
   RtlMoveMemory( &ei.c,ep->ContextRecord,sizeof(CONTEXT) );
 
+  int mi_q = 0;
+  modInfo *mi_a = NULL;
+  writeModsFind( &mi_a,&mi_q );
+
   EnterCriticalSection( &rd->csWrite );
 
-  writeMods( ei.aa,ei.aq );
+  writeModsSend( mi_a,mi_q );
 
   int type = WRITE_EXCEPTION;
   DWORD written;
@@ -3886,11 +3871,16 @@ DLLEXPORT int heob_control( int cmd )
       {
         if( sampleRecording )
         {
+          int mi_q = 0;
+          modInfo *mi_a = NULL;
+          if( rd->samp_q )
+            writeModsFind( &mi_a,&mi_q );
+
           EnterCriticalSection( &rd->csWrite );
           EnterCriticalSection( &rd->csSampling );
 
           if( rd->samp_q )
-            writeMods( rd->samp_a,rd->samp_q );
+            writeModsSend( mi_a,mi_q );
 
           writeSamplingData();
 
@@ -3902,12 +3892,16 @@ DLLEXPORT int heob_control( int cmd )
           break;
         }
 
+        int mi_q = 0;
+        modInfo *mi_a = NULL;
+        writeModsFind( &mi_a,&mi_q );
+
         int i;
         EnterCriticalSection( &rd->csWrite );
         for( i=0; i<=SPLIT_MASK; i++ )
           EnterCriticalSection( &rd->splits[i].cs );
 
-        writeLeakMods( NULL,0 );
+        writeModsSend( mi_a,mi_q );
         writeLeakData();
 
         LeaveCriticalSection( &rd->csWrite );
