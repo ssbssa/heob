@@ -386,7 +386,9 @@ typedef struct
   int children;
   int leakErrorExitCode;
   int exceptionDetails;
+#ifndef NO_DBGHELP
   int samplingInterval;
+#endif
 }
 options;
 
@@ -424,6 +426,10 @@ typedef struct remoteData
   HANDLE startMain;
 #ifndef NO_DBGENG
   HANDLE exceptionWait;
+#endif
+#ifndef NO_DBGHELP
+  HANDLE heobProcess;
+  HANDLE samplingStop;
 #endif
 
   wchar_t exePath[MAX_PATH];
@@ -477,6 +483,10 @@ enum
   WRITE_EXIT,
   WRITE_RECORDING,
   WRITE_SAMPLING,
+#ifndef NO_DBGHELP
+  WRITE_ADD_SAMPLING_THREAD,
+  WRITE_REMOVE_SAMPLING_THREAD,
+#endif
 };
 
 typedef struct
@@ -504,6 +514,18 @@ typedef struct
   char name[64];
 }
 threadNameInfo;
+#endif
+
+#ifndef NO_DBGHELP
+typedef struct
+{
+  HANDLE thread;
+#ifndef NO_THREADNAMES
+  void **threadNameIdxSlot;
+#endif
+  DWORD threadId;
+}
+threadSamplingType;
 #endif
 
 // }}}

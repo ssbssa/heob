@@ -941,9 +941,13 @@ enum
 // }}}
 // main data {{{
 
+struct dbgsym;
+
 typedef struct appData
 {
   HANDLE heap;
+  options *opt;
+  struct dbgsym *ds;
   HANDLE errorPipe;
   int writeProcessPid;
   HANDLE attachEvent;
@@ -977,6 +981,21 @@ typedef struct appData
   unsigned *heobExitData;
   int *recordingRemote;
   size_t svgSum;
+
+#ifndef NO_DBGHELP
+  CRITICAL_SECTION csSampling;
+  HANDLE samplingInit;
+  HANDLE samplingStop;
+  int recordingSamples;
+  int sample_times;
+  allocation *samp_a;
+  int samp_q;
+  int samp_s;
+  size_t samp_id;
+  threadSamplingType *thread_samp_a;
+  int thread_samp_q;
+  int thread_samp_s;
+#endif
 }
 appData;
 
@@ -985,6 +1004,9 @@ static appData *initHeob( HANDLE heap )
   appData *ad = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(appData) );
   ad->heap = heap;
   ad->errorPipe = openErrorPipe( &ad->writeProcessPid );
+#ifndef NO_DBGHELP
+  InitializeCriticalSection( &ad->csSampling );
+#endif
   return( ad );
 }
 
@@ -1010,6 +1032,14 @@ static NORETURN void exitHeob( appData *ad,
   if( ad->specificOptions ) HeapFree( heap,0,ad->specificOptions );
   if( ad->a2l_mi_a ) HeapFree( heap,0,ad->a2l_mi_a );
   if( ad->api ) HeapFree( heap,0,ad->api );
+
+#ifndef NO_DBGHELP
+  DeleteCriticalSection( &ad->csSampling );
+  if( ad->samplingStop ) CloseHandle( ad->samplingStop );
+  if( ad->thread_samp_a ) HeapFree( heap,0,ad->thread_samp_a );
+  if( ad->samp_a ) HeapFree( heap,0,ad->samp_a );
+#endif
+
 #ifndef NO_DBGENG
   if( ad->exceptionWait ) CloseHandle( ad->exceptionWait );
 #endif
@@ -1055,7 +1085,7 @@ static CODE_SEG(".text$1") VOID NTAPI remoteCall(
 }
 
 static CODE_SEG(".text$2") HANDLE inject(
-    appData *ad,options *opt,options *globalopt,textColor *tc,
+    appData *ad,options *globalopt,textColor *tc,
     const char *subOutName,const char *subXmlName,const char *subSvgName,
     const wchar_t *subCurDir )
 {
@@ -1070,6 +1100,7 @@ static CODE_SEG(".text$2") HANDLE inject(
   HANDLE process = ad->pi.hProcess;
   HANDLE thread = ad->pi.hThread;
   wchar_t *exePath = ad->exePathW;
+  options *opt = ad->opt;
 
   unsigned char *fullDataRemote = VirtualAllocEx( process,NULL,
       fullSize,MEM_RESERVE|MEM_COMMIT,PAGE_EXECUTE_READWRITE );
@@ -1171,6 +1202,17 @@ static CODE_SEG(".text$2") HANDLE inject(
     DuplicateHandle( GetCurrentProcess(),ad->exceptionWait,
         process,&data->exceptionWait,0,FALSE,
         DUPLICATE_SAME_ACCESS );
+  }
+#endif
+
+#ifndef NO_DBGHELP
+  if( opt->samplingInterval )
+  {
+    DuplicateHandle( GetCurrentProcess(),GetCurrentProcess(),
+        process,&data->heobProcess,0,FALSE,DUPLICATE_SAME_ACCESS );
+    ad->samplingStop = CreateEvent( NULL,TRUE,FALSE,NULL );
+    DuplicateHandle( GetCurrentProcess(),ad->samplingStop,
+        process,&data->samplingStop,0,FALSE,DUPLICATE_SAME_ACCESS );
   }
 #endif
 
@@ -1313,7 +1355,6 @@ static CODE_SEG(".text$2") HANDLE inject(
 // }}}
 // stacktrace {{{
 
-struct dbgsym;
 #ifndef NO_DWARFSTACK
 typedef int func_dwstOfFile( const char*,uint64_t,uint64_t*,int,
     dwstCallback*,struct dbgsym* );
@@ -1357,6 +1398,9 @@ typedef struct dbgsym
   func_SymGetModuleInfo64 *fSymGetModuleInfo64;
   func_SymLoadModule64 *fSymLoadModule64;
   func_UnDecorateSymbolName *fUnDecorateSymbolName;
+  func_StackWalk64 *fStackWalk64;
+  PFUNCTION_TABLE_ACCESS_ROUTINE64 fSymFunctionTableAccess64;
+  PGET_MODULE_BASE_ROUTINE64 fSymGetModuleBase64;
   IMAGEHLP_LINE64 *il;
   SYMBOL_INFO *si;
   char *undname;
@@ -1478,6 +1522,14 @@ static void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
     ds->fUnDecorateSymbolName =
       (func_UnDecorateSymbolName*)GetProcAddress(
           ds->symMod,"UnDecorateSymbolName" );
+    ds->fStackWalk64 = (func_StackWalk64*)GetProcAddress(
+        ds->symMod,"StackWalk64" );
+    ds->fSymFunctionTableAccess64 =
+      (PFUNCTION_TABLE_ACCESS_ROUTINE64)GetProcAddress(
+          ds->symMod,"SymFunctionTableAccess64" );
+    ds->fSymGetModuleBase64 =
+      (PGET_MODULE_BASE_ROUTINE64)GetProcAddress(
+          ds->symMod,"SymGetModuleBase64" );
     ds->il = HeapAlloc( heap,0,sizeof(IMAGEHLP_LINE64) );
     ds->si = HeapAlloc( heap,0,sizeof(SYMBOL_INFO)+MAX_SYM_NAME );
     ds->undname = HeapAlloc( heap,0,MAX_SYM_NAME+1 );
@@ -3006,6 +3058,154 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
 }
 
 // }}}
+// sampling profiler {{{
+
+#ifndef NO_DBGHELP
+#ifdef _WIN64
+#define csp Rsp
+#define cip Rip
+#define cfp Rbp
+#define MACH_TYPE IMAGE_FILE_MACHINE_AMD64
+#else
+#define csp Esp
+#define cip Eip
+#define cfp Ebp
+#define MACH_TYPE IMAGE_FILE_MACHINE_I386
+#endif
+static void stackwalkDbghelp( appData *ad,HANDLE thread,
+    CONTEXT *contextRecord,void **frames )
+{
+  HANDLE process = ad->pi.hProcess;
+  int useSp = ad->opt->useSp;
+
+  CONTEXT context;
+  RtlMoveMemory( &context,contextRecord,sizeof(CONTEXT) );
+
+  STACKFRAME64 stack;
+  RtlZeroMemory( &stack,sizeof(STACKFRAME64) );
+  stack.AddrPC.Offset = context.cip;
+  stack.AddrPC.Mode = AddrModeFlat;
+  stack.AddrStack.Offset = context.csp;
+  stack.AddrStack.Mode = AddrModeFlat;
+  stack.AddrFrame.Offset = context.cfp;
+  stack.AddrFrame.Mode = AddrModeFlat;
+
+  func_StackWalk64 *fStackWalk64 = ad->ds->fStackWalk64;
+  PFUNCTION_TABLE_ACCESS_ROUTINE64 fSymFunctionTableAccess64 =
+    ad->ds->fSymFunctionTableAccess64;
+  PGET_MODULE_BASE_ROUTINE64 fSymGetModuleBase64 =
+    ad->ds->fSymGetModuleBase64;
+
+  int count = 0;
+  while( count<PTRS )
+  {
+    if( !fStackWalk64(MACH_TYPE,process,thread,&stack,&context,
+          NULL,fSymFunctionTableAccess64,fSymGetModuleBase64,NULL) )
+      break;
+
+    uintptr_t frame = (uintptr_t)stack.AddrPC.Offset;
+    if( !count ) frame++;
+    else if( !frame ) break;
+    frames[count++] = (void*)frame;
+
+    if( count==1 && useSp )
+    {
+      ULONG_PTR csp = *(ULONG_PTR*)contextRecord->csp;
+      if( csp ) frames[count++] = (void*)csp;
+    }
+  }
+  if( count<PTRS )
+    RtlZeroMemory( frames+count,(PTRS-count)*sizeof(void*) );
+}
+
+static DWORD WINAPI samplingThread( LPVOID arg )
+{
+  appData *ad = arg;
+  options *opt = ad->opt;
+  HANDLE heap = ad->heap;
+#ifndef NO_THREADNAMES
+  HANDLE process = ad->pi.hProcess;
+#endif
+
+  int interval = opt->samplingInterval;
+  if( interval<0 ) interval = -interval;
+
+  SetEvent( ad->samplingInit );
+
+  CONTEXT context;
+  EnterCriticalSection( &ad->csSampling );
+  while( 1 )
+  {
+    LeaveCriticalSection( &ad->csSampling );
+    DWORD w = WaitForSingleObject( ad->samplingStop,interval );
+    EnterCriticalSection( &ad->csSampling );
+
+    if( w!=WAIT_TIMEOUT ) break;
+    if( !ad->recordingSamples ) continue;
+
+    int thread_samp_q = ad->thread_samp_q;
+    if( !thread_samp_q ) continue;
+    threadSamplingType *thread_samp_a = ad->thread_samp_a;
+
+    int samp_sum_q = ad->samp_q + thread_samp_q;
+    int samp_add = 0;
+    while( samp_sum_q > ad->samp_s + samp_add ) samp_add += 1024;
+    if( samp_add>0 )
+    {
+      allocation *samp_a = ad->samp_a;
+      size_t s = (ad->samp_s+samp_add)*sizeof(allocation);
+      if( !samp_a )
+        samp_a = HeapAlloc( heap,0,s );
+      else
+        samp_a = HeapReAlloc( heap,0,samp_a,s );
+      if( !samp_a ) break;
+      ad->samp_a = samp_a;
+      ad->samp_s += samp_add;
+    }
+
+    int ts;
+    for( ts=0; ts<thread_samp_q; ts++ )
+    {
+      allocation *a = &ad->samp_a[ad->samp_q];
+      RtlZeroMemory( a,sizeof(allocation) );
+      a->size = 1;
+      a->ft = FT_COUNT;
+      a->id = ++ad->samp_id;
+
+#ifndef NO_THREADNAMES
+      void **threadNameIdxSlot = thread_samp_a[ts].threadNameIdxSlot;
+      if( threadNameIdxSlot )
+      {
+        void *idx;
+        ReadProcessMemory( process,threadNameIdxSlot,&idx,sizeof(idx),NULL );
+        a->threadNameIdx = (int)(uintptr_t)idx;
+      }
+#endif
+
+      HANDLE thread = thread_samp_a[ts].thread;
+
+      RtlZeroMemory( &context,sizeof(CONTEXT) );
+      context.ContextFlags = CONTEXT_FULL;
+
+      if( UNLIKELY(SuspendThread(thread)==(DWORD)-1) ) continue;
+
+      GetThreadContext( thread,&context );
+      stackwalkDbghelp( ad,thread,&context,a->frames );
+
+      ResumeThread( thread );
+
+      ad->samp_q++;
+    }
+
+    ad->sample_times++;
+  }
+  LeaveCriticalSection( &ad->csSampling );
+
+  return( 0 );
+}
+#endif
+
+// }}}
 // information of attached process {{{
 
 static void printAttachedProcessInfo( appData *ad,textColor *tc )
@@ -3051,10 +3251,11 @@ static void printAttachedProcessInfo( appData *ad,textColor *tc )
 // }}}
 // common options {{{
 
-static char *readOption( char *args,options *opt,appData *ad,HANDLE heap )
+static char *readOption( char *args,appData *ad,HANDLE heap )
 {
   if( !args || args[0]!='-' ) return( NULL );
 
+  options *opt = ad->opt;
   int raise_alloc_q = ad->raise_alloc_q;
   size_t *raise_alloc_a = ad->raise_alloc_a;
 
@@ -3189,9 +3390,11 @@ static char *readOption( char *args,options *opt,appData *ad,HANDLE heap )
       opt->exceptionDetails = atoi( args+2 );
       break;
 
+#ifndef NO_DBGHELP
     case 'I':
       opt->samplingInterval = args[2]=='-' ? -atoi( args+3 ) : atoi( args+2 );
       break;
+#endif
 
     default:
       return( NULL );
@@ -4234,6 +4437,9 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
   if( in ) showConsole();
   const char *title = opt->handleException>=2 ?
     "profiling sample recording: " : "leak recording: ";
+#ifndef NO_DBGHELP
+  ad->recordingSamples = opt->handleException>=2 ? recording>0 : 1;
+#endif
   while( 1 )
   {
     if( needData )
@@ -4334,6 +4540,15 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
             clearRecording( title,err,consoleCoord,errColor );
             showRecording( title,err,recording,&consoleCoord,&errColor );
           }
+
+#ifndef NO_DBGHELP
+          if( opt->handleException>=2 )
+          {
+            EnterCriticalSection( &ad->csSampling );
+            ad->recordingSamples = cmd;
+            LeaveCriticalSection( &ad->csSampling );
+          }
+#endif
         }
       }
       continue;
@@ -4347,6 +4562,10 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
         didread<sizeof(int) )
       break;
     needData = 1;
+
+#ifndef NO_DBGHELP
+    EnterCriticalSection( &ad->csSampling );
+#endif
 
     switch( type )
     {
@@ -5003,11 +5222,25 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
           {
             case HEOB_LEAK_RECORDING_START:
               recording = 1;
+#ifndef NO_DBGHELP
+              if( opt->handleException>=2 ) ad->recordingSamples = 1;
+#endif
               break;
             case HEOB_LEAK_RECORDING_STOP:
               if( recording>0 ) recording = 0;
+#ifndef NO_DBGHELP
+              if( opt->handleException>=2 ) ad->recordingSamples = 0;
+#endif
               break;
             case HEOB_LEAK_RECORDING_CLEAR:
+#ifndef NO_DBGHELP
+              if( opt->handleException>=2 )
+              {
+                ad->sample_times = 0;
+                ad->samp_q = 0;
+              }
+#endif
+              // fallthrough
             case HEOB_LEAK_RECORDING_SHOW:
               if( !recording ) recording = -1;
               break;
@@ -5018,37 +5251,81 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
         // }}}
         // sampling profiler {{{
 
+#ifndef NO_DBGHELP
       case WRITE_SAMPLING:
         {
-          int sample_times_cur = 0;
-          allocation *samp_a = NULL;
-          int samp_q = 0;
+          sample_times += ad->sample_times;
 
-          if( !readFile(readPipe,&sample_times_cur,sizeof(int),&ov) )
-            break;
-          if( !readFile(readPipe,&samp_q,sizeof(int),&ov) )
-            break;
-          if( samp_q )
-          {
-            samp_a = HeapAlloc( heap,0,samp_q*sizeof(allocation) );
-            if( !readFile(readPipe,samp_a,samp_q*sizeof(allocation),&ov) )
-              break;
-          }
-
-          sample_times += sample_times_cur;
-
-          printLeaks( samp_a,samp_q,0,0,0,0,NULL,mi_a,mi_q,
+          printLeaks( ad->samp_a,ad->samp_q,0,0,0,0,NULL,mi_a,mi_q,
 #ifndef NO_THREADNAMES
               threadName_a,threadName_q,
 #endif
               opt,tc,ds,heap,tcXml,ad,tcSvg,1 );
 
-          if( samp_a ) HeapFree( heap,0,samp_a );
+          ad->sample_times = 0;
+          ad->samp_q = 0;
         }
         break;
 
+      case WRITE_ADD_SAMPLING_THREAD:
+        {
+          threadSamplingType tst;
+          if( !readFile(readPipe,&tst,sizeof(tst),&ov) )
+            break;
+
+          threadSamplingType *thread_samp_a = ad->thread_samp_a;
+          if( ad->thread_samp_q>=ad->thread_samp_s )
+          {
+            int thread_samp_s = ad->thread_samp_s + 64;
+            if( !thread_samp_a )
+              thread_samp_a = HeapAlloc( heap,0,
+                  thread_samp_s*sizeof(threadSamplingType) );
+            else
+              thread_samp_a = HeapReAlloc( heap,0,thread_samp_a,
+                  thread_samp_s*sizeof(threadSamplingType) );
+            if( thread_samp_a )
+              ad->thread_samp_s = thread_samp_s;
+          }
+          if( thread_samp_a )
+          {
+            thread_samp_a[ad->thread_samp_q] = tst;
+            ad->thread_samp_a = thread_samp_a;
+            ad->thread_samp_q++;
+          }
+          else
+            CloseHandle( tst.thread );
+        }
+        break;
+
+      case WRITE_REMOVE_SAMPLING_THREAD:
+        {
+          DWORD threadId;
+          if( !readFile(readPipe,&threadId,sizeof(threadId),&ov) )
+            break;
+
+          threadSamplingType *thread_samp_a = ad->thread_samp_a;
+          int thread_samp_q = ad->thread_samp_q;
+          int ts;
+          for( ts=thread_samp_q-1; ts>=0; ts-- )
+          {
+            if( thread_samp_a[ts].threadId!=threadId ) continue;
+
+            thread_samp_q = --ad->thread_samp_q;
+            CloseHandle( thread_samp_a[ts].thread );
+            if( ts<thread_samp_q )
+              thread_samp_a[ts] = thread_samp_a[thread_samp_q];
+            break;
+          }
+        }
+        break;
+#endif
+
         // }}}
     }
+
+#ifndef NO_DBGHELP
+    LeaveCriticalSection( &ad->csSampling );
+#endif
   }
 
   if( terminated==-2 )
@@ -5158,8 +5435,10 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
     printf( "    $I-E$BX$N    "
         "use leak and error count for exit code [$I%d$N]\n",
         defopt->leakErrorExitCode );
+#ifndef NO_DBGHELP
     printf( "    $I-I$BX$N    sampling profiler interval [$I%d$N]\n",
         defopt->samplingInterval );
+#endif
     printf( "    $I-O$BA$I:$BO$I; a$Npplication specific $Io$Nptions\n" );
     printf( "    $I-X$N     "
         "disable heob via application specific options\n" );
@@ -5241,10 +5520,13 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     0,                              // hook children
     0,                              // use leak and error count for exit code
     0,                              // show exception details
+#ifndef NO_DBGHELP
     0,                              // sampling profiler interval
+#endif
   };
   // }}}
   options opt = defopt;
+  ad->opt = &opt;
   int fullhelp = 0;
   char badArg = 0;
   int keepSuspended = 0;
@@ -5256,7 +5538,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   {
     while( args[0]==' ' ) args++;
     if( args[0]!='-' ) break;
-    char *ro = readOption( args,&opt,ad,heap );
+    char *ro = readOption( args,ad,heap );
     if( ro )
     {
       args = ro;
@@ -5427,7 +5709,9 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   if( !ad->xmlName && ad->svgName ) defopt.groupLeaks = 2;
   if( opt.groupLeaks<0 ) opt.groupLeaks = defopt.groupLeaks;
   // disable heap monitoring for sampling profiler by default
+#ifndef NO_DBGHELP
   if( opt.samplingInterval ) defopt.handleException = 2;
+#endif
   if( opt.handleException<0 ) opt.handleException = defopt.handleException;
   // }}}
   if( opt.align<MEMORY_ALLOCATION_ALIGNMENT )
@@ -5674,7 +5958,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
         while( so[0]==' ' ) so++;
         if( so[0]!='-' ) break;
         if( so[1]=='X' ) disable = 1;
-        so = readOption( so,&opt,ad,heap );
+        so = readOption( so,ad,heap );
       }
     }
     exePath[nameLen] = 0;
@@ -5786,7 +6070,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     heobExit = HEOB_WRONG_BITNESS;
   }
   else
-    ad->readPipe = inject( ad,&opt,&defopt,tc,
+    ad->readPipe = inject( ad,&defopt,tc,
         subOutName,subXmlName,subSvgName,subCurDir );
   if( !ad->readPipe )
     TerminateProcess( ad->pi.hProcess,1 );
@@ -5803,7 +6087,20 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     dbgsym ds;
     dbgsym_init( &ds,ad->pi.hProcess,tc,&opt,funcnames,heap,exePath,TRUE,
         RETURN_ADDRESS() );
+    ad->ds = &ds;
     if( delim ) delim[0] = '\\';
+
+#ifndef NO_DBGHELP
+    if( opt.samplingInterval &&
+        (!ds.fStackWalk64 || !ds.fSymFunctionTableAccess64 ||
+         !ds.fSymGetModuleBase64) )
+    {
+      printf( "$Wsampling profiler needs StackWalk64() from dbghelp.dll\n" );
+      heobExit = HEOB_NO_CRT;
+      dbgsym_close( &ds );
+      exitHeob( ad,heobExit,heobExitData,exitCode );
+    }
+#endif
 
     // debugger PID {{{
     if( ad->writeProcessPid )
@@ -5848,12 +6145,27 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
       tc->out = out;
     }
 
-    if( opt.handleException>=2 && !opt.samplingInterval )
+    if( opt.handleException>=2
+#ifndef NO_DBGHELP
+        && !opt.samplingInterval
+#endif
+      )
       opt.leakRecording = 0;
 
     if( ad->in && !opt.leakRecording && tc->fTextColor!=&TextColorConsole &&
         isConsoleOwner() )
       FreeConsole();
+
+#ifndef NO_DBGHELP
+    HANDLE sampler = NULL;
+    if( opt.samplingInterval )
+    {
+      ad->samplingInit = CreateEvent( NULL,TRUE,FALSE,NULL );
+      sampler = CreateThread( NULL,0,&samplingThread,ad,0,NULL );
+      WaitForSingleObject( ad->samplingInit,INFINITE );
+      CloseHandle( ad->samplingInit );
+    }
+#endif
 
     if( !keepSuspended )
       ResumeThread( ad->pi.hThread );
@@ -5866,6 +6178,15 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     }
 
     mainLoop( ad,&ds,startTicks,&exitCode );
+
+#ifndef NO_DBGHELP
+    if( sampler )
+    {
+      SetEvent( ad->samplingStop );
+      WaitForSingleObject( sampler,INFINITE );
+      CloseHandle( sampler );
+    }
+#endif
 
     dbgsym_close( &ds );
   }

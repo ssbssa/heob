@@ -65,16 +65,6 @@ typedef struct
 }
 modMemType;
 
-typedef struct
-{
-  HANDLE thread;
-#ifndef NO_THREADNAMES
-  void **threadNameIdxSlot;
-#endif
-  DWORD threadId;
-}
-threadSamplingType;
-
 typedef struct localData
 {
   func_LoadLibraryA *fLoadLibraryA;
@@ -133,6 +123,8 @@ typedef struct localData
 #ifndef NO_DBGENG
   HANDLE exceptionWait;
 #endif
+  HANDLE heobProcess;
+  HANDLE samplingStop;
   HMODULE heobMod;
   HMODULE kernel32;
   HMODULE msvcrt;
@@ -184,7 +176,6 @@ typedef struct localData
   CRITICAL_SECTION csAllocId;
   CRITICAL_SECTION csWrite;
   CRITICAL_SECTION csFreedMod;
-  CRITICAL_SECTION csSampling;
 
   // protected by csMod {{{
 
@@ -229,20 +220,6 @@ typedef struct localData
   int inExit;
 
   // }}}
-  // protected by csSampling {{{
-
-  HANDLE samplingInit;
-  int samplingEnabled;
-  int sample_times;
-  allocation *samp_a;
-  int samp_q;
-  int samp_s;
-  size_t samp_id;
-  threadSamplingType *thread_samp_a;
-  int thread_samp_q;
-  int thread_samp_s;
-
-  // }}}
 }
 localData;
 
@@ -263,6 +240,12 @@ static NORETURN void exitWait( UINT c,int terminate )
   rd->master = INVALID_HANDLE_VALUE;
 
   LeaveCriticalSection( &rd->csWrite );
+
+  if( rd->heobProcess )
+  {
+    CloseHandle( rd->heobProcess );
+    rd->heobProcess = INVALID_HANDLE_VALUE;
+  }
 
   rd->opt.raiseException = 0;
 
@@ -1778,6 +1761,7 @@ static void findLeakTypes( void )
 // }}}
 // transfer sampling data {{{
 
+#ifndef NO_DBGHELP
 static void writeSamplingData( void )
 {
   GET_REMOTEDATA( rd );
@@ -1787,12 +1771,8 @@ static void writeSamplingData( void )
   int type = WRITE_SAMPLING;
   DWORD written;
   WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,&rd->sample_times,sizeof(int),&written,NULL );
-  WriteFile( rd->master,&rd->samp_q,sizeof(int),&written,NULL );
-  if( rd->samp_q )
-    WriteFile( rd->master,rd->samp_a,rd->samp_q*sizeof(allocation),
-        &written,NULL );
 }
+#endif
 
 // }}}
 // replacements for ExitProcess/TerminateProcess {{{
@@ -1801,11 +1781,11 @@ static VOID WINAPI new_ExitProcess( UINT c )
 {
   GET_REMOTEDATA( rd );
 
-  if( rd->opt.samplingInterval )
+  if( rd->samplingStop )
   {
-    EnterCriticalSection( &rd->csSampling );
-    rd->samplingEnabled = 0;
-    LeaveCriticalSection( &rd->csSampling );
+    SetEvent( rd->samplingStop );
+    CloseHandle( rd->samplingStop );
+    rd->samplingStop = NULL;
   }
 
   EnterCriticalSection( &rd->csFreedMod );
@@ -1832,8 +1812,15 @@ static VOID WINAPI new_ExitProcess( UINT c )
   modInfo *mi_a = NULL;
   writeModsFind( &mi_a,&mi_q );
 
-  int i;
   EnterCriticalSection( &rd->csWrite );
+
+  writeModsSend( mi_a,mi_q );
+
+#ifndef NO_DBGHELP
+  writeSamplingData();
+#endif
+
+  int i;
   if( rd->splits )
   {
     for( i=0; i<=SPLIT_MASK; i++ )
@@ -1842,10 +1829,6 @@ static VOID WINAPI new_ExitProcess( UINT c )
 
   if( rd->opt.leakDetails>1 )
     findLeakTypes();
-
-  writeModsSend( mi_a,mi_q );
-
-  writeSamplingData();
 
   // free modules {{{
   if( rd->freed_mod_q )
@@ -2130,7 +2113,9 @@ int heobSubProcess(
       ADD_OPTION( " -z",minLeakSize,0 );
       ADD_OPTION( " -k",leakRecording,0 );
       ADD_OPTION( " -D",exceptionDetails,0 );
+#ifndef NO_DBGHELP
       ADD_OPTION( " -I",samplingInterval,0 );
+#endif
 #undef ADD_OPTION
       int i;
       for( i=0; i<raise_alloc_q; i++ )
@@ -3618,11 +3603,11 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 {
   GET_REMOTEDATA( rd );
 
-  if( rd->opt.samplingInterval )
+  if( rd->samplingStop )
   {
-    EnterCriticalSection( &rd->csSampling );
-    rd->samplingEnabled = 0;
-    LeaveCriticalSection( &rd->csSampling );
+    SetEvent( rd->samplingStop );
+    CloseHandle( rd->samplingStop );
+    rd->samplingStop = NULL;
   }
 
   exceptionInfo *eiPtr = rd->ei;
@@ -3816,15 +3801,23 @@ DLLEXPORT int heob_control( int cmd )
 {
   GET_REMOTEDATA( rd );
 
+#ifndef NO_DBGHELP
   int sampleRecording =
     rd->opt.handleException>=2 && rd->opt.samplingInterval;
+#endif
 
-  if( rd->noCRT && !sampleRecording )
+  if( rd->noCRT
+#ifndef NO_DBGHELP
+      && !sampleRecording
+#endif
+    )
     return( -rd->noCRT );
 
   int prevRecording = rd->recording;
+#ifndef NO_DBGHELP
   if( sampleRecording )
     prevRecording += 2;
+#endif
 
   switch( cmd )
   {
@@ -3838,14 +3831,10 @@ DLLEXPORT int heob_control( int cmd )
       // clear {{{
     case HEOB_LEAK_RECORDING_CLEAR:
       {
+#ifndef NO_DBGHELP
         if( sampleRecording )
-        {
-          EnterCriticalSection( &rd->csSampling );
-          rd->sample_times = 0;
-          rd->samp_q = 0;
-          LeaveCriticalSection( &rd->csSampling );
           break;
-        }
+#endif
 
         int i;
         for( i=0; i<=SPLIT_MASK; i++ )
@@ -3869,28 +3858,23 @@ DLLEXPORT int heob_control( int cmd )
       // show {{{
     case HEOB_LEAK_RECORDING_SHOW:
       {
+#ifndef NO_DBGHELP
         if( sampleRecording )
         {
           int mi_q = 0;
           modInfo *mi_a = NULL;
-          if( rd->samp_q )
-            writeModsFind( &mi_a,&mi_q );
+          writeModsFind( &mi_a,&mi_q );
 
           EnterCriticalSection( &rd->csWrite );
-          EnterCriticalSection( &rd->csSampling );
 
-          if( rd->samp_q )
-            writeModsSend( mi_a,mi_q );
+          writeModsSend( mi_a,mi_q );
 
           writeSamplingData();
 
-          rd->sample_times = 0;
-          rd->samp_q = 0;
-
-          LeaveCriticalSection( &rd->csSampling );
           LeaveCriticalSection( &rd->csWrite );
           break;
         }
+#endif
 
         int mi_q = 0;
         modInfo *mi_a = NULL;
@@ -3929,13 +3913,10 @@ DLLEXPORT int heob_control( int cmd )
       // count {{{
     case HEOB_LEAK_COUNT:
       {
+#ifndef NO_DBGHELP
         if( sampleRecording )
-        {
-          EnterCriticalSection( &rd->csSampling );
-          int count = rd->samp_q;
-          LeaveCriticalSection( &rd->csSampling );
-          return( count );
-        }
+          return( 0 );
+#endif
 
         int i,j;
         int count = 0;
@@ -3987,87 +3968,6 @@ static CODE_SEG(".text$5") DWORD WINAPI controlThread( LPVOID arg )
 }
 
 // }}}
-// sampling profiler {{{
-
-static CODE_SEG(".text$5") DWORD WINAPI samplingThread( LPVOID arg )
-{
-  (void)arg;
-
-  GET_REMOTEDATA( rd );
-
-#if USE_STACKWALK
-  initDbghelp();
-#endif
-
-  int interval = rd->opt.samplingInterval;
-  if( interval<0 ) interval = -interval;
-  HANDLE processHeap = GetProcessHeap();
-
-  SetEvent( rd->samplingInit );
-
-  CONTEXT context;
-  EnterCriticalSection( &rd->csSampling );
-  while( 1 )
-  {
-    LeaveCriticalSection( &rd->csSampling );
-    Sleep( interval );
-    EnterCriticalSection( &rd->csSampling );
-
-    if( !rd->samplingEnabled ) break;
-    if( rd->opt.handleException>=2 && !rd->recording ) continue;
-
-    threadSamplingType *thread_samp_a = rd->thread_samp_a;
-    int thread_samp_q = rd->thread_samp_q;
-
-    int samp_sum_q = rd->samp_q + thread_samp_q;
-    int samp_add = 0;
-    while( samp_sum_q > rd->samp_s + samp_add ) samp_add += 1024;
-    if( samp_add>0 )
-      rd->samp_a = add_realloc(
-          rd->samp_a,&rd->samp_s,samp_add,sizeof(allocation),&rd->csSampling );
-
-    HeapLock( processHeap );
-
-    int ts;
-    for( ts=0; ts<thread_samp_q; ts++ )
-    {
-      allocation *a = &rd->samp_a[rd->samp_q];
-      RtlZeroMemory( a,sizeof(allocation) );
-      a->size = 1;
-      a->ft = FT_COUNT;
-      a->id = ++rd->samp_id;
-
-#ifndef NO_THREADNAMES
-      void **threadNameIdxSlot = thread_samp_a[ts].threadNameIdxSlot;
-      if( threadNameIdxSlot )
-        a->threadNameIdx = (int)(uintptr_t)*threadNameIdxSlot;
-#endif
-
-      HANDLE thread = thread_samp_a[ts].thread;
-
-      RtlZeroMemory( &context,sizeof(CONTEXT) );
-      context.ContextFlags = CONTEXT_FULL;
-
-      if( UNLIKELY(SuspendThread(thread)==(DWORD)-1) ) continue;
-
-      GetThreadContext( thread,&context );
-      stackwalk( thread,&context,a->frames );
-
-      ResumeThread( thread );
-
-      rd->samp_q++;
-    }
-
-    rd->sample_times++;
-
-    HeapUnlock( processHeap );
-  }
-  LeaveCriticalSection( &rd->csSampling );
-
-  return( 0 );
-}
-
-// }}}
 // dll entry point {{{
 
 static CODE_SEG(".text$6") BOOL WINAPI dllMain(
@@ -4110,59 +4010,47 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
     // }}}
 
     // add sampling thread {{{
+#ifndef NO_DBGHELP
     if( rd->opt.samplingInterval>0 ||
         (rd->opt.samplingInterval<0 && fdwReason==DLL_PROCESS_ATTACH) )
     {
-      EnterCriticalSection( &rd->csSampling );
-
-      threadSamplingType *thread_samp_a = rd->thread_samp_a;
-      if( rd->thread_samp_q>=rd->thread_samp_s )
-      {
-        thread_samp_a = add_realloc( thread_samp_a,&rd->thread_samp_s,
-            64,sizeof(threadSamplingType),NULL );
-        if( thread_samp_a )
-          rd->thread_samp_a = thread_samp_a;
-      }
-
-      if( thread_samp_a )
-      {
-        threadSamplingType *tst = &thread_samp_a[rd->thread_samp_q++];
-        DuplicateHandle( GetCurrentProcess(),thread,
-            GetCurrentProcess(),&tst->thread,0,FALSE,DUPLICATE_SAME_ACCESS );
+      threadSamplingType tst;
+      DuplicateHandle( GetCurrentProcess(),thread,
+          rd->heobProcess,&tst.thread,0,FALSE,DUPLICATE_SAME_ACCESS );
 #ifndef NO_THREADNAMES
-        tst->threadNameIdxSlot = getTlsSlotAddress( thread,threadNameTls );
+      tst.threadNameIdxSlot = getTlsSlotAddress( thread,threadNameTls );
 #endif
-        tst->threadId = GetCurrentThreadId();
-      }
+      tst.threadId = GetCurrentThreadId();
 
-      LeaveCriticalSection( &rd->csSampling );
+      EnterCriticalSection( &rd->csWrite );
+
+      int type = WRITE_ADD_SAMPLING_THREAD;
+      DWORD written;
+      WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+      WriteFile( rd->master,&tst,sizeof(tst),&written,NULL );
+
+      LeaveCriticalSection( &rd->csWrite );
     }
+#endif
     // }}}
   }
   else // DLL_THREAD_DETACH
   {
     // remove sampling thread {{{
+#ifndef NO_DBGHELP
     if( rd->opt.samplingInterval )
     {
-      EnterCriticalSection( &rd->csSampling );
+      EnterCriticalSection( &rd->csWrite );
 
-      threadSamplingType *thread_samp_a = rd->thread_samp_a;
-      int thread_samp_q = rd->thread_samp_q;
+      int type = WRITE_REMOVE_SAMPLING_THREAD;
       DWORD threadId = GetCurrentThreadId();
-      int ts;
-      for( ts=thread_samp_q-1; ts>=0; ts-- )
-      {
-        if( thread_samp_a[ts].threadId!=threadId ) continue;
+      DWORD written;
+      WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+      WriteFile( rd->master,&threadId,sizeof(threadId),&written,NULL );
 
-        thread_samp_q = --rd->thread_samp_q;
-        CloseHandle( thread_samp_a[ts].thread );
-        if( ts<thread_samp_q )
-          thread_samp_a[ts] = thread_samp_a[thread_samp_q];
-        break;
-      }
-
-      LeaveCriticalSection( &rd->csSampling );
+      LeaveCriticalSection( &rd->csWrite );
     }
+#endif
     // }}}
   }
 
@@ -4355,6 +4243,10 @@ VOID CALLBACK heob( ULONG_PTR arg )
 #ifndef NO_DBGENG
   ld->exceptionWait = rd->exceptionWait;
 #endif
+#ifndef NO_DBGHELP
+  ld->heobProcess = rd->heobProcess;
+  ld->samplingStop = rd->samplingStop;
+#endif
   ld->heobMod = rd->heobMod;
   ld->kernel32 = rd->kernel32;
   ld->recording = rd->recording;
@@ -4393,8 +4285,6 @@ VOID CALLBACK heob( ULONG_PTR arg )
     fInitCritSecEx( &ld->csMod,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
     fInitCritSecEx( &ld->csWrite,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
     fInitCritSecEx( &ld->csFreedMod,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
-    if( ld->opt.samplingInterval )
-      fInitCritSecEx( &ld->csSampling,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
     int i;
     if( ld->splits )
     {
@@ -4414,8 +4304,6 @@ VOID CALLBACK heob( ULONG_PTR arg )
     InitializeCriticalSection( &ld->csMod );
     InitializeCriticalSection( &ld->csWrite );
     InitializeCriticalSection( &ld->csFreedMod );
-    if( ld->opt.samplingInterval )
-      InitializeCriticalSection( &ld->csSampling );
     int i;
     if( ld->splits )
     {
@@ -4620,20 +4508,12 @@ VOID CALLBACK heob( ULONG_PTR arg )
     CloseHandle( thread );
   }
 
-  if( ld->opt.samplingInterval )
-  {
-    ld->samplingInit = CreateEvent( NULL,FALSE,FALSE,NULL );
-    EnterCriticalSection( &ld->csSampling );
-    ld->samplingEnabled = 1;
-    LeaveCriticalSection( &ld->csSampling );
-    HANDLE thread = CreateThread( NULL,0,&samplingThread,NULL,0,NULL );
-    CloseHandle( thread );
-    WaitForSingleObject( ld->samplingInit,INFINITE );
-    CloseHandle( ld->samplingInit );
-  }
-
   // setup loaded heob executable as dll with proper DllMain() {{{
-  if( !ld->noCRT || ld->opt.samplingInterval )
+  if( !ld->noCRT
+#ifndef NO_DBGHELP
+      || ld->opt.samplingInterval
+#endif
+    )
   {
     dllMain( ld->heobMod,DLL_PROCESS_ATTACH,NULL );
 
