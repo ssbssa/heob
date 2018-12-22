@@ -3130,6 +3130,13 @@ static DWORD WINAPI samplingThread( LPVOID arg )
   int interval = opt->samplingInterval;
   if( interval<0 ) interval = -interval;
 
+  typedef BOOL WINAPI func_QueryThreadCycleTime( HANDLE,PULONG64 );
+  HMODULE kernel32 = GetModuleHandle( "kernel32.dll" );
+  func_QueryThreadCycleTime *fQueryThreadCycleTime =
+    (func_QueryThreadCycleTime*)GetProcAddress(
+        kernel32,"QueryThreadCycleTime" );
+  ULONG64 maxCycleBlocked = 1000000;
+
   SetEvent( ad->samplingInit );
 
   CONTEXT context;
@@ -3191,6 +3198,15 @@ static DWORD WINAPI samplingThread( LPVOID arg )
 
       GetThreadContext( thread,&context );
       stackwalkDbghelp( ad,thread,&context,a->frames );
+
+      if( fQueryThreadCycleTime )
+      {
+        ULONG64 cycleTime = 0;
+        if( fQueryThreadCycleTime(thread,&cycleTime) &&
+            cycleTime-thread_samp_a[ts].cycleTime<=maxCycleBlocked )
+          a->ft = FT_BLOCKED;
+        thread_samp_a[ts].cycleTime = cycleTime;
+      }
 
       ResumeThread( thread );
 
@@ -4129,7 +4145,8 @@ static void locSvg( textColor *tc,uintptr_t addr,int useAddr,
 #ifndef NO_THREADNAMES
     threadNameInfo *threadName_a,int threadName_q,int threadNameIdx,
 #endif
-    const char *filename,int lineno,const char *funcname,const char *modname )
+    const char *filename,int lineno,const char *funcname,const char *modname,
+    int blocked )
 {
   if( stack<=1 ) printf( "\n" );
 
@@ -4151,6 +4168,8 @@ static void locSvg( textColor *tc,uintptr_t addr,int useAddr,
   else if( threadNameIdx<0 )
     printf( " heobThread=\"thread %u\"",(unsigned)-threadNameIdx );
 #endif
+  if( blocked )
+    printf( " heobBlocked=\"%d\"",blocked );
   printf( "/>\n" );
 }
 
@@ -4178,7 +4197,7 @@ static int printStackCountSvg( void **framesV,int fc,
 #ifndef NO_THREADNAMES
           threadName_a,threadName_q,threadNameIdx,
 #endif
-          NULL,0,NULL,NULL );
+          NULL,0,NULL,NULL,ft==FT_BLOCKED );
       j--;
       stackCount++;
       continue;
@@ -4199,7 +4218,7 @@ static int printStackCountSvg( void **framesV,int fc,
 #ifndef NO_THREADNAMES
             threadName_a,threadName_q,threadNameIdx,
 #endif
-            NULL,0,NULL,mi->path );
+            NULL,0,NULL,mi->path,ft==FT_BLOCKED );
         stackCount++;
         continue;
       }
@@ -4219,7 +4238,7 @@ static int printStackCountSvg( void **framesV,int fc,
 #ifndef NO_THREADNAMES
           threadName_a,threadName_q,threadNameIdx,
 #endif
-          sl->filename,sl->lineno,sl->funcname,mi->path );
+          sl->filename,sl->lineno,sl->funcname,mi->path,ft==FT_BLOCKED );
       // then the rest from top to bottom+1
       sl = &s->sl;
       int inlinePos = inlineCount - 1;
@@ -4229,7 +4248,7 @@ static int printStackCountSvg( void **framesV,int fc,
 #ifndef NO_THREADNAMES
             threadName_a,threadName_q,threadNameIdx,
 #endif
-            sl->filename,sl->lineno,sl->funcname,mi->path );
+            sl->filename,sl->lineno,sl->funcname,mi->path,ft==FT_BLOCKED );
 
         inlinePos--;
         sl = sl->inlineLocation;
@@ -4243,7 +4262,7 @@ static int printStackCountSvg( void **framesV,int fc,
 #ifndef NO_THREADNAMES
         threadName_a,threadName_q,threadNameIdx,
 #endif
-        NULL,0,ds->funcnames[ft],NULL );
+        NULL,0,ds->funcnames[ft],NULL,0 );
     stackCount++;
   }
   return( stackCount );
@@ -4281,13 +4300,28 @@ static void printStackGroupSvg( stackGroup *sg,textColor *tc,
     }
 #endif
 
+    funcType blocked = FT_COUNT;
+    if( sampling )
+    {
+      blocked = FT_BLOCKED;
+      for( i=0; i<allocCount; i++ )
+      {
+        int idx = alloc_idxs[allocStart+i];
+        if( alloc_a[idx].ft!=FT_BLOCKED )
+        {
+          blocked = FT_COUNT;
+          break;
+        }
+      }
+    }
+
     stack += printStackCountSvg(
         a->frames+(a->frameCount-(sg->stackStart+sg->stackCount)),
         sg->stackCount,
 #ifndef NO_THREADNAMES
         threadName_a,threadName_q,threadNameIdx,
 #endif
-        tc,mi_a,mi_q,ds,FT_COUNT,
+        tc,mi_a,mi_q,ds,blocked,
         sg->allocSumSize,ofs,stack,sg->allocSum,sampling );
   }
 
@@ -4306,7 +4340,7 @@ static void printStackGroupSvg( stackGroup *sg,textColor *tc,
         if( sampling )
           locSvg( tc,0,0,combSize,ofs,stack,0,
               threadName_a,threadName_q,a->threadNameIdx,
-              NULL,0,NULL,NULL );
+              NULL,0,NULL,NULL,a->ft==FT_BLOCKED );
         else
 #endif
           printStackCountSvg( NULL,0,
@@ -4371,7 +4405,7 @@ static void printFullStackGroupSvg( appData *ad,stackGroup *sg,textColor *tc,
 #ifndef NO_THREADNAMES
       NULL,0,0,
 #endif
-      NULL,0,fullName,NULL );
+      NULL,0,fullName,NULL,0 );
   if( fullTypeName ) HeapFree( ad->heap,0,fullTypeName );
 
   printStackGroupSvg( sg,tc,alloc_a,alloc_idxs,

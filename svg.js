@@ -116,6 +116,8 @@ function heobInit()
         color = createFuncColor();
       else if (svg.attributes['heobAddr'] != undefined)
         color = createAddrColor();
+      else if (svg.attributes['heobBlocked'] != undefined)
+        color = createBlockedColor();
       else
       {
         if (svg.attributes['heobThread'] != undefined)
@@ -324,6 +326,18 @@ function heobInit()
     svg.appendChild(newSvg);
   }
 
+  let blockedSvg = createSvg(svgNs,
+      (svgWidth - 200) / 2, fullHeight, 200, 16, 'blocked');
+  addRectBg(blockedSvg, svgNs, rect0);
+  addRect(blockedSvg, svgNs, createBlockedColor());
+  let blockedText = addText(blockedSvg, svgNs, 'idle', '100');
+  blockedText.setAttribute('text-anchor', 'middle');
+  blockedSvg.setAttribute('onmouseover', 'blockedInfoSet()');
+  blockedSvg.setAttribute('onmouseout', 'addrInfoClear()');
+  blockedSvg.setAttribute('onclick', 'blockedZoom(evt)');
+  blockedSvg.setAttribute('onmousedown', 'delBlockedZoom(evt)');
+  svg.appendChild(blockedSvg);
+
   functionText = addInfoText(svg, svgNs);
   sourceText = addInfoText(svg, svgNs);
   addressText = addInfoText(svg, svgNs);
@@ -391,6 +405,11 @@ function createThreadColor()
   return createColor(0x020200, 0x10, 0x0000ff);
 }
 
+function createBlockedColor()
+{
+  return createColor(0x020002, 0x10, 0x00ff00);
+}
+
 function createSvg(svgNs, x, y, width, height, id)
 {
   let newSvg = document.createElementNS(svgNs, 'svg');
@@ -411,15 +430,18 @@ function addTitle(par, svgNs, t)
   par.appendChild(newTitle);
 }
 
-function addText(par, svgNs, t)
+function addText(par, svgNs, t, x)
 {
   let newText = document.createElementNS(svgNs, 'text');
-  newText.setAttribute('x', '2');
+  if (x == undefined)
+    x = '2';
+  newText.setAttribute('x', x);
   newText.setAttribute('y', '10.5');
   newText.setAttribute('font-size', '12');
   newText.setAttribute('font-family', 'Verdana');
   newText.textContent = t;
   par.appendChild(newText);
+  return newText;
 }
 
 function addInfoText(par, svgNs)
@@ -611,6 +633,24 @@ function threadInfoSet(svg)
   }
 }
 
+function blockedInfoSet()
+{
+  let svgs = document.getElementsByTagName('svg');
+  for (let i = 0; i < svgs.length; i++)
+  {
+    let svgEntry = svgs[i];
+    if (svgEntry.attributes['heobSum'] == undefined) continue;
+    if (svgEntry.style['display'] == 'none') continue;
+
+    let opacity = parseFloat(svgEntry.attributes['heobOpacity'].value);
+    if (svgEntry.attributes['heobBlocked'] == undefined)
+      opacity *= 0.25;
+    else
+      opacity = 1;
+    svgEntry.style['opacity'] = opacity;
+  }
+}
+
 function getZoomers(svg)
 {
   let ofs = parseInt(svg.attributes['heobOfs'].value);
@@ -674,6 +714,37 @@ function getThreadZoomers(key)
 
     if (svg.attributes['heobThread'] == undefined ||
         svg.attributes['heobThread'].value != key)
+      continue;
+
+    let ofs = parseInt(svg.attributes['heobOfs'].value);
+    if (ofs + 0.1 < maxExtention)
+      continue;
+
+    let stack = parseInt(svg.attributes['heobStack'].value);
+    let samples = parseInt(svg.attributes['heobSum'].value);
+
+    maxExtention = ofs + samples;
+
+    let zoomer = new Array(3);
+    zoomer[0] = ofs;
+    zoomer[1] = stack;
+    zoomer[2] = samples;
+    zoomers.push(zoomer);
+  }
+  return zoomers;
+}
+
+function getBlockedZoomers()
+{
+  let svgs = document.getElementsByTagName('svg');
+  let zoomers = new Array();
+  let maxExtention = 0;
+  for (let i = 0; i < svgs.length; i++)
+  {
+    let svg = svgs[i];
+    if (svg.attributes['heobSum'] == undefined) continue;
+
+    if (svg.attributes['heobBlocked'] == undefined)
       continue;
 
     let ofs = parseInt(svg.attributes['heobOfs'].value);
@@ -1142,6 +1213,30 @@ function delThreadZoom(e, svg)
 
   let key = svg.attributes['heobKey'].value;
   let zoomers = getThreadZoomers(key);
+  zoomers = zoomersAndNot(zoomers, e.ctrlKey);
+  zoomArr(zoomers);
+  infoClear();
+}
+
+function blockedZoom(e)
+{
+  if (e.button != 0) return;
+
+  let zoomers = getBlockedZoomers();
+  zoomArr(zoomers);
+
+  functionTextReset = '';
+  sourceTextReset = '';
+  addressTextReset = '';
+  threadTextReset = '';
+  infoClear();
+}
+
+function delBlockedZoom(e)
+{
+  if (e.button != 1) return;
+
+  let zoomers = getBlockedZoomers();
   zoomers = zoomersAndNot(zoomers, e.ctrlKey);
   zoomArr(zoomers);
   infoClear();

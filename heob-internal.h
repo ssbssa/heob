@@ -327,6 +327,8 @@ typedef enum
   FT_FREE_DBG,
   FT_RECALLOC,
   FT_COUNT,
+
+  FT_BLOCKED, // sampled thread is blocked
 }
 funcType;
 
@@ -524,6 +526,7 @@ typedef struct
   void **threadNameIdxSlot;
 #endif
   DWORD threadId;
+  ULONG64 cycleTime;
 }
 threadSamplingType;
 #endif

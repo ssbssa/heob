@@ -4021,6 +4021,7 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
       tst.threadNameIdxSlot = getTlsSlotAddress( thread,threadNameTls );
 #endif
       tst.threadId = GetCurrentThreadId();
+      tst.cycleTime = 0;
 
       EnterCriticalSection( &rd->csWrite );
 
