@@ -1,4 +1,4 @@
-const ADDR_SUM_COUNT = 100;
+const SHOW_SUM_COUNT = 100;
 
 var headerHeight = 50;
 var footerHeight = 90;
@@ -7,6 +7,7 @@ var spacer = 10;
 var maxStack = 0;
 var sampleTimes = 0;
 var fullWidth = 0;
+var halfWidth = 0;
 var functionText;
 var sourceText;
 var addressText;
@@ -20,8 +21,17 @@ var threadTextReset = '';
 var lastZoomers;
 var mapType;
 
-var addrMap = new Map();
-var addrSumArray = new Array();
+var addrCountMap = new Map();
+var sourceCountMap = new Map();
+var funcCountMap = new Map();
+var addrCountArr;
+var sourceCountArr;
+var funcCountArr;
+var maxCount;
+var showMap;
+var showArr;
+var showKey;
+
 var threadMap = new Map();
 var threadArray = new Array();
 
@@ -41,6 +51,11 @@ function heobInit()
   let minStack = 0;
   let sumSamples = 0;
   let sumAllocs = 0;
+  let colorMapSource = new Map();
+  let colorMapFunc = new Map();
+  let colorMapAddr = new Map();
+  let colorMapBlocked = new Map();
+  let colorMapThread = new Map();
   for (let i = 0; i < svgs.length; i++)
   {
     let svg = svgs[i];
@@ -84,55 +99,44 @@ function heobInit()
 
     if (stack > maxStack) maxStack = stack;
 
-    let color;
-    let threadColor;
-    let arrayInMap;
-    let addrMapKey;
     if (stack > 1)
-      addrMapKey = getAddrMapKey(svg);
-    if (addrMapKey != undefined)
     {
-      arrayInMap = addrMap.get(addrMapKey);
-      if (arrayInMap == undefined)
+      if (svg.attributes['heobAddr'] != undefined &&
+          svg.attributes['heobMod'] != undefined)
       {
-        arrayInMap = new Array(5);
-        arrayInMap[0] = 0;   // sum of samples
-        arrayInMap[1] = 0;   // number of different occurences of address
-        arrayInMap[2] = 0;   // maximum extention
-        arrayInMap[3] = svg; // data reference
-        arrayInMap[4] = 0;   // sum of allocation count
-        addrMap.set(addrMapKey, arrayInMap);
+        let addrKey = svg.attributes['heobAddr'].value;
+        addToCountMap(addrKey, addrCountMap, ofs, samples, svg);
       }
-      else
-        color = arrayInMap[3].attributes['heobColor'].value;
-    }
-    if (color == undefined)
-    {
-      if (stack <= 1)
-        color = createBaseColor();
-      else if (svg.attributes['heobSource'] != undefined)
-        color = createSourceColor();
-      else if (svg.attributes['heobFunc'] != undefined)
-        color = createFuncColor();
-      else if (svg.attributes['heobAddr'] != undefined)
-        color = createAddrColor();
-      else if (svg.attributes['heobBlocked'] != undefined)
-        color = createBlockedColor();
-      else
+      if (svg.attributes['heobSource'] != undefined)
       {
-        if (svg.attributes['heobThread'] != undefined)
-        {
-          let mapEntry = threadMap.get(svg.attributes['heobThread'].value);
-          if (mapEntry != undefined)
-            color = mapEntry[4];
-        }
-        if (color == undefined)
-        {
-          color = createThreadColor();
-          threadColor = color;
-        }
+        let sourceKey = svg.attributes['heobSource'].value;
+        addToCountMap(sourceKey, sourceCountMap, ofs, samples, svg);
+      }
+      if (svg.attributes['heobFunc'] != undefined)
+      {
+        let funcKey = svg.attributes['heobFunc'].value;
+        addToCountMap(funcKey, funcCountMap, ofs, samples, svg);
       }
     }
+
+    let color;
+    if (stack <= 1)
+      color = createBaseColor();
+    else if (svg.attributes['heobSource'] != undefined)
+      color = getColorOfMap(svg,
+          colorMapSource, 'heobFunc', createSourceColor);
+    else if (svg.attributes['heobFunc'] != undefined)
+      color = getColorOfMap(svg,
+          colorMapFunc, 'heobFunc', createFuncColor);
+    else if (svg.attributes['heobAddr'] != undefined)
+      color = getColorOfMap(svg,
+          colorMapAddr, 'heobAddr', createAddrColor);
+    else if (svg.attributes['heobBlocked'] != undefined)
+      color = getColorOfMap(svg,
+          colorMapBlocked, 'heobThread', createBlockedColor);
+    else
+      color = getColorOfMap(svg,
+          colorMapThread, 'heobThread', createThreadColor);
 
     svg.setAttribute('class', 'sample');
     svg.setAttribute('onmouseover', 'infoSet(this)');
@@ -167,16 +171,6 @@ function heobInit()
       continue;
     addText(svg, svgNs, t);
 
-    if (arrayInMap != undefined && stack > 1 &&
-        // only the first entry of an address in a stacktrace is used
-        ofs + 0.1 >= arrayInMap[2] && mapType == svgType)
-    {
-      arrayInMap[0] += samples;
-      arrayInMap[1]++;
-      arrayInMap[2] = ofs + samples;
-      arrayInMap[4] += allocs;
-    }
-
     if (svg.attributes['heobThread'] != undefined)
     {
       let thread = svg.attributes['heobThread'].value;
@@ -188,15 +182,14 @@ function heobInit()
         mapEntry[1] = 0;           // maximum extention
         mapEntry[2] = svg;         // data reference
         mapEntry[3] = 0;           // sum of allocation count
-        mapEntry[4] = threadColor; // color
+        mapEntry[4] = undefined;   // color
         threadMap.set(thread, mapEntry);
       }
-      else if (threadColor != undefined)
-        mapEntry[4] = threadColor;
-      else if (mapEntry[4] == undefined && ofs + 0.1 >= mapEntry[1])
-        mapEntry[4] = createThreadColor();
       if (ofs + 0.1 >= mapEntry[1] && mapType == svgType)
       {
+        if (mapEntry[0] && mapEntry[4] == undefined)
+          mapEntry[4] = getColorOfMap(svg,
+              colorMapThread, 'heobThread', createThreadColor);
         mapEntry[0] += samples;
         mapEntry[1] = ofs + samples;
         mapEntry[3] += allocs;
@@ -238,18 +231,12 @@ function heobInit()
   fullWidth = svgWidth - 2 * spacer;
   let fullHeight = headerHeight + maxStack * 16 + footerHeight;
 
-  addrMap.forEach(
-    function (value, key, map)
-    {
-      if (value[0] > 0 && value[1] >= 2)
-        addrSumArray.push(key);
-    });
-  addrSumArray.sort(
-    function (a, b)
-    {
-      return addrMap.get(b)[0] - addrMap.get(a)[0];
-    });
-  let addrCount = Math.min(addrSumArray.length, ADDR_SUM_COUNT);
+  addrCountArr = arrayFromCountMap(addrCountMap);
+  sourceCountArr = arrayFromCountMap(sourceCountMap);
+  funcCountArr = arrayFromCountMap(funcCountMap);
+  maxCount = Math.max(addrCountArr.length,
+      sourceCountArr.length, funcCountArr.length);
+  let showCount = Math.min(maxCount, SHOW_SUM_COUNT);
 
   threadMap.forEach(
     function (value, key, map)
@@ -269,23 +256,23 @@ function heobInit()
   if (threadArray.length == 1)
     threadArray.pop();
 
-  let extraCount = Math.max(addrCount, threadArray.length);
+  let extraCount = Math.max(showCount, threadArray.length);
   let svgHeight = fullHeight;
   if (extraCount > 0)
     svgHeight += 40 + extraCount * 16;
   svg.setAttribute('height', svgHeight);
   svg.setAttribute('viewBox', '0 0 ' + svgWidth + ' ' + svgHeight);
 
-  let halfWidth = fullWidth;
-  if (addrCount > 0 && threadArray.length > 0)
+  halfWidth = fullWidth;
+  if (showCount > 0 && threadArray.length > 0)
     halfWidth = (fullWidth - spacer) / 2;
 
-  for (let i = 0; i < addrCount; i++)
+  for (let i = 0; i < showCount; i++)
   {
     let x = spacer;
     let y = fullHeight + 31 + i * 16;
 
-    let newSvg = createSvg(svgNs, x, y, halfWidth, 16, 'addr' + i);
+    let newSvg = createSvg(svgNs, x, y, halfWidth, 16, 'show' + i);
 
     addTitle(newSvg, svgNs, '');
 
@@ -326,17 +313,33 @@ function heobInit()
     svg.appendChild(newSvg);
   }
 
+  let textWidth = 120;
   let blockedSvg = createSvg(svgNs,
-      (svgWidth - 200) / 2, fullHeight, 200, 16, 'blocked');
+      svgWidth * 3 / 4 - textWidth / 2, fullHeight, textWidth, 16, 'blocked');
   addRectBg(blockedSvg, svgNs, rect0);
   addRect(blockedSvg, svgNs, createBlockedColor());
-  let blockedText = addText(blockedSvg, svgNs, 'idle', '100');
+  let blockedText = addText(blockedSvg, svgNs, 'idle', textWidth / 2);
   blockedText.setAttribute('text-anchor', 'middle');
   blockedSvg.setAttribute('onmouseover', 'blockedInfoSet()');
   blockedSvg.setAttribute('onmouseout', 'addrInfoClear()');
   blockedSvg.setAttribute('onclick', 'blockedZoom(evt)');
   blockedSvg.setAttribute('onmousedown', 'delBlockedZoom(evt)');
   svg.appendChild(blockedSvg);
+
+  let showColors = [createFuncColor(), createSourceColor(), createAddrColor()];
+  let showTexts = ['function', 'source', 'address'];
+  for (let i = 0; i < 3; i++)
+  {
+    let showTypeSvg = createSvg(svgNs,
+        svgWidth / 4 + (textWidth + spacer) * (i - 1) - textWidth / 2,
+        fullHeight, textWidth, 16, 'showType' + i);
+    addRectBg(showTypeSvg, svgNs, rect0);
+    addRect(showTypeSvg, svgNs, showColors[i]);
+    let showText = addText(showTypeSvg, svgNs, showTexts[i], textWidth / 2);
+    showText.setAttribute('text-anchor', 'middle');
+    showTypeSvg.setAttribute('onclick', 'showType(' + i + ', 1)');
+    svg.appendChild(showTypeSvg);
+  }
 
   functionText = addInfoText(svg, svgNs);
   sourceText = addInfoText(svg, svgNs);
@@ -363,6 +366,8 @@ function heobInit()
   cmdText.setAttribute('onclick', 'alert(this.attributes["heobCmd"].value)');
   addTitle(cmdText, svgNs, cmdText.attributes['heobCmd'].value);
 
+  showType(0, 0);
+
   if (zoomSvg != undefined)
   {
     // fake left mouse button
@@ -370,6 +375,112 @@ function heobInit()
     zoom(e, zoomSvg);
   }
   infoClear();
+}
+
+function getColorOfMap(svg, map, attr, colorFunction)
+{
+  let color;
+  if (svg.attributes[attr] != undefined)
+    color = map.get(svg.attributes[attr].value);
+  if (color == undefined)
+  {
+    color = colorFunction();
+    if (svg.attributes[attr] != undefined)
+      map.set(svg.attributes[attr].value, color);
+  }
+  return color;
+}
+
+function addToCountMap(key, map, ofs, samples, svg)
+{
+  let val = map.get(key);
+  if (val == undefined)
+  {
+    val = new Array(7);
+    val[0] = 0;   // count
+    val[1] = 0;   // maximum extention
+    val[2] = 0;   // sum of samples
+    val[3] = 0;   // sum of allocation count
+    val[4] = svg; // data reference
+    val[5] = 0;   // use source of data reference
+    val[6] = 0;   // use address of data reference
+    map.set(key, val);
+  }
+  if (ofs + 0.1 >= val[1])
+  {
+    val[0]++;
+    val[1] = ofs + samples;
+    val[2] += samples;
+  }
+}
+
+function arrayFromCountMap(map)
+{
+  let arr = new Array();
+  map.forEach(
+    function (val, key, map)
+    {
+      if (val[2] > 0 && val[0] >= 2)
+        arr.push(key);
+    });
+  return arr;
+}
+
+function resetCountMap(map)
+{
+  map.forEach(
+    function (val, key, map)
+    {
+      val[0] = 0;
+      val[1] = 0;
+      val[2] = 0;
+      val[3] = 0;
+      val[5] = val[4].attributes['heobSource'] != undefined ? 1 : 0;
+      val[6] = val[4].attributes['heobAddr'] != undefined ? 1 : 0;
+    });
+}
+
+function updateCountMap(map, svg, keyName, ofs, samples, shownSamples, allocs)
+{
+  if (svg.attributes[keyName] == undefined) return;
+  let key = svg.attributes[keyName].value;
+  let val = map.get(key);
+  if (val == undefined || ofs + 0.1 < val[1]) return;
+  val[0]++;
+  val[1] = ofs + samples;
+  val[2] += shownSamples;
+  val[3] += allocs;
+  if (val[5] &&
+      (svg.attributes['heobSource'] == undefined ||
+       svg.attributes['heobSource'].value !=
+       val[4].attributes['heobSource'].value))
+    val[5] = 0;
+  if (val[6] &&
+      (svg.attributes['heobAddr'] == undefined ||
+       svg.attributes['heobAddr'].value !=
+       val[4].attributes['heobAddr'].value))
+    val[6] = 0;
+}
+
+function sortCountMap(map, arr)
+{
+  arr.sort(
+    function (a, b)
+    {
+      let valueA = map.get(a);
+      let valueB = map.get(b);
+      if ((valueA[0] >= 2) == (valueB[0] >= 2))
+        return valueB[2] - valueA[2];
+      return valueA[0] >= 2 ? -1 : 1;
+    });
+}
+
+function getShowKey(svg)
+{
+  let key;
+  if (svg.attributes[showKey] != undefined)
+    key = svg.attributes[showKey].value;
+  return key;
 }
 
 function createColor(colorFactor, colorOfs, colorSummand)
@@ -569,16 +680,6 @@ function infoClear()
   threadText.textContent = threadTextReset;
 }
 
-function getAddrMapKey(svg)
-{
-  let mapKey;
-  if (svg.attributes['heobSource'] != undefined)
-    mapKey = svg.attributes['heobSource'].value;
-  else if (svg.attributes['heobAddr'] != undefined)
-    mapKey = svg.attributes['heobAddr'].value;
-  return mapKey;
-}
-
 function addrInfoSet(svg)
 {
   let key = svg.attributes['heobKey'].value;
@@ -590,7 +691,7 @@ function addrInfoSet(svg)
     if (svgEntry.style['display'] == 'none') continue;
 
     let opacity = parseFloat(svgEntry.attributes['heobOpacity'].value);
-    let entryKey = getAddrMapKey(svgEntry);
+    let entryKey = getShowKey(svgEntry);
     if (entryKey == undefined || entryKey != key)
       opacity *= 0.25;
     else
@@ -677,7 +778,7 @@ function getAddrZoomers(key)
     let svg = svgs[i];
     if (svg.attributes['heobSum'] == undefined) continue;
 
-    let entryKey = getAddrMapKey(svg);
+    let entryKey = getShowKey(svg);
     if (entryKey == undefined || entryKey != key)
       continue;
 
@@ -865,14 +966,10 @@ function zoomArr(zoomers)
   for (let i = 0; i < zoomers.length; i++)
     zoomSamples += zoomers[i][2];
 
-  addrMap.forEach(
-    function (value, key, map)
-    {
-      value[0] = 0;
-      value[1] = 0;
-      value[2] = 0;
-      value[4] = 0;
-    });
+  resetCountMap(addrCountMap);
+  resetCountMap(sourceCountMap);
+  resetCountMap(funcCountMap);
+
   threadMap.forEach(
     function (value, key, map)
     {
@@ -897,6 +994,7 @@ function zoomArr(zoomers)
   let maxExtention = 0;
   let sumBytes = 0;
   let sumAllocs = 0;
+  let blockedCount = 0;
   for (let i = 0; i < svgs.length; i++)
   {
     let svg = svgs[i];
@@ -922,6 +1020,9 @@ function zoomArr(zoomers)
       continue;
     }
 
+    if (svg.attributes['heobBlocked'] != undefined)
+      blockedCount++;
+
     let x1 = pos;
     if (ofs > zoomers[zidx][0])
       x1 += ofs - zoomers[zidx][0];
@@ -937,18 +1038,12 @@ function zoomArr(zoomers)
 
     if (mapType == svgType)
     {
-      let addrMapKey = getAddrMapKey(svg);
-      if (addrMapKey != undefined)
-      {
-        let arrayInMap = addrMap.get(addrMapKey);
-        if (arrayInMap != undefined && ofs + 0.1 >= arrayInMap[2])
-        {
-          arrayInMap[0] += shownSamples;
-          arrayInMap[1]++;
-          arrayInMap[2] = ofs + samples;
-          arrayInMap[4] += allocs;
-        }
-      }
+      updateCountMap(addrCountMap, svg, 'heobAddr',
+          ofs, samples, shownSamples, allocs);
+      updateCountMap(sourceCountMap, svg, 'heobSource',
+          ofs, samples, shownSamples, allocs);
+      updateCountMap(funcCountMap, svg, 'heobFunc',
+          ofs, samples, shownSamples, allocs);
 
       let thread;
       if (svg.attributes['heobThread'] != undefined)
@@ -1005,20 +1100,25 @@ function zoomArr(zoomers)
       }
     }
   }
+  let blockedSvg = document.getElementById('blocked');
+  setButtonEnabled(blockedSvg, blockedCount);
 
-  addrSumArray.sort(
-    function (a, b)
-    {
-      let valueA = addrMap.get(a);
-      let valueB = addrMap.get(b);
-      if ((valueA[1] >= 2) == (valueB[1] >= 2))
-        return valueB[0] - valueA[0];
-      return valueA[1] >= 2 ? -1 : 1;
-    });
-  let addrCount = addrSumArray.length;
-  if (addrCount > 0 && (addrMap.get(addrSumArray[0])[0] == 0 ||
-        addrMap.get(addrSumArray[0])[1] < 2))
-    addrCount = 0;
+  sortCountMap(addrCountMap, addrCountArr);
+  sortCountMap(sourceCountMap, sourceCountArr);
+  sortCountMap(funcCountMap, funcCountArr);
+
+  let showArrs = [addrCountArr, sourceCountArr, funcCountArr];
+  let showMaps = [addrCountMap, sourceCountMap, funcCountMap];
+  let showCount = 0;
+  for (let i = 0; i < 3; i++)
+  {
+    let arr = showArrs[i];
+    let l = arr.length;
+    if (l == 0) continue;
+    let map0 = showMaps[i].get(arr[0]);
+    if (map0[2] == 0 || map0[0] < 2) l = 0;
+    if (l > showCount) showCount = l;
+  }
 
   threadArray.sort(
     function (a, b)
@@ -1033,56 +1133,11 @@ function zoomArr(zoomers)
   if (threadCount > 1 && threadMap.get(threadArray[1])[0] == 0)
     threadCount = 0;
 
-  let halfWidth = fullWidth;
-  if (addrCount > 0 && threadCount > 0)
+  halfWidth = fullWidth;
+  if (showCount > 0 && threadCount > 0)
     halfWidth = (fullWidth - spacer) / 2;
 
-  let maxAddrSamples = 0;
-  for (let i = 0; i < addrSumArray.length; i++)
-  {
-    let key = addrSumArray[i];
-    let value = addrMap.get(key);
-
-    let svg = document.getElementById('addr' + i);
-    if (svg == undefined) break;
-
-    let sum = value[0];
-    if (sum == 0 || value[1] < 2)
-    {
-      svg.style['display'] = 'none';
-      continue;
-    }
-
-    if (maxAddrSamples == 0)
-      maxAddrSamples = sum;
-
-    let refSvg = value[3];
-
-    let width = Math.max(sum * halfWidth / maxAddrSamples, 2);
-    let color = refSvg.attributes['heobColor'].value;
-
-    let title = svg.getElementsByTagName('title')[0];
-    let rects = svg.getElementsByTagName('rect');
-    let rectBg = rects[0];
-    let rect = rects[1];
-    let text = svg.getElementsByTagName('text')[0];
-
-    let t = withNL(funcAttribute(refSvg)) + withNL(sourceAttribute(refSvg)) +
-      withNL(addrModAttribute(refSvg)) +
-      sumText(mapType ? sum : 0, mapType ? 0 : sum, value[4]);
-    title.textContent = t;
-
-    svg.style['display'] = 'block';
-    svg.setAttribute('heobKey', key);
-    svg.setAttribute('width', width);
-
-    rectBg.setAttribute('width', width);
-
-    rect.setAttribute('fill', color);
-    rect.setAttribute('width', width);
-
-    text.textContent = refSvg.getElementsByTagName('text')[0].textContent;
-  }
+  showTypeData();
 
   let maxThreadSamples = 0;
   for (let i = 0; i < threadArray.length; i++)
@@ -1136,6 +1191,108 @@ function zoomArr(zoomers)
   if (cpos + 0.1 < cfinish)
     sumAllocs = 0;
   infoTextReset = sumText(zoomSamples - sumBytes, sumBytes, sumAllocs);
+}
+
+function showTypeData()
+{
+  let maxShowSamples = 0;
+  for (let i = 0; i < maxCount; i++)
+  {
+    let svg = document.getElementById('show' + i);
+    if (svg == undefined) break;
+
+    if (i >= showArr.length)
+    {
+      svg.style['display'] = 'none';
+      continue;
+    }
+
+    let key = showArr[i];
+    let value = showMap.get(key);
+
+    let sum = value[2];
+    if (sum == 0 || value[0] < 2)
+    {
+      svg.style['display'] = 'none';
+      continue;
+    }
+
+    if (maxShowSamples == 0)
+      maxShowSamples = sum;
+
+    let refSvg = value[4];
+
+    let width = Math.max(sum * halfWidth / maxShowSamples, 2);
+    let color = refSvg.attributes['heobColor'].value;
+
+    let title = svg.getElementsByTagName('title')[0];
+    let rects = svg.getElementsByTagName('rect');
+    let rectBg = rects[0];
+    let rect = rects[1];
+    let text = svg.getElementsByTagName('text')[0];
+
+    let t = withNL(funcAttribute(refSvg));
+    if (value[5]) t += withNL(sourceAttribute(refSvg));
+    if (value[6]) t += withNL(addrModAttribute(refSvg));
+    t += sumText(mapType ? sum : 0, mapType ? 0 : sum, value[4]);
+    title.textContent = t;
+
+    svg.style['display'] = 'block';
+    svg.setAttribute('heobKey', key);
+    svg.setAttribute('width', width);
+
+    rectBg.setAttribute('width', width);
+
+    rect.setAttribute('fill', color);
+    rect.setAttribute('width', width);
+
+    text.textContent = refSvg.getElementsByTagName('text')[0].textContent;
+  }
+}
+
+function setButtonEnabled(svg, b)
+{
+  if (!b)
+  {
+    svg.setAttribute('class', '');
+    svg.style['opacity'] = 0.5;
+  }
+  else
+  {
+    svg.setAttribute('class', 'sample');
+    svg.style['opacity'] = 1;
+  }
+}
+
+function showType(t, refresh)
+{
+  if (t == 0)
+  {
+    showMap = funcCountMap;
+    showArr = funcCountArr;
+    showKey = 'heobFunc';
+  }
+  else if (t == 1)
+  {
+    showMap = sourceCountMap;
+    showArr = sourceCountArr;
+    showKey = 'heobSource';
+  }
+  else
+  {
+    showMap = addrCountMap;
+    showArr = addrCountArr;
+    showKey = 'heobAddr';
+  }
+
+  for (let i = 0; i < 3; i++)
+  {
+    let svg = document.getElementById('showType' + i);
+    setButtonEnabled(svg, i != t);
+  }
+
+  if (refresh)
+    showTypeData();
 }
 
 function zoom(e, svg)
