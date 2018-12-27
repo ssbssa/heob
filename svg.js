@@ -317,7 +317,8 @@ function heobInit()
   let blockedSvg = createSvg(svgNs,
       svgWidth * 3 / 4 - textWidth / 2, fullHeight, textWidth, 16, 'blocked');
   addRectBg(blockedSvg, svgNs, rect0);
-  addRect(blockedSvg, svgNs, createBlockedColor());
+  createGradient(svg, svgNs, 'grad_blocked', '#20ff20', '#9eff9e');
+  addRect(blockedSvg, svgNs, 'url(#grad_blocked)');
   let blockedText = addText(blockedSvg, svgNs, 'idle', textWidth / 2);
   blockedText.setAttribute('text-anchor', 'middle');
   blockedSvg.setAttribute('onmouseover', 'blockedInfoSet()');
@@ -326,7 +327,8 @@ function heobInit()
   blockedSvg.setAttribute('onmousedown', 'delBlockedZoom(evt)');
   svg.appendChild(blockedSvg);
 
-  let showColors = [createFuncColor(), createSourceColor(), createAddrColor()];
+  let grad1 = ['#3fa0a0', '#a03fa0', '#a0a03f'];
+  let grad2 = ['#3fdfdf', '#df3fdf', '#dfdf3f'];
   let showTexts = ['function', 'source', 'address'];
   for (let i = 0; i < 3; i++)
   {
@@ -334,7 +336,8 @@ function heobInit()
         svgWidth / 4 + (textWidth + spacer) * (i - 1) - textWidth / 2,
         fullHeight, textWidth, 16, 'showType' + i);
     addRectBg(showTypeSvg, svgNs, rect0);
-    addRect(showTypeSvg, svgNs, showColors[i]);
+    createGradient(svg, svgNs, 'grad_' + showTexts[i], grad1[i], grad2[i]);
+    addRect(showTypeSvg, svgNs, 'url(#grad_' + showTexts[i] + ')');
     let showText = addText(showTypeSvg, svgNs, showTexts[i], textWidth / 2);
     showText.setAttribute('text-anchor', 'middle');
     showTypeSvg.setAttribute('onclick', 'showType(' + i + ', 1)');
@@ -375,6 +378,23 @@ function heobInit()
     zoom(e, zoomSvg);
   }
   infoClear();
+}
+
+function createGradient(svg, svgNs, name, grad1, grad2)
+{
+  let newDefs = document.createElementNS(svgNs, 'defs');
+  let newGrad = document.createElementNS(svgNs, 'linearGradient');
+  newGrad.setAttribute('id', name);
+  let newStop = document.createElementNS(svgNs, 'stop');
+  newStop.setAttribute('offset', '5%');
+  newStop.setAttribute('stop-color', grad1);
+  newGrad.appendChild(newStop);
+  newStop = document.createElementNS(svgNs, 'stop');
+  newStop.setAttribute('offset', '95%');
+  newStop.setAttribute('stop-color', grad2);
+  newGrad.appendChild(newStop);
+  newDefs.appendChild(newGrad);
+  svg.appendChild(newDefs);
 }
 
 function getColorOfMap(svg, map, attr, colorFunction)
