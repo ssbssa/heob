@@ -2200,7 +2200,7 @@ static void printThreadName( int threadNameIdx,
 {
   if( threadNameIdx>0 && threadNameIdx<=threadName_q &&
       threadName_a[threadNameIdx-1] )
-    printf( " $S\"%s\"\n",threadName_a[threadNameIdx-1] );
+    printf( " $S'%d: %s'\n",threadNameIdx,threadName_a[threadNameIdx-1] );
   else if( threadNameIdx>1 )
     printf( " $S'%d'\n",threadNameIdx );
   else
@@ -2748,12 +2748,12 @@ static int printStackGroupXml( stackGroup *sg,
       printf( "  <unique>%X</unique>\n",a->id );
 #ifndef NO_THREADNAMES
       int threadNameIdx = a->threadNameIdx;
+      if( threadNameIdx )
+        printf( "  <tid>%d</tid>\n",threadNameIdx );
       if( threadNameIdx>0 && threadNameIdx<=threadName_q &&
           threadName_a[threadNameIdx-1] )
         printf( "  <threadname>%s</threadname>\n",
             threadName_a[threadNameIdx-1] );
-      else if( threadNameIdx )
-        printf( "  <tid>%d</tid>\n",threadNameIdx );
 #endif
       printf( "  <kind>%s</kind>\n",xmlLeakTypeNames[a->lt] );
       printf( "  <xwhat>\n" );
@@ -4152,7 +4152,8 @@ static void locSvg( textColor *tc,uintptr_t addr,int useAddr,
 #ifndef NO_THREADNAMES
   if( threadNameIdx>0 && threadNameIdx<=threadName_q &&
       threadName_a[threadNameIdx-1] )
-    printf( " heobThread=\"%s\"",threadName_a[threadNameIdx-1] );
+    printf( " heobThread=\"thread %d: %s\"",
+        threadNameIdx,threadName_a[threadNameIdx-1] );
   else if( threadNameIdx )
     printf( " heobThread=\"thread %d\"",threadNameIdx );
 #endif
