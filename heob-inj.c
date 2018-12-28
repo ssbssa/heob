@@ -147,7 +147,7 @@ typedef struct localData
 
 #ifndef NO_THREADNAMES
   DWORD threadNameTls;
-  LONG threadNameIdx;
+  int threadNameIdx;
 #endif
 
   DWORD freeSizeTls;
@@ -176,6 +176,9 @@ typedef struct localData
   CRITICAL_SECTION csAllocId;
   CRITICAL_SECTION csWrite;
   CRITICAL_SECTION csFreedMod;
+#ifndef NO_THREADNAMES
+  CRITICAL_SECTION csThreadNameIdx;
+#endif
 
   // protected by csMod {{{
 
@@ -203,13 +206,6 @@ typedef struct localData
   // protected by csWrite {{{
 
   HANDLE master;
-
-#ifndef NO_THREADNAMES
-  threadNameInfo *threadName_a;
-  int threadName_q;
-  int threadName_s;
-  int threadName_w;
-#endif
 
   // }}}
   // protected by csFreedMod {{{
@@ -418,19 +414,6 @@ static void writeModsSend( modInfo *mi_a,int mi_q )
     WriteFile( rd->master,mi_a,mi_q*sizeof(modInfo),&written,NULL );
   if( mi_a )
     HeapFree( rd->heap,0,mi_a );
-
-#ifndef NO_THREADNAMES
-  if( rd->threadName_q>rd->threadName_w )
-  {
-    type = WRITE_THREAD_NAMES;
-    WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-    type = rd->threadName_q - rd->threadName_w;
-    WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-    WriteFile( rd->master,rd->threadName_a+rd->threadName_w,
-        type*sizeof(threadNameInfo),&written,NULL );
-    rd->threadName_w = rd->threadName_q;
-  }
-#endif
 }
 
 static void writeAllocs( allocation *alloc_a,int alloc_q,int type )
@@ -1954,41 +1937,14 @@ static VOID WINAPI new_RaiseException(
   {
     const THREADNAME_INFO *tni = (const THREADNAME_INFO*)lpArguments;
 
-    if( tni->dwType==0x1000 )
+    if( tni->dwType==0x1000 && tni->szName && tni->szName[0] )
     {
-      EnterCriticalSection( &rd->csWrite );
-
       // thread name index {{{
-      int newNameIdx = 0;
-      if( tni->szName && tni->szName[0] )
-      {
-        for( newNameIdx=rd->threadName_q; newNameIdx>0 &&
-            lstrcmp(tni->szName,rd->threadName_a[newNameIdx-1].name);
-            newNameIdx-- );
-
-        if( !newNameIdx )
-        {
-          if( rd->threadName_q>=rd->threadName_s )
-            rd->threadName_a = add_realloc(
-                rd->threadName_a,&rd->threadName_s,64,
-                sizeof(threadNameInfo),&rd->csWrite );
-          threadNameInfo *threadName = &rd->threadName_a[rd->threadName_q++];
-          size_t len = lstrlen( tni->szName );
-          if( len>=sizeof(threadName->name) )
-            len = sizeof(threadName->name) - 1;
-          RtlMoveMemory( threadName->name,tni->szName,len );
-          threadName->name[len] = 0;
-
-          newNameIdx = rd->threadName_q;
-        }
-      }
-      // }}}
-
-      // attach name to thread {{{
       DWORD threadId = tni->dwThreadID;
       DWORD threadNameTls = rd->threadNameTls;
+      int threadNameIdx = 0;
       if( threadId==(DWORD)-1 || threadId==GetCurrentThreadId() )
-        TlsSetValue( threadNameTls,(void*)(uintptr_t)newNameIdx );
+        threadNameIdx = (int)(uintptr_t)TlsGetValue( threadNameTls );
       else if( rd->fNtQueryInformationThread )
       {
         HANDLE thread = OpenThread(
@@ -1997,13 +1953,37 @@ static VOID WINAPI new_RaiseException(
         {
           void **tlsSlotAddress = getTlsSlotAddress( thread,threadNameTls );
           if( tlsSlotAddress )
-            *tlsSlotAddress = (void*)(uintptr_t)newNameIdx;
+          {
+            EnterCriticalSection( &rd->csThreadNameIdx );
+
+            threadNameIdx = (int)(uintptr_t)*tlsSlotAddress;
+            if( !threadNameIdx )
+            {
+              threadNameIdx = ++rd->threadNameIdx;
+              *tlsSlotAddress = (void*)(uintptr_t)threadNameIdx;
+            }
+
+            LeaveCriticalSection( &rd->csThreadNameIdx );
+          }
           CloseHandle( thread );
         }
       }
       // }}}
 
-      LeaveCriticalSection( &rd->csWrite );
+      if( threadNameIdx )
+      {
+        EnterCriticalSection( &rd->csWrite );
+
+        int type = WRITE_THREAD_NAME;
+        DWORD written;
+        WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+        WriteFile( rd->master,&threadNameIdx,sizeof(int),&written,NULL );
+        int len = lstrlen( tni->szName );
+        WriteFile( rd->master,&len,sizeof(int),&written,NULL );
+        WriteFile( rd->master,tni->szName,len,&written,NULL );
+
+        LeaveCriticalSection( &rd->csWrite );
+      }
     }
   }
 
@@ -4001,11 +3981,17 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
     // thread number {{{
 #ifndef NO_THREADNAMES
     DWORD threadNameTls = rd->threadNameTls;
-    if( !TlsGetValue(threadNameTls) )
+
+    EnterCriticalSection( &rd->csThreadNameIdx );
+
+    int threadNameIdx = (int)(uintptr_t)TlsGetValue( threadNameTls );
+    if( !threadNameIdx )
     {
-      int threadNameIdx = InterlockedDecrement( &rd->threadNameIdx );
+      threadNameIdx = ++rd->threadNameIdx;
       TlsSetValue( threadNameTls,(void*)(uintptr_t)threadNameIdx );
     }
+
+    LeaveCriticalSection( &rd->csThreadNameIdx );
 #endif
     // }}}
 
@@ -4018,7 +4004,7 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
       DuplicateHandle( GetCurrentProcess(),thread,
           rd->heobProcess,&tst.thread,0,FALSE,DUPLICATE_SAME_ACCESS );
 #ifndef NO_THREADNAMES
-      tst.threadNameIdxSlot = getTlsSlotAddress( thread,threadNameTls );
+      tst.threadNameIdx = threadNameIdx;
 #endif
       tst.threadId = GetCurrentThreadId();
       tst.cycleTime = 0;
@@ -4299,6 +4285,9 @@ VOID CALLBACK heob( ULONG_PTR arg )
               4000,CRITICAL_SECTION_NO_DEBUG_INFO );
       }
     }
+#ifndef NO_THREADNAMES
+    fInitCritSecEx( &ld->csThreadNameIdx,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
+#endif
   }
   else
   {
@@ -4316,6 +4305,9 @@ VOID CALLBACK heob( ULONG_PTR arg )
           InitializeCriticalSection( &ld->freeds[i].cs );
       }
     }
+#ifndef NO_THREADNAMES
+    InitializeCriticalSection( &ld->csThreadNameIdx );
+#endif
   }
   // }}}
 

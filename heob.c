@@ -2196,15 +2196,13 @@ static char *undecorateVCsymbol( dbgsym *ds,char *decorName )
 
 #ifndef NO_THREADNAMES
 static void printThreadName( int threadNameIdx,
-    textColor *tc,int threadName_q,threadNameInfo *threadName_a )
+    textColor *tc,int threadName_q,char **threadName_a )
 {
-  if( threadNameIdx>0 && threadNameIdx<=threadName_q )
-    printf( " $S\"%s\"\n",threadName_a[threadNameIdx-1].name );
-  else if( threadNameIdx<-1 )
-  {
-    unsigned unnamedIdx = -threadNameIdx;
-    printf( " $S'%u'\n",unnamedIdx );
-  }
+  if( threadNameIdx>0 && threadNameIdx<=threadName_q &&
+      threadName_a[threadNameIdx-1] )
+    printf( " $S\"%s\"\n",threadName_a[threadNameIdx-1] );
+  else if( threadNameIdx>1 )
+    printf( " $S'%d'\n",threadNameIdx );
   else
     printf( "\n" );
 }
@@ -2578,7 +2576,7 @@ static void sortStackGroup( stackGroup *sg,HANDLE heap )
 static void printStackGroup( stackGroup *sg,
     allocation *alloc_a,const int *alloc_idxs,
 #ifndef NO_THREADNAMES
-    threadNameInfo *threadName_a,int threadName_q,
+    char **threadName_a,int threadName_q,
 #endif
     unsigned char **content_ptrs,modInfo *mi_a,int mi_q,dbgsym *ds,
     int sampling )
@@ -2702,7 +2700,7 @@ static void printStackGroup( stackGroup *sg,
 static int printStackGroupXml( stackGroup *sg,
     allocation *alloc_a,const int *alloc_idxs,int alloc_q,
 #ifndef NO_THREADNAMES
-    threadNameInfo *threadName_a,int threadName_q,
+    char **threadName_a,int threadName_q,
 #endif
     modInfo *mi_a,int mi_q,dbgsym *ds,const char **leakTypeNames,
     int xmlRecordNum,int sampling )
@@ -2750,14 +2748,12 @@ static int printStackGroupXml( stackGroup *sg,
       printf( "  <unique>%X</unique>\n",a->id );
 #ifndef NO_THREADNAMES
       int threadNameIdx = a->threadNameIdx;
-      if( threadNameIdx>0 && threadNameIdx<=threadName_q )
+      if( threadNameIdx>0 && threadNameIdx<=threadName_q &&
+          threadName_a[threadNameIdx-1] )
         printf( "  <threadname>%s</threadname>\n",
-            threadName_a[threadNameIdx-1].name );
-      else if( threadNameIdx<0 )
-      {
-        unsigned unnamedIdx = -threadNameIdx;
-        printf( "  <tid>%u</tid>\n",unnamedIdx );
-      }
+            threadName_a[threadNameIdx-1] );
+      else if( threadNameIdx )
+        printf( "  <tid>%d</tid>\n",threadNameIdx );
 #endif
       printf( "  <kind>%s</kind>\n",xmlLeakTypeNames[a->lt] );
       printf( "  <xwhat>\n" );
@@ -2798,7 +2794,7 @@ static void freeStackGroup( stackGroup *sg,HANDLE heap )
 static void printFullStackGroupSvg( appData *ad,stackGroup *sg,textColor *tc,
     allocation *alloc_a,const int *alloc_idxs,
 #ifndef NO_THREADNAMES
-    threadNameInfo *threadName_a,int threadName_q,
+    char **threadName_a,int threadName_q,
 #endif
     modInfo *mi_a,int mi_q,dbgsym *ds,
     const char *groupName,const char *groupTypeName,int sampling );
@@ -2808,7 +2804,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
     int alloc_ignore_ind_q,size_t alloc_ignore_ind_sum,
     unsigned char **content_ptrs,modInfo *mi_a,int mi_q,
 #ifndef NO_THREADNAMES
-    threadNameInfo *threadName_a,int threadName_q,
+    char **threadName_a,int threadName_q,
 #endif
     options *opt,textColor *tc,dbgsym *ds,HANDLE heap,textColor *tcXml,
     appData *ad,textColor *tcSvg,int sampling )
@@ -3123,9 +3119,6 @@ static DWORD WINAPI samplingThread( LPVOID arg )
   appData *ad = arg;
   options *opt = ad->opt;
   HANDLE heap = ad->heap;
-#ifndef NO_THREADNAMES
-  HANDLE process = ad->pi.hProcess;
-#endif
 
   int interval = opt->samplingInterval;
   if( interval<0 ) interval = -interval;
@@ -3180,13 +3173,7 @@ static DWORD WINAPI samplingThread( LPVOID arg )
       a->id = ++ad->samp_id;
 
 #ifndef NO_THREADNAMES
-      void **threadNameIdxSlot = thread_samp_a[ts].threadNameIdxSlot;
-      if( threadNameIdxSlot )
-      {
-        void *idx;
-        ReadProcessMemory( process,threadNameIdxSlot,&idx,sizeof(idx),NULL );
-        a->threadNameIdx = (int)(uintptr_t)idx;
-      }
+      a->threadNameIdx = thread_samp_a[ts].threadNameIdx;
 #endif
 
       HANDLE thread = thread_samp_a[ts].thread;
@@ -4143,7 +4130,7 @@ static textColor *writeSvgHeader( appData *ad )
 static void locSvg( textColor *tc,uintptr_t addr,int useAddr,
     size_t samples,size_t ofs,int stack,int allocs,
 #ifndef NO_THREADNAMES
-    threadNameInfo *threadName_a,int threadName_q,int threadNameIdx,
+    char **threadName_a,int threadName_q,int threadNameIdx,
 #endif
     const char *filename,int lineno,const char *funcname,const char *modname,
     int blocked )
@@ -4163,10 +4150,11 @@ static void locSvg( textColor *tc,uintptr_t addr,int useAddr,
   if( modname )
     printf( " heobMod=\"%s\"",modname );
 #ifndef NO_THREADNAMES
-  if( threadNameIdx>0 && threadNameIdx<=threadName_q )
-    printf( " heobThread=\"%s\"",threadName_a[threadNameIdx-1].name );
-  else if( threadNameIdx<0 )
-    printf( " heobThread=\"thread %u\"",(unsigned)-threadNameIdx );
+  if( threadNameIdx>0 && threadNameIdx<=threadName_q &&
+      threadName_a[threadNameIdx-1] )
+    printf( " heobThread=\"%s\"",threadName_a[threadNameIdx-1] );
+  else if( threadNameIdx )
+    printf( " heobThread=\"thread %d\"",threadNameIdx );
 #endif
   if( blocked )
     printf( " heobBlocked=\"%d\"",blocked );
@@ -4175,7 +4163,7 @@ static void locSvg( textColor *tc,uintptr_t addr,int useAddr,
 
 static int printStackCountSvg( void **framesV,int fc,
 #ifndef NO_THREADNAMES
-    threadNameInfo *threadName_a,int threadName_q,int threadNameIdx,
+    char **threadName_a,int threadName_q,int threadNameIdx,
 #endif
     textColor *tc,modInfo *mi_a,int mi_q,dbgsym *ds,funcType ft,
     size_t samples,size_t ofs,int stack,int allocs,int sampling )
@@ -4271,7 +4259,7 @@ static int printStackCountSvg( void **framesV,int fc,
 static void printStackGroupSvg( stackGroup *sg,textColor *tc,
     allocation *alloc_a,const int *alloc_idxs,
 #ifndef NO_THREADNAMES
-    threadNameInfo *threadName_a,int threadName_q,
+    char **threadName_a,int threadName_q,
 #endif
     modInfo *mi_a,int mi_q,dbgsym *ds,size_t ofs,int stack,int sampling )
 {
@@ -4384,7 +4372,7 @@ static void printStackGroupSvg( stackGroup *sg,textColor *tc,
 static void printFullStackGroupSvg( appData *ad,stackGroup *sg,textColor *tc,
     allocation *alloc_a,const int *alloc_idxs,
 #ifndef NO_THREADNAMES
-    threadNameInfo *threadName_a,int threadName_q,
+    char **threadName_a,int threadName_q,
 #endif
     modInfo *mi_a,int mi_q,dbgsym *ds,
     const char *groupName,const char *groupTypeName,int sampling )
@@ -4449,7 +4437,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
   int error_q = 0;
 #ifndef NO_THREADNAMES
   int threadName_q = 0;
-  threadNameInfo *threadName_a = NULL;
+  char **threadName_a = NULL;
 #endif
   HANDLE in = ad->in;
   if( !opt->leakRecording ) in = NULL;
@@ -5178,25 +5166,35 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
         // thread names {{{
 
 #ifndef NO_THREADNAMES
-      case WRITE_THREAD_NAMES:
+      case WRITE_THREAD_NAME:
         {
-          int add_q;
-          if( !readFile(readPipe,&add_q,sizeof(int),&ov) )
+          int threadNameIdx;
+          if( !readFile(readPipe,&threadNameIdx,sizeof(int),&ov) )
             break;
-          int old_q = threadName_q;
-          threadName_q += add_q;
-          if( !threadName_a )
-            threadName_a = HeapAlloc( heap,0,
-                threadName_q*sizeof(threadNameInfo) );
-          else
-            threadName_a = HeapReAlloc( heap,0,
-                threadName_a,threadName_q*sizeof(threadNameInfo) );
-          if( !readFile(readPipe,threadName_a+old_q,
-                add_q*sizeof(threadNameInfo),&ov) )
+          int tnq = threadName_q;
+          while( tnq<threadNameIdx ) tnq += 64;
+          if( tnq>threadName_q )
           {
-            threadName_q = 0;
-            break;
+            if( !threadName_a )
+              threadName_a = HeapAlloc( heap,0,
+                  tnq*sizeof(char*) );
+            else
+              threadName_a = HeapReAlloc( heap,0,
+                  threadName_a,tnq*sizeof(char*) );
+            RtlZeroMemory( &threadName_a[threadName_q],
+                (tnq-threadName_q)*sizeof(char*) );
+            threadName_q = tnq;
           }
+
+          int len;
+          if( !readFile(readPipe,&len,sizeof(int),&ov) )
+            break;
+          if( threadName_a[threadNameIdx-1] )
+            HeapFree( heap,0,threadName_a[threadNameIdx-1] );
+          threadName_a[threadNameIdx-1] =
+            HeapAlloc( heap,HEAP_ZERO_MEMORY,len+1 );
+          if( !readFile(readPipe,threadName_a[threadNameIdx-1],len,&ov) )
+            break;
         }
         break;
 #endif
@@ -5373,7 +5371,13 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
   HeapFree( heap,0,eiPtr );
   if( mi_a ) HeapFree( heap,0,mi_a );
 #ifndef NO_THREADNAMES
-  if( threadName_a ) HeapFree( heap,0,threadName_a );
+  if( threadName_a )
+  {
+    int i;
+    for( i=0; i<threadName_q; i++ )
+      if( threadName_a[i] ) HeapFree( heap,0,threadName_a[i] );
+    HeapFree( heap,0,threadName_a );
+  }
 #endif
 
   writeXmlFooter( tcXml,heap,startTicks );

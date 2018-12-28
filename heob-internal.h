@@ -479,7 +479,7 @@ enum
   WRITE_WRONG_DEALLOC,
   WRITE_RAISE_ALLOCATION,
 #ifndef NO_THREADNAMES
-  WRITE_THREAD_NAMES,
+  WRITE_THREAD_NAME,
 #endif
   WRITE_EXIT_TRACE,
   WRITE_EXIT,
@@ -510,20 +510,12 @@ typedef struct
 }
 exceptionInfo;
 
-#ifndef NO_THREADNAMES
-typedef struct
-{
-  char name[64];
-}
-threadNameInfo;
-#endif
-
 #ifndef NO_DBGHELP
 typedef struct
 {
   HANDLE thread;
 #ifndef NO_THREADNAMES
-  void **threadNameIdxSlot;
+  int threadNameIdx;
 #endif
   DWORD threadId;
   ULONG64 cycleTime;
