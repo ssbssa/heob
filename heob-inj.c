@@ -166,10 +166,8 @@ typedef struct localData
 
 #if USE_STACKWALK
   HMODULE dbghelp;
-  func_StackWalk64 *fStackWalk64;
+  stackwalkFunctions swf;
   func_SymCleanup *fSymCleanup;
-  PFUNCTION_TABLE_ACCESS_ROUTINE64 fSymFunctionTableAccess64;
-  PGET_MODULE_BASE_ROUTINE64 fSymGetModuleBase64;
 #endif
 
   CRITICAL_SECTION csMod;
@@ -1744,7 +1742,7 @@ static void findLeakTypes( void )
 // }}}
 // transfer sampling data {{{
 
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
 static void writeSamplingData( void )
 {
   GET_REMOTEDATA( rd );
@@ -1799,7 +1797,7 @@ static VOID WINAPI new_ExitProcess( UINT c )
 
   writeModsSend( mi_a,mi_q );
 
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
   writeSamplingData();
 #endif
 
@@ -2093,7 +2091,7 @@ int heobSubProcess(
       ADD_OPTION( " -z",minLeakSize,0 );
       ADD_OPTION( " -k",leakRecording,0 );
       ADD_OPTION( " -D",exceptionDetails,0 );
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
       ADD_OPTION( " -I",samplingInterval,0 );
 #endif
 #undef ADD_OPTION
@@ -3448,19 +3446,19 @@ static int initDbghelp( void )
 
   func_SymInitialize *fSymInitialize =
     rd->fGetProcAddress( symMod,"SymInitialize" );
-  rd->fStackWalk64 = rd->fGetProcAddress( symMod,"StackWalk64" );
+  rd->swf.fStackWalk64 = rd->fGetProcAddress( symMod,"StackWalk64" );
   rd->fSymCleanup = rd->fGetProcAddress( symMod,"SymCleanup" );
 
-  if( !fSymInitialize || !rd->fStackWalk64 || !rd->fSymCleanup )
+  if( !fSymInitialize || !rd->swf.fStackWalk64 || !rd->fSymCleanup )
   {
     rd->fFreeLibrary( symMod );
     return( 0 );
   }
 
   rd->dbghelp = symMod;
-  rd->fSymFunctionTableAccess64 =
+  rd->swf.fSymFunctionTableAccess64 =
     rd->fGetProcAddress( symMod,"SymFunctionTableAccess64" );
-  rd->fSymGetModuleBase64 =
+  rd->swf.fSymGetModuleBase64 =
     rd->fGetProcAddress( symMod,"SymGetModuleBase64" );
 
   fSymInitialize( GetCurrentProcess(),NULL,TRUE );
@@ -3484,78 +3482,76 @@ static void freeDbghelp( void )
 #define csp Rsp
 #define cip Rip
 #define cfp Rbp
-#if USE_STACKWALK
 #define MACH_TYPE IMAGE_FILE_MACHINE_AMD64
-#endif
-#define THROW_ARGS 4
-#define CALC_THROW_ARG(mod,ofs) ((char*)(mod)+(ofs))
 #else
 #define csp Esp
 #define cip Eip
 #define cfp Ebp
-#if USE_STACKWALK
 #define MACH_TYPE IMAGE_FILE_MACHINE_I386
 #endif
-#define THROW_ARGS 3
-#define CALC_THROW_ARG(mod,ofs) (ofs)
-#endif
-static void stackwalk( HANDLE thread,CONTEXT *contextRecord,void **frames )
-{
-#if !USE_STACKWALK
-  (void)thread;
-#endif
 
-  GET_REMOTEDATA( rd );
+#if USE_STACKWALK
+void stackwalkDbghelp( stackwalkFunctions *swf,options *opt,
+    HANDLE process,HANDLE thread,CONTEXT *contextRecord,void **frames )
+{
+  int useSp = opt->useSp;
+
+  CONTEXT context;
+  RtlMoveMemory( &context,contextRecord,sizeof(CONTEXT) );
+
+  STACKFRAME64 stack;
+  RtlZeroMemory( &stack,sizeof(STACKFRAME64) );
+  stack.AddrPC.Offset = context.cip;
+  stack.AddrPC.Mode = AddrModeFlat;
+  stack.AddrStack.Offset = context.csp;
+  stack.AddrStack.Mode = AddrModeFlat;
+  stack.AddrFrame.Offset = context.cfp;
+  stack.AddrFrame.Mode = AddrModeFlat;
+
+  func_StackWalk64 *fStackWalk64 = swf->fStackWalk64;
+  PFUNCTION_TABLE_ACCESS_ROUTINE64 fSymFunctionTableAccess64 =
+    swf->fSymFunctionTableAccess64;
+  PGET_MODULE_BASE_ROUTINE64 fSymGetModuleBase64 =
+    swf->fSymGetModuleBase64;
 
   int count = 0;
+  while( count<PTRS )
+  {
+    if( !fStackWalk64(MACH_TYPE,process,thread,&stack,&context,
+          NULL,fSymFunctionTableAccess64,fSymGetModuleBase64,NULL) )
+      break;
+
+    uintptr_t frame = (uintptr_t)stack.AddrPC.Offset;
+    if( !count ) frame++;
+    else if( !frame ) break;
+    frames[count++] = (void*)frame;
+
+    if( count==1 && useSp )
+    {
+      ULONG_PTR csp = *(ULONG_PTR*)contextRecord->csp;
+      if( csp ) frames[count++] = (void*)csp;
+    }
+  }
+  if( count<PTRS )
+    RtlZeroMemory( frames+count,(PTRS-count)*sizeof(void*) );
+}
+#endif
+
+static void stackwalk( CONTEXT *contextRecord,void **frames )
+{
+  GET_REMOTEDATA( rd );
 
   // stackwalk with dbghelp {{{
 #if USE_STACKWALK
   if( rd->dbghelp )
-  {
-    CONTEXT context;
-    RtlMoveMemory( &context,contextRecord,sizeof(CONTEXT) );
-
-    STACKFRAME64 stack;
-    RtlZeroMemory( &stack,sizeof(STACKFRAME64) );
-    stack.AddrPC.Offset = context.cip;
-    stack.AddrPC.Mode = AddrModeFlat;
-    stack.AddrStack.Offset = context.csp;
-    stack.AddrStack.Mode = AddrModeFlat;
-    stack.AddrFrame.Offset = context.cfp;
-    stack.AddrFrame.Mode = AddrModeFlat;
-
-    HANDLE process = GetCurrentProcess();
-
-    func_StackWalk64 *fStackWalk64 = rd->fStackWalk64;
-    PFUNCTION_TABLE_ACCESS_ROUTINE64 fSymFunctionTableAccess64 =
-      rd->fSymFunctionTableAccess64;
-    PGET_MODULE_BASE_ROUTINE64 fSymGetModuleBase64 =
-      rd->fSymGetModuleBase64;
-
-    while( count<PTRS )
-    {
-      if( !fStackWalk64(MACH_TYPE,process,thread,&stack,&context,
-            NULL,fSymFunctionTableAccess64,fSymGetModuleBase64,NULL) )
-        break;
-
-      uintptr_t frame = (uintptr_t)stack.AddrPC.Offset;
-      if( !count ) frame++;
-      else if( !frame ) break;
-      frames[count++] = (void*)frame;
-
-      if( count==1 && rd->opt.useSp )
-      {
-        ULONG_PTR csp = *(ULONG_PTR*)contextRecord->csp;
-        if( csp ) frames[count++] = (void*)csp;
-      }
-    }
-  }
+    stackwalkDbghelp( &rd->swf,&rd->opt,
+        GetCurrentProcess(),GetCurrentThread(),contextRecord,frames );
   else
 #endif
   // }}}
   // manual stackwalk {{{
   {
+    int count = 0;
     frames[count++] = (void*)( contextRecord->cip+1 );
     if( rd->opt.useSp )
     {
@@ -3573,11 +3569,19 @@ static void stackwalk( HANDLE thread,CONTEXT *contextRecord,void **frames )
 
       sp = np;
     }
+    if( count<PTRS )
+      RtlZeroMemory( frames+count,(PTRS-count)*sizeof(void*) );
   }
   // }}}
-  if( count<PTRS )
-    RtlZeroMemory( frames+count,(PTRS-count)*sizeof(void*) );
 }
+
+#ifdef _WIN64
+#define THROW_ARGS 4
+#define CALC_THROW_ARG(mod,ofs) ((char*)(mod)+(ofs))
+#else
+#define THROW_ARGS 3
+#define CALC_THROW_ARG(mod,ofs) (ofs)
+#endif
 
 static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 {
@@ -3674,7 +3678,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
     initDbghelp();
 #endif
 
-  stackwalk( GetCurrentThread(),ep->ContextRecord,ei.aa[0].frames );
+  stackwalk( ep->ContextRecord,ei.aa[0].frames );
 
 #if USE_STACKWALK
   freeDbghelp();
@@ -3781,20 +3785,20 @@ DLLEXPORT int heob_control( int cmd )
 {
   GET_REMOTEDATA( rd );
 
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
   int sampleRecording =
     rd->opt.handleException>=2 && rd->opt.samplingInterval;
 #endif
 
   if( rd->noCRT
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
       && !sampleRecording
 #endif
     )
     return( -rd->noCRT );
 
   int prevRecording = rd->recording;
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
   if( sampleRecording )
     prevRecording += 2;
 #endif
@@ -3811,7 +3815,7 @@ DLLEXPORT int heob_control( int cmd )
       // clear {{{
     case HEOB_LEAK_RECORDING_CLEAR:
       {
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
         if( sampleRecording )
           break;
 #endif
@@ -3838,7 +3842,7 @@ DLLEXPORT int heob_control( int cmd )
       // show {{{
     case HEOB_LEAK_RECORDING_SHOW:
       {
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
         if( sampleRecording )
         {
           int mi_q = 0;
@@ -3893,7 +3897,7 @@ DLLEXPORT int heob_control( int cmd )
       // count {{{
     case HEOB_LEAK_COUNT:
       {
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
         if( sampleRecording )
           return( 0 );
 #endif
@@ -3996,7 +4000,7 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
     // }}}
 
     // add sampling thread {{{
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
     if( rd->opt.samplingInterval>0 ||
         (rd->opt.samplingInterval<0 && fdwReason==DLL_PROCESS_ATTACH) )
     {
@@ -4024,7 +4028,7 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
   else // DLL_THREAD_DETACH
   {
     // remove sampling thread {{{
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
     if( rd->opt.samplingInterval )
     {
       EnterCriticalSection( &rd->csWrite );
@@ -4230,7 +4234,7 @@ VOID CALLBACK heob( ULONG_PTR arg )
 #ifndef NO_DBGENG
   ld->exceptionWait = rd->exceptionWait;
 #endif
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
   ld->heobProcess = rd->heobProcess;
   ld->samplingStop = rd->samplingStop;
 #endif
@@ -4503,7 +4507,7 @@ VOID CALLBACK heob( ULONG_PTR arg )
 
   // setup loaded heob executable as dll with proper DllMain() {{{
   if( !ld->noCRT
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
       || ld->opt.samplingInterval
 #endif
     )

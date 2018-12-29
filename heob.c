@@ -982,7 +982,7 @@ typedef struct appData
   int *recordingRemote;
   size_t svgSum;
 
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
   CRITICAL_SECTION csSampling;
   HANDLE samplingInit;
   HANDLE samplingStop;
@@ -1004,7 +1004,7 @@ static appData *initHeob( HANDLE heap )
   appData *ad = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(appData) );
   ad->heap = heap;
   ad->errorPipe = openErrorPipe( &ad->writeProcessPid );
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
   InitializeCriticalSection( &ad->csSampling );
 #endif
   return( ad );
@@ -1033,7 +1033,7 @@ static NORETURN void exitHeob( appData *ad,
   if( ad->a2l_mi_a ) HeapFree( heap,0,ad->a2l_mi_a );
   if( ad->api ) HeapFree( heap,0,ad->api );
 
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
   DeleteCriticalSection( &ad->csSampling );
   if( ad->samplingStop ) CloseHandle( ad->samplingStop );
   if( ad->thread_samp_a ) HeapFree( heap,0,ad->thread_samp_a );
@@ -1205,7 +1205,7 @@ static CODE_SEG(".text$2") HANDLE inject(
   }
 #endif
 
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
   if( opt->samplingInterval )
   {
     DuplicateHandle( GetCurrentProcess(),GetCurrentProcess(),
@@ -1398,9 +1398,9 @@ typedef struct dbgsym
   func_SymGetModuleInfo64 *fSymGetModuleInfo64;
   func_SymLoadModule64 *fSymLoadModule64;
   func_UnDecorateSymbolName *fUnDecorateSymbolName;
-  func_StackWalk64 *fStackWalk64;
-  PFUNCTION_TABLE_ACCESS_ROUTINE64 fSymFunctionTableAccess64;
-  PGET_MODULE_BASE_ROUTINE64 fSymGetModuleBase64;
+#if USE_STACKWALK
+  stackwalkFunctions swf;
+#endif
   IMAGEHLP_LINE64 *il;
   SYMBOL_INFO *si;
   char *undname;
@@ -1522,14 +1522,16 @@ static void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
     ds->fUnDecorateSymbolName =
       (func_UnDecorateSymbolName*)GetProcAddress(
           ds->symMod,"UnDecorateSymbolName" );
-    ds->fStackWalk64 = (func_StackWalk64*)GetProcAddress(
+#if USE_STACKWALK
+    ds->swf.fStackWalk64 = (func_StackWalk64*)GetProcAddress(
         ds->symMod,"StackWalk64" );
-    ds->fSymFunctionTableAccess64 =
+    ds->swf.fSymFunctionTableAccess64 =
       (PFUNCTION_TABLE_ACCESS_ROUTINE64)GetProcAddress(
           ds->symMod,"SymFunctionTableAccess64" );
-    ds->fSymGetModuleBase64 =
+    ds->swf.fSymGetModuleBase64 =
       (PGET_MODULE_BASE_ROUTINE64)GetProcAddress(
           ds->symMod,"SymGetModuleBase64" );
+#endif
     ds->il = HeapAlloc( heap,0,sizeof(IMAGEHLP_LINE64) );
     ds->si = HeapAlloc( heap,0,sizeof(SYMBOL_INFO)+MAX_SYM_NAME );
     ds->undname = HeapAlloc( heap,0,MAX_SYM_NAME+1 );
@@ -3056,69 +3058,14 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
 // }}}
 // sampling profiler {{{
 
-#ifndef NO_DBGHELP
-#ifdef _WIN64
-#define csp Rsp
-#define cip Rip
-#define cfp Rbp
-#define MACH_TYPE IMAGE_FILE_MACHINE_AMD64
-#else
-#define csp Esp
-#define cip Eip
-#define cfp Ebp
-#define MACH_TYPE IMAGE_FILE_MACHINE_I386
-#endif
-static void stackwalkDbghelp( appData *ad,HANDLE thread,
-    CONTEXT *contextRecord,void **frames )
-{
-  HANDLE process = ad->pi.hProcess;
-  int useSp = ad->opt->useSp;
-
-  CONTEXT context;
-  RtlMoveMemory( &context,contextRecord,sizeof(CONTEXT) );
-
-  STACKFRAME64 stack;
-  RtlZeroMemory( &stack,sizeof(STACKFRAME64) );
-  stack.AddrPC.Offset = context.cip;
-  stack.AddrPC.Mode = AddrModeFlat;
-  stack.AddrStack.Offset = context.csp;
-  stack.AddrStack.Mode = AddrModeFlat;
-  stack.AddrFrame.Offset = context.cfp;
-  stack.AddrFrame.Mode = AddrModeFlat;
-
-  func_StackWalk64 *fStackWalk64 = ad->ds->fStackWalk64;
-  PFUNCTION_TABLE_ACCESS_ROUTINE64 fSymFunctionTableAccess64 =
-    ad->ds->fSymFunctionTableAccess64;
-  PGET_MODULE_BASE_ROUTINE64 fSymGetModuleBase64 =
-    ad->ds->fSymGetModuleBase64;
-
-  int count = 0;
-  while( count<PTRS )
-  {
-    if( !fStackWalk64(MACH_TYPE,process,thread,&stack,&context,
-          NULL,fSymFunctionTableAccess64,fSymGetModuleBase64,NULL) )
-      break;
-
-    uintptr_t frame = (uintptr_t)stack.AddrPC.Offset;
-    if( !count ) frame++;
-    else if( !frame ) break;
-    frames[count++] = (void*)frame;
-
-    if( count==1 && useSp )
-    {
-      ULONG_PTR csp = *(ULONG_PTR*)contextRecord->csp;
-      if( csp ) frames[count++] = (void*)csp;
-    }
-  }
-  if( count<PTRS )
-    RtlZeroMemory( frames+count,(PTRS-count)*sizeof(void*) );
-}
-
+#if USE_STACKWALK
 static DWORD WINAPI samplingThread( LPVOID arg )
 {
   appData *ad = arg;
   options *opt = ad->opt;
   HANDLE heap = ad->heap;
+  HANDLE process = ad->pi.hProcess;
+  stackwalkFunctions *swf = &ad->ds->swf;
 
   int interval = opt->samplingInterval;
   if( interval<0 ) interval = -interval;
@@ -3184,7 +3131,7 @@ static DWORD WINAPI samplingThread( LPVOID arg )
       if( UNLIKELY(SuspendThread(thread)==(DWORD)-1) ) continue;
 
       GetThreadContext( thread,&context );
-      stackwalkDbghelp( ad,thread,&context,a->frames );
+      stackwalkDbghelp( swf,opt,process,thread,&context,a->frames );
 
       if( fQueryThreadCycleTime )
       {
@@ -3393,7 +3340,7 @@ static char *readOption( char *args,appData *ad,HANDLE heap )
       opt->exceptionDetails = atoi( args+2 );
       break;
 
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
     case 'I':
       opt->samplingInterval = args[2]=='-' ? -atoi( args+3 ) : atoi( args+2 );
       break;
@@ -4460,7 +4407,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
   if( in ) showConsole();
   const char *title = opt->handleException>=2 ?
     "profiling sample recording: " : "leak recording: ";
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
   ad->recordingSamples = opt->handleException>=2 ? recording>0 : 1;
 #endif
   while( 1 )
@@ -4564,7 +4511,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
             showRecording( title,err,recording,&consoleCoord,&errColor );
           }
 
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
           if( opt->handleException>=2 )
           {
             EnterCriticalSection( &ad->csSampling );
@@ -4586,7 +4533,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
       break;
     needData = 1;
 
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
     EnterCriticalSection( &ad->csSampling );
 #endif
 
@@ -5255,18 +5202,18 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
           {
             case HEOB_LEAK_RECORDING_START:
               recording = 1;
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
               if( opt->handleException>=2 ) ad->recordingSamples = 1;
 #endif
               break;
             case HEOB_LEAK_RECORDING_STOP:
               if( recording>0 ) recording = 0;
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
               if( opt->handleException>=2 ) ad->recordingSamples = 0;
 #endif
               break;
             case HEOB_LEAK_RECORDING_CLEAR:
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
               if( opt->handleException>=2 )
               {
                 ad->sample_times = 0;
@@ -5284,7 +5231,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
         // }}}
         // sampling profiler {{{
 
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
       case WRITE_SAMPLING:
         {
           sample_times += ad->sample_times;
@@ -5356,7 +5303,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
         // }}}
     }
 
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
     LeaveCriticalSection( &ad->csSampling );
 #endif
   }
@@ -5474,7 +5421,7 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
     printf( "    $I-E$BX$N    "
         "use leak and error count for exit code [$I%d$N]\n",
         defopt->leakErrorExitCode );
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
     printf( "    $I-I$BX$N    sampling profiler interval [$I%d$N]\n",
         defopt->samplingInterval );
 #endif
@@ -5559,7 +5506,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     0,                              // hook children
     0,                              // use leak and error count for exit code
     0,                              // show exception details
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
     0,                              // sampling profiler interval
 #endif
   };
@@ -5748,7 +5695,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   if( !ad->xmlName && ad->svgName ) defopt.groupLeaks = 2;
   if( opt.groupLeaks<0 ) opt.groupLeaks = defopt.groupLeaks;
   // disable heap monitoring for sampling profiler by default
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
   if( opt.samplingInterval ) defopt.handleException = 2;
 #endif
   if( opt.handleException<0 ) opt.handleException = defopt.handleException;
@@ -6129,10 +6076,10 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     ad->ds = &ds;
     if( delim ) delim[0] = '\\';
 
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
     if( opt.samplingInterval &&
-        (!ds.fStackWalk64 || !ds.fSymFunctionTableAccess64 ||
-         !ds.fSymGetModuleBase64) )
+        (!ds.swf.fStackWalk64 || !ds.swf.fSymFunctionTableAccess64 ||
+         !ds.swf.fSymGetModuleBase64) )
     {
       printf( "$Wsampling profiler needs StackWalk64() from dbghelp.dll\n" );
       heobExit = HEOB_NO_CRT;
@@ -6185,7 +6132,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     }
 
     if( opt.handleException>=2
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
         && !opt.samplingInterval
 #endif
       )
@@ -6195,7 +6142,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
         isConsoleOwner() )
       FreeConsole();
 
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
     HANDLE sampler = NULL;
     if( opt.samplingInterval )
     {
@@ -6218,7 +6165,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
 
     mainLoop( ad,&ds,startTicks,&exitCode );
 
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
     if( sampler )
     {
       SetEvent( ad->samplingStop );

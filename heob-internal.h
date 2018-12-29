@@ -388,7 +388,7 @@ typedef struct
   int children;
   int leakErrorExitCode;
   int exceptionDetails;
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
   int samplingInterval;
 #endif
 }
@@ -429,7 +429,7 @@ typedef struct remoteData
 #ifndef NO_DBGENG
   HANDLE exceptionWait;
 #endif
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
   HANDLE heobProcess;
   HANDLE samplingStop;
 #endif
@@ -485,7 +485,7 @@ enum
   WRITE_EXIT,
   WRITE_RECORDING,
   WRITE_SAMPLING,
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
   WRITE_ADD_SAMPLING_THREAD,
   WRITE_REMOVE_SAMPLING_THREAD,
 #endif
@@ -510,7 +510,7 @@ typedef struct
 }
 exceptionInfo;
 
-#ifndef NO_DBGHELP
+#if USE_STACKWALK
 typedef struct
 {
   HANDLE thread;
@@ -566,6 +566,19 @@ static inline int mul_overflow( size_t n,size_t s,size_t *res )
 
   return( 0 );
 }
+
+#if USE_STACKWALK
+typedef struct
+{
+  func_StackWalk64 *fStackWalk64;
+  PFUNCTION_TABLE_ACCESS_ROUTINE64 fSymFunctionTableAccess64;
+  PGET_MODULE_BASE_ROUTINE64 fSymGetModuleBase64;
+}
+stackwalkFunctions;
+
+void stackwalkDbghelp( stackwalkFunctions *swf,options *opt,
+    HANDLE process,HANDLE thread,CONTEXT *contextRecord,void **frames );
+#endif
 
 // }}}
 
