@@ -1,5 +1,5 @@
 
-//          Copyright Hannes Domani 2014 - 2018.
+//          Copyright Hannes Domani 2014 - 2019.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -114,22 +114,27 @@ typedef void *func_recalloc( void*,size_t,size_t );
 #ifndef NO_DBGHELP
 typedef DWORD WINAPI func_SymSetOptions( DWORD );
 typedef BOOL WINAPI func_SymInitialize( HANDLE,PCSTR,BOOL );
+typedef BOOL WINAPI func_SymInitializeW( HANDLE,PCWSTR,BOOL );
 typedef BOOL WINAPI func_SymGetLineFromAddr64(
     HANDLE,DWORD64,PDWORD,PIMAGEHLP_LINE64 );
+typedef BOOL WINAPI func_SymGetLineFromAddrW64(
+    HANDLE,DWORD64,PDWORD,PIMAGEHLP_LINEW64 );
 typedef BOOL WINAPI func_SymFromAddr(
     HANDLE,DWORD64,PDWORD64,PSYMBOL_INFO );
 typedef BOOL WINAPI func_SymCleanup( HANDLE );
 typedef DWORD WINAPI func_SymAddrIncludeInlineTrace( HANDLE,DWORD64 );
 typedef BOOL WINAPI func_SymQueryInlineTrace(
     HANDLE,DWORD64,DWORD,DWORD64,DWORD64,LPDWORD,LPDWORD );
-typedef BOOL WINAPI func_SymGetLineFromInlineContext(
-    HANDLE,DWORD64,ULONG,DWORD64,PDWORD,PIMAGEHLP_LINE64 );
+typedef BOOL WINAPI func_SymGetLineFromInlineContextW(
+    HANDLE,DWORD64,ULONG,DWORD64,PDWORD,PIMAGEHLP_LINEW64 );
 typedef BOOL WINAPI func_SymFromInlineContext(
     HANDLE,DWORD64,ULONG,PDWORD64,PSYMBOL_INFO );
 typedef BOOL WINAPI func_SymGetModuleInfo64(
     HANDLE,DWORD64,PIMAGEHLP_MODULE64 );
 typedef DWORD64 WINAPI func_SymLoadModule64(
     HANDLE,HANDLE,PCSTR,PCSTR,DWORD64,DWORD );
+typedef DWORD64 WINAPI func_SymLoadModuleExW(
+    HANDLE,HANDLE,PCWSTR,PCWSTR,DWORD64,DWORD,PMODLOAD_DATA,DWORD );
 typedef DWORD WINAPI func_UnDecorateSymbolName( PCSTR,PSTR,DWORD,DWORD );
 #if USE_STACKWALK
 typedef BOOL WINAPI func_StackWalk64(
@@ -442,16 +447,16 @@ typedef struct remoteData
 
   options opt;
   options globalopt;
-  char *specificOptions;
+  wchar_t *specificOptions;
 
   int recording;
   int *recordingRemote;
 
   attachedProcessInfo *api;
 
-  char subOutName[MAX_PATH];
-  char subXmlName[MAX_PATH];
-  char subSvgName[MAX_PATH];
+  wchar_t subOutName[MAX_PATH];
+  wchar_t subXmlName[MAX_PATH];
+  wchar_t subSvgName[MAX_PATH];
   wchar_t subCurDir[MAX_PATH];
 
   int noCRT;
@@ -495,7 +500,7 @@ typedef struct
 {
   size_t base;
   size_t size;
-  char path[MAX_PATH];
+  wchar_t path[MAX_PATH];
 }
 modInfo;
 
@@ -527,7 +532,8 @@ threadSamplingType;
 // common functions {{{
 
 char *num2hexstr( char *str,UINT64 arg,int count );
-char *num2str( char *start,uintptr_t arg,int minus );
+wchar_t *num2hexstrW( wchar_t *str,UINT64 arg,int count );
+wchar_t *num2strW( wchar_t *start,uintptr_t arg,int minus );
 wchar_t *mstrrchrW( const wchar_t *s,wchar_t c );
 int strstart( const char *str,const char *start );
 int isWrongArch( HANDLE process );
@@ -535,9 +541,9 @@ int heobSubProcess(
     DWORD creationFlags,LPPROCESS_INFORMATION processInformation,
     HMODULE heobMod,HANDLE heap,options *opt,
     func_CreateProcessW *fCreateProcessW,
-    const char *subOutName,const char *subXmlName,const char *subSvgName,
-    const wchar_t *subCurDir,
-    int raise_alloc_q,size_t *raise_alloc_a,const char *specificOptions );
+    const wchar_t *subOutName,const wchar_t *subXmlName,
+    const wchar_t *subSvgName,const wchar_t *subCurDir,
+    int raise_alloc_q,size_t *raise_alloc_a,const wchar_t *specificOptions );
 
 static inline int mul_overflow( size_t n,size_t s,size_t *res )
 {

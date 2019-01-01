@@ -1,5 +1,5 @@
 
-//          Copyright Hannes Domani 2014 - 2018.
+//          Copyright Hannes Domani 2014 - 2019.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -85,7 +85,32 @@ char *num2hexstr( char *str,UINT64 arg,int count )
 #endif
 }
 
-NOINLINE char *num2str( char *start,uintptr_t arg,int minus )
+wchar_t *num2hexstrW( wchar_t *str,UINT64 arg,int count )
+{
+  char s[16];
+  char *e = num2hexstr( s,arg,count );
+  int l = (int)( e - s );
+  int i;
+  for( i=0; i<l; i++ )
+    str++[i] = s[i];
+  return( str );
+}
+
+static NOINLINE char *num2str( char *start,uintptr_t arg,int minus )
+{
+  if( !arg )
+    (--start)[0] = '0';
+  while( arg )
+  {
+    (--start)[0] = arg%10 + '0';
+    arg /= 10;
+  }
+  if( minus )
+    (--start)[0] = '-';
+  return( start );
+}
+
+NOINLINE wchar_t *num2strW( wchar_t *start,uintptr_t arg,int minus )
 {
   if( !arg )
     (--start)[0] = '0';
@@ -379,14 +404,13 @@ static NOINLINE char *mstrchr( const char *s,char c )
 }
 #define strchr mstrchr
 
-static NOINLINE char *mstrrchr( const char *s,char c )
+static NOINLINE wchar_t *mstrchrW( const wchar_t *s,wchar_t c )
 {
-  char *ret = NULL;
   for( ; *s; s++ )
-    if( *s==c ) ret = (char*)s;
-  return( ret );
+    if( *s==c ) return( (wchar_t*)s );
+  return( NULL );
 }
-#define strrchr mstrrchr
+#define strchrW mstrchrW
 
 NOINLINE wchar_t *mstrrchrW( const wchar_t *s,wchar_t c )
 {
@@ -397,7 +421,7 @@ NOINLINE wchar_t *mstrrchrW( const wchar_t *s,wchar_t c )
 }
 #define strrchrW mstrrchrW
 
-static NOINLINE uint64_t atou64( const char *s )
+static NOINLINE uint64_t wtou64( const wchar_t *s )
 {
   uint64_t ret = 0;
 
@@ -406,7 +430,7 @@ static NOINLINE uint64_t atou64( const char *s )
     s += 2;
     for( ; ; s++ )
     {
-      char c = *s;
+      wchar_t c = *s;
       int add;
       if( c>='0' && c<='9' )
         add = c - '0';
@@ -424,15 +448,15 @@ static NOINLINE uint64_t atou64( const char *s )
     ret = ret*10 + ( *s - '0' );
   return( ret );
 }
-static inline uintptr_t atop( const char *s )
+static inline uintptr_t wtop( const wchar_t *s )
 {
-  return( (uintptr_t)atou64(s) );
+  return( (uintptr_t)wtou64(s) );
 }
-static inline int matoi( const char *s )
+static inline int mwtoi( const wchar_t *s )
 {
-  return( (int)atop(s) );
+  return( (int)wtop(s) );
 }
-#define atoi matoi
+#define wtoi mwtoi
 
 static int mmemcmp( const void *p1,const void *p2,size_t s )
 {
@@ -456,60 +480,60 @@ static const void *mmemchr( const void *p,int ch,size_t s )
 }
 #define memchr mmemchr
 
-static NOINLINE char *mstrstr( const char *s,const char *f )
+static NOINLINE wchar_t *mstrstrW( const wchar_t *s,const wchar_t *f )
 {
-  int ls = lstrlen( s );
-  int lf = lstrlen( f );
+  int ls = lstrlenW( s );
+  int lf = lstrlenW( f );
   if( lf>ls ) return( NULL );
-  if( !lf ) return( (char*)s );
+  if( !lf ) return( (wchar_t*)s );
   int ld = ls - lf + 1;
   int i;
   for( i=0; i<ld; i++ )
-    if( !mmemcmp(s+i,f,lf) ) return( (char*)s+i );
+    if( !mmemcmp(s+i,f,2*lf) ) return( (wchar_t*)s+i );
   return( NULL );
 }
-#define strstr mstrstr
+#define strstrW mstrstrW
 
-static NOINLINE char *strreplace(
-    const char *str,const char *from,const char *to,HANDLE heap )
+static NOINLINE wchar_t *strreplace(
+    const wchar_t *str,const wchar_t *from,const wchar_t *to,HANDLE heap )
 {
-  const char *pos = strstr( str,from );
+  const wchar_t *pos = strstrW( str,from );
   if( !pos ) return( NULL );
 
-  int strLen = lstrlen( str );
-  int fromLen = lstrlen( from );
-  int toLen = lstrlen( to );
-  char *replace = HeapAlloc( heap,0,strLen-fromLen+toLen+1 );
+  int strLen = lstrlenW( str );
+  int fromLen = lstrlenW( from );
+  int toLen = lstrlenW( to );
+  wchar_t *replace = HeapAlloc( heap,0,2*(strLen-fromLen+toLen+1) );
   if( !replace ) return( NULL );
 
   int replacePos = 0;
   if( pos>str )
   {
-    RtlMoveMemory( replace,str,pos-str );
+    RtlMoveMemory( replace,str,2*(pos-str) );
     replacePos += (int)( pos - str );
   }
   if( toLen )
   {
-    RtlMoveMemory( replace+replacePos,to,toLen );
+    RtlMoveMemory( replace+replacePos,to,2*toLen );
     replacePos += toLen;
   }
   if( str+strLen>pos+fromLen )
   {
     int endLen = (int)( (str+strLen) - (pos+fromLen) );
-    RtlMoveMemory( replace+replacePos,pos+fromLen,endLen );
+    RtlMoveMemory( replace+replacePos,pos+fromLen,2*endLen );
     replacePos += endLen;
   }
   replace[replacePos] = 0;
   return( replace );
 }
 
-static NOINLINE char *strreplacenum(
-    const char *str,const char *from,uintptr_t to,HANDLE heap )
+static NOINLINE wchar_t *strreplacenum(
+    const wchar_t *str,const wchar_t *from,uintptr_t to,HANDLE heap )
 {
-  char numStr[32];
-  char *numEnd = numStr + sizeof(numStr);
+  wchar_t numStr[32];
+  wchar_t *numEnd = numStr + sizeof(numStr)/2;
   (--numEnd)[0] = 0;
-  char *numStart = num2str( numEnd,to,0 );
+  wchar_t *numStart = num2strW( numEnd,to,0 );
 
   return( strreplace(str,from,numStart,heap) );
 }
@@ -520,6 +544,15 @@ int strstart( const char *str,const char *start )
   int l2 = lstrlen( start );
   if( l1<l2 ) return( 0 );
   return( CompareString(LOCALE_SYSTEM_DEFAULT,NORM_IGNORECASE,
+        str,l2,start,l2)==2 );
+}
+
+static int strstartW( const wchar_t *str,const wchar_t *start )
+{
+  int l1 = lstrlenW( str );
+  int l2 = lstrlenW( start );
+  if( l1<l2 ) return( 0 );
+  return( CompareStringW(LOCALE_SYSTEM_DEFAULT,NORM_IGNORECASE,
         str,l2,start,l2)==2 );
 }
 
@@ -727,7 +760,8 @@ static void setTextColorTerminal( textColor *tc )
   TextColorTerminal( tc,ATT_NORMAL );
 }
 
-static void checkOutputVariant( textColor *tc,HANDLE out,const char *exeName )
+static void checkOutputVariant( textColor *tc,HANDLE out,
+    const wchar_t *exeName )
 {
   // default
   tc->fWriteText = &WriteText;
@@ -838,7 +872,7 @@ static void checkOutputVariant( textColor *tc,HANDLE out,const char *exeName )
         WriteFile( tc->out,styleInit,lstrlen(styleInit),&written,NULL );
         if( exeName )
         {
-          WriteFile( tc->out,exeName,lstrlen(exeName),&written,NULL );
+          WriteTextHtmlW( tc,exeName,lstrlenW(exeName) );
           WriteFile( tc->out," - ",3,&written,NULL );
         }
         WriteFile( tc->out,styleInit1,lstrlen(styleInit1),&written,NULL );
@@ -952,17 +986,16 @@ typedef struct appData
   int writeProcessPid;
   HANDLE attachEvent;
   PROCESS_INFORMATION pi;
-  char exePath[MAX_PATH];
   wchar_t exePathW[MAX_PATH];
   wchar_t subCurDir[MAX_PATH];
   textColor *tcOut;
   textColor *tcOutOrig;
   size_t *raise_alloc_a;
   int raise_alloc_q;
-  char *outName;
-  char *xmlName;
-  char *svgName;
-  char *specificOptions;
+  wchar_t *outName;
+  wchar_t *xmlName;
+  wchar_t *svgName;
+  wchar_t *specificOptions;
   modInfo *a2l_mi_a;
   int a2l_mi_q;
   DWORD ppid;
@@ -1086,8 +1119,8 @@ static CODE_SEG(".text$1") VOID NTAPI remoteCall(
 
 static CODE_SEG(".text$2") HANDLE inject(
     appData *ad,options *globalopt,textColor *tc,
-    const char *subOutName,const char *subXmlName,const char *subSvgName,
-    const wchar_t *subCurDir )
+    const wchar_t *subOutName,const wchar_t *subXmlName,
+    const wchar_t *subSvgName,const wchar_t *subCurDir )
 {
   // injection data {{{
   func_inj *finj = &remoteCall;
@@ -1095,7 +1128,7 @@ static CODE_SEG(".text$2") HANDLE inject(
   size_t funcSize = (size_t)&inject - (size_t)finj;
   size_t soOffset = funcOffset + funcSize;
   size_t soSize =
-    ( ad->specificOptions ? lstrlen(ad->specificOptions) + 1 : 0 );
+    ( ad->specificOptions ? 2*lstrlenW(ad->specificOptions) + 2 : 0 );
   size_t fullSize = soOffset + soSize;
   HANDLE process = ad->pi.hProcess;
   HANDLE thread = ad->pi.hThread;
@@ -1219,9 +1252,9 @@ static CODE_SEG(".text$2") HANDLE inject(
   RtlMoveMemory( &data->opt,opt,sizeof(options) );
   RtlMoveMemory( &data->globalopt,globalopt,sizeof(options) );
 
-  if( subOutName ) lstrcpyn( data->subOutName,subOutName,MAX_PATH );
-  if( subXmlName ) lstrcpyn( data->subXmlName,subXmlName,MAX_PATH );
-  if( subSvgName ) lstrcpyn( data->subSvgName,subSvgName,MAX_PATH );
+  if( subOutName ) lstrcpynW( data->subOutName,subOutName,MAX_PATH );
+  if( subXmlName ) lstrcpynW( data->subXmlName,subXmlName,MAX_PATH );
+  if( subSvgName ) lstrcpynW( data->subSvgName,subSvgName,MAX_PATH );
   if( subCurDir ) lstrcpynW( data->subCurDir,subCurDir,MAX_PATH );
 
   data->raise_alloc_q = ad->raise_alloc_q;
@@ -1231,7 +1264,7 @@ static CODE_SEG(".text$2") HANDLE inject(
 
   if( soSize )
   {
-    data->specificOptions = (char*)fullDataRemote + soOffset;
+    data->specificOptions = (wchar_t*)( fullDataRemote + soOffset );
     RtlMoveMemory( fullData+soOffset,ad->specificOptions,soSize );
   }
   // }}}
@@ -1369,7 +1402,7 @@ typedef size_t func_dwstDemangle( const char*,char*,size_t );
 
 typedef struct sourceLocation
 {
-  const char *filename;
+  const wchar_t *filename;
   const char *funcname;
   int lineno;
   int columnno;
@@ -1390,18 +1423,21 @@ typedef struct dbgsym
 #ifndef NO_DBGHELP
   HMODULE symMod;
   func_SymGetLineFromAddr64 *fSymGetLineFromAddr64;
+  func_SymGetLineFromAddrW64 *fSymGetLineFromAddrW64;
   func_SymFromAddr *fSymFromAddr;
   func_SymAddrIncludeInlineTrace *fSymAddrIncludeInlineTrace;
   func_SymQueryInlineTrace *fSymQueryInlineTrace;
-  func_SymGetLineFromInlineContext *fSymGetLineFromInlineContext;
+  func_SymGetLineFromInlineContextW *fSymGetLineFromInlineContextW;
   func_SymFromInlineContext *fSymFromInlineContext;
   func_SymGetModuleInfo64 *fSymGetModuleInfo64;
   func_SymLoadModule64 *fSymLoadModule64;
+  func_SymLoadModuleExW *fSymLoadModuleExW;
   func_UnDecorateSymbolName *fUnDecorateSymbolName;
 #if USE_STACKWALK
   stackwalkFunctions swf;
 #endif
   IMAGEHLP_LINE64 *il;
+  IMAGEHLP_LINEW64 *ilW;
   SYMBOL_INFO *si;
   char *undname;
 #endif
@@ -1410,7 +1446,9 @@ typedef struct dbgsym
   func_dwstOfFile *fdwstOfFile;
   func_dwstDemangle *fdwstDemangle;
 #endif
-  char *absPath;
+  wchar_t *absPath;
+  wchar_t *filenameWide;
+  char *ansiPath;
   textColor *tc;
   options *opt;
   const char **funcnames;
@@ -1421,59 +1459,57 @@ typedef struct dbgsym
   int sslIdx;
   char **func_a;
   int func_q;
-  char **file_a;
+  wchar_t **file_a;
   int file_q;
 }
 dbgsym;
 
-static const char *strings_add( const char *str,
-    char ***str_a,int *str_q,HANDLE heap )
-{
-  if( !str || !str[0] ) return( NULL );
-
-  char **a = *str_a;
-  int q = *str_q;
-
-  int s = 0;
-  int e = q;
-  int i = q/2;
-  while( e>s )
-  {
-    int cmp = lstrcmp( str,a[i] );
-    if( !cmp ) return( a[i] );
-    if( cmp<0 )
-      e = i;
-    else
-      s = i + 1;
-    i = ( s+e )/2;
-  }
-
-  if( !(q&63) )
-  {
-    int c = q + 64;
-    if( !q )
-      a = HeapAlloc( heap,0,c*sizeof(char*) );
-    else
-      a = HeapReAlloc( heap,0,a,c*sizeof(char*) );
-  }
-
-  if( i<q )
-    RtlMoveMemory( a+i+1,a+i,(q-i)*sizeof(char*) );
-
-  int l = lstrlen( str ) + 1;
-  char *copy = HeapAlloc( heap,0,l );
-  RtlMoveMemory( copy,str,l );
-  a[i] = copy;
-  q++;
-
-  *str_a = a;
-  *str_q = q;
-
-  return( copy );
+#define sorted_add_func( name,type,cmp_fump,len_func,len_fact ) \
+static const type *name( const type *str, \
+    type ***str_a,int *str_q,HANDLE heap ) \
+{ \
+  if( !str || !str[0] ) return( NULL ); \
+  \
+  type **a = *str_a; \
+  int q = *str_q; \
+  \
+  int s = 0; \
+  int e = q; \
+  int i = q/2; \
+  while( e>s ) \
+  { \
+    int cmp = cmp_fump( str,a[i] ); \
+    if( !cmp ) return( a[i] ); \
+    if( cmp<0 ) e = i; \
+    else s = i + 1; \
+    i = ( s+e )/2; \
+  } \
+  \
+  if( !(q&63) ) \
+  { \
+    int c = q + 64; \
+    if( !q ) a = HeapAlloc( heap,0,c*sizeof(type*) ); \
+    else a = HeapReAlloc( heap,0,a,c*sizeof(type*) ); \
+  } \
+  \
+  if( i<q ) RtlMoveMemory( a+i+1,a+i,(q-i)*sizeof(type*) ); \
+  \
+  int l = len_fact*( len_func(str) + 1 ); \
+  type *copy = HeapAlloc( heap,0,l ); \
+  RtlMoveMemory( copy,str,l ); \
+  a[i] = copy; \
+  q++; \
+  \
+  *str_a = a; \
+  *str_q = q; \
+  \
+  return( copy ); \
 }
+sorted_add_func( strings_add,char,lstrcmp,lstrlen,1 )
+sorted_add_func( strings_addW,wchar_t,lstrcmpW,lstrlenW,2 )
 
 static void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
-    const char **funcnames,HANDLE heap,const char *dbgPath,BOOL invade,
+    const char **funcnames,HANDLE heap,const wchar_t *dbgPath,BOOL invade,
     void *threadInitAddr )
 {
   RtlZeroMemory( ds,sizeof(dbgsym) );
@@ -1483,6 +1519,7 @@ static void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
   ds->funcnames = funcnames;
   ds->threadInitAddr = (uintptr_t)threadInitAddr;
   ds->heap = heap;
+  ds->ansiPath = HeapAlloc( heap,0,MAX_PATH );
 
 #ifndef NO_DBGHELP
   ds->symMod = LoadLibrary( "dbghelp" BITS ".dll" );
@@ -1494,9 +1531,14 @@ static void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
       (func_SymSetOptions*)GetProcAddress( ds->symMod,"SymSetOptions" );
     func_SymInitialize *fSymInitialize =
       (func_SymInitialize*)GetProcAddress( ds->symMod,"SymInitialize" );
+    func_SymInitializeW *fSymInitializeW =
+      (func_SymInitializeW*)GetProcAddress( ds->symMod,"SymInitializeW" );
     ds->fSymGetLineFromAddr64 =
       (func_SymGetLineFromAddr64*)GetProcAddress(
           ds->symMod,"SymGetLineFromAddr64" );
+    ds->fSymGetLineFromAddrW64 =
+      (func_SymGetLineFromAddrW64*)GetProcAddress(
+          ds->symMod,"SymGetLineFromAddrW64" );
     ds->fSymFromAddr =
       (func_SymFromAddr*)GetProcAddress( ds->symMod,"SymFromAddr" );
     ds->fSymAddrIncludeInlineTrace =
@@ -1505,13 +1547,13 @@ static void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
     ds->fSymQueryInlineTrace =
       (func_SymQueryInlineTrace*)GetProcAddress(
           ds->symMod,"SymQueryInlineTrace" );
-    ds->fSymGetLineFromInlineContext =
-      (func_SymGetLineFromInlineContext*)GetProcAddress( ds->symMod,
-          "SymGetLineFromInlineContext" );
+    ds->fSymGetLineFromInlineContextW =
+      (func_SymGetLineFromInlineContextW*)GetProcAddress( ds->symMod,
+          "SymGetLineFromInlineContextW" );
     ds->fSymFromInlineContext =
       (func_SymFromInlineContext*)GetProcAddress(
           ds->symMod,"SymFromInlineContext" );
-    if( !ds->fSymQueryInlineTrace || !ds->fSymGetLineFromInlineContext ||
+    if( !ds->fSymQueryInlineTrace || !ds->fSymGetLineFromInlineContextW ||
         !ds->fSymFromInlineContext )
       ds->fSymAddrIncludeInlineTrace = NULL;
     ds->fSymGetModuleInfo64 =
@@ -1519,6 +1561,8 @@ static void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
           ds->symMod,"SymGetModuleInfo64" );
     ds->fSymLoadModule64 =
       (func_SymLoadModule64*)GetProcAddress( ds->symMod,"SymLoadModule64" );
+    ds->fSymLoadModuleExW =
+      (func_SymLoadModuleExW*)GetProcAddress( ds->symMod,"SymLoadModuleExW" );
     ds->fUnDecorateSymbolName =
       (func_UnDecorateSymbolName*)GetProcAddress(
           ds->symMod,"UnDecorateSymbolName" );
@@ -1533,13 +1577,22 @@ static void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
           ds->symMod,"SymGetModuleBase64" );
 #endif
     ds->il = HeapAlloc( heap,0,sizeof(IMAGEHLP_LINE64) );
+    ds->ilW = HeapAlloc( heap,0,sizeof(IMAGEHLP_LINEW64) );
     ds->si = HeapAlloc( heap,0,sizeof(SYMBOL_INFO)+MAX_SYM_NAME );
     ds->undname = HeapAlloc( heap,0,MAX_SYM_NAME+1 );
 
     if( fSymSetOptions )
       fSymSetOptions( SYMOPT_LOAD_LINES );
-    if( fSymInitialize )
-      fSymInitialize( ds->process,dbgPath,invade );
+    if( fSymInitializeW )
+      fSymInitializeW( ds->process,dbgPath,invade );
+    else if( fSymInitialize )
+    {
+      char *ansiPath = ds->ansiPath;
+      int count = WideCharToMultiByte( CP_ACP,0,
+          dbgPath,-1,ansiPath,MAX_PATH,NULL,NULL );
+      if( count<=0 || count>=MAX_PATH ) ansiPath[0] = 0;
+      fSymInitialize( ds->process,ansiPath,invade );
+    }
   }
 #else
   (void)dbgPath;
@@ -1559,7 +1612,8 @@ static void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
   }
 #endif
 
-  ds->absPath = HeapAlloc( heap,0,MAX_PATH );
+  ds->absPath = HeapAlloc( heap,0,2*MAX_PATH );
+  ds->filenameWide = HeapAlloc( heap,0,2*MAX_PATH );
 }
 
 static void cacheClear( dbgsym *ds )
@@ -1582,19 +1636,19 @@ static void cacheClear( dbgsym *ds )
   }
   HeapFree( heap,0,ssl );
 
-  char **str_a = ds->func_a;
-  int str_q = ds->func_q;
-  for( i=0; i<str_q; i++ )
-    HeapFree( heap,0,str_a[i] );
-  if( str_a )
-    HeapFree( heap,0,str_a );
+  char **func_a = ds->func_a;
+  int func_q = ds->func_q;
+  for( i=0; i<func_q; i++ )
+    HeapFree( heap,0,func_a[i] );
+  if( func_a )
+    HeapFree( heap,0,func_a );
 
-  str_a = ds->file_a;
-  str_q = ds->file_q;
-  for( i=0; i<str_q; i++ )
-    HeapFree( heap,0,str_a[i] );
-  if( str_a )
-    HeapFree( heap,0,str_a );
+  wchar_t **file_a = ds->file_a;
+  int file_q = ds->file_q;
+  for( i=0; i<file_q; i++ )
+    HeapFree( heap,0,file_a[i] );
+  if( file_a )
+    HeapFree( heap,0,file_a );
 
   ds->ssl = NULL;
   ds->sslCount = 0;
@@ -1603,6 +1657,23 @@ static void cacheClear( dbgsym *ds )
   ds->file_a = NULL;
   ds->file_q = 0;
 }
+
+#ifndef NO_DBGHELP
+static void dbgsym_loadmodule( dbgsym *ds,
+    const wchar_t *path,DWORD64 base,DWORD size )
+{
+  if( ds->fSymLoadModuleExW )
+    ds->fSymLoadModuleExW( ds->process,NULL,path,NULL,base,size,NULL,0 );
+  else
+  {
+    char *ansiPath = ds->ansiPath;
+    int count = WideCharToMultiByte( CP_ACP,0,
+        path,-1,ansiPath,MAX_PATH,NULL,NULL );
+    if( count>0 && count<MAX_PATH )
+      ds->fSymLoadModule64( ds->process,NULL,ansiPath,NULL,base,size );
+  }
+}
+#endif
 
 static void dbgsym_close( dbgsym *ds )
 {
@@ -1626,6 +1697,8 @@ static void dbgsym_close( dbgsym *ds )
 #endif
 
   if( ds->absPath ) HeapFree( heap,0,ds->absPath );
+  if( ds->filenameWide ) HeapFree( heap,0,ds->filenameWide );
+  if( ds->ansiPath ) HeapFree( heap,0,ds->ansiPath );
 
   cacheClear( ds );
 }
@@ -1647,7 +1720,7 @@ static int cmp_ptr( const void *av,const void *bv )
 }
 
 static void locFuncCache(
-    uint64_t addr,const char *filename,int lineno,const char *funcname,
+    uint64_t addr,const wchar_t *filename,int lineno,const char *funcname,
     void *context,int columnno )
 {
   if( lineno==DWST_BASE_ADDR ) return;
@@ -1671,13 +1744,13 @@ static void locFuncCache(
         int i;
         DWORD dis;
         DWORD64 dis64;
-        IMAGEHLP_LINE64 *il = ds->il;
+        IMAGEHLP_LINEW64 *il = ds->ilW;
         SYMBOL_INFO *si = ds->si;
         for( i=0; i<inlineTrace; i++ )
         {
-          RtlZeroMemory( il,sizeof(IMAGEHLP_LINE64) );
-          il->SizeOfStruct = sizeof(IMAGEHLP_LINE64);
-          if( ds->fSymGetLineFromInlineContext(
+          RtlZeroMemory( il,sizeof(IMAGEHLP_LINEW64) );
+          il->SizeOfStruct = sizeof(IMAGEHLP_LINEW64);
+          if( ds->fSymGetLineFromInlineContextW(
                 ds->process,addr,inlineContext,0,&dis,il) )
           {
             si->SizeOfStruct = sizeof(SYMBOL_INFO);
@@ -1698,14 +1771,34 @@ static void locFuncCache(
     // }}}
 
     // source file/line info {{{
-    IMAGEHLP_LINE64 *il = ds->il;
-    RtlZeroMemory( il,sizeof(IMAGEHLP_LINE64) );
-    il->SizeOfStruct = sizeof(IMAGEHLP_LINE64);
-    DWORD dis;
-    if( ds->fSymGetLineFromAddr64(ds->process,addr,&dis,il) )
+    if( ds->fSymGetLineFromAddrW64 )
     {
-      filename = il->FileName;
-      lineno = il->LineNumber;
+      IMAGEHLP_LINEW64 *il = ds->ilW;
+      RtlZeroMemory( il,sizeof(IMAGEHLP_LINEW64) );
+      il->SizeOfStruct = sizeof(IMAGEHLP_LINEW64);
+      DWORD dis;
+      if( ds->fSymGetLineFromAddrW64(ds->process,addr,&dis,il) )
+      {
+        filename = il->FileName;
+        lineno = il->LineNumber;
+      }
+    }
+    else
+    {
+      IMAGEHLP_LINE64 *il = ds->il;
+      RtlZeroMemory( il,sizeof(IMAGEHLP_LINEW64) );
+      il->SizeOfStruct = sizeof(IMAGEHLP_LINEW64);
+      DWORD dis;
+      if( ds->fSymGetLineFromAddr64(ds->process,addr,&dis,il) )
+      {
+        wchar_t *filenameWide = ds->filenameWide;
+        int len = MultiByteToWideChar( CP_ACP,0,
+            il->FileName,-1,filenameWide,MAX_PATH );
+        if( len<=0 || len>=MAX_PATH ) filenameWide[0] = 0;
+
+        filename = filenameWide;
+        lineno = il->LineNumber;
+      }
     }
     // }}}
 
@@ -1766,15 +1859,33 @@ static void locFuncCache(
   }
   if( lineno>0 )
   {
-    const char *absPath = filename;
-    if( GetFullPathNameA(filename,MAX_PATH,ds->absPath,NULL) )
+    const wchar_t *absPath = filename;
+    if( GetFullPathNameW(filename,MAX_PATH,ds->absPath,NULL) )
       absPath = ds->absPath;
-    sl->filename = strings_add( absPath,&ds->file_a,&ds->file_q,ds->heap );
+    sl->filename = strings_addW( absPath,&ds->file_a,&ds->file_q,ds->heap );
   }
   sl->funcname = strings_add( funcname,&ds->func_a,&ds->func_q,ds->heap );
   sl->lineno = lineno;
   sl->columnno = columnno;
 }
+
+#ifndef NO_DWARFSTACK
+static void locFuncCacheAnsi(
+    uint64_t addr,const char *filename,int lineno,const char *funcname,
+    void *context,int columnno )
+{
+  wchar_t *filenameWide = NULL;
+  if( filename )
+  {
+    dbgsym *ds = context;
+    filenameWide = ds->filenameWide;
+    int len = MultiByteToWideChar( CP_ACP,0,
+        filename,-1,filenameWide,MAX_PATH );
+    if( len<=0 || len>=MAX_PATH ) filenameWide[0] = 0;
+  }
+  locFuncCache( addr,filenameWide,lineno,funcname,context,columnno );
+}
+#endif
 
 static stackSourceLocation *findStackSourceLocation(
     uintptr_t addr,stackSourceLocation *ssl_a,int ssl_q )
@@ -1882,7 +1993,13 @@ static void cacheSymbolData(
     // GCC debug info {{{
 #ifndef NO_DWARFSTACK
     if( ds->fdwstOfFile )
-      ds->fdwstOfFile( mi->path,mi->base,frames+j,l-j,locFuncCache,ds );
+    {
+      char *ansiPath = ds->ansiPath;
+      int count = WideCharToMultiByte( CP_ACP,0,
+          mi->path,-1,ansiPath,MAX_PATH,NULL,NULL );
+      if( count>0 && count<MAX_PATH )
+        ds->fdwstOfFile( ansiPath,mi->base,frames+j,l-j,locFuncCacheAnsi,ds );
+    }
     else
 #endif
     // }}}
@@ -1900,13 +2017,13 @@ static void cacheSymbolData(
 }
 
 static void locOut( textColor *tc,uintptr_t addr,
-    const char *filename,int lineno,int columnno,const char *funcname,
+    const wchar_t *filename,int lineno,int columnno,const char *funcname,
     options *opt,int indent )
 {
-  const char *printFilename = NULL;
+  const wchar_t *printFilename = NULL;
   if( filename )
   {
-    printFilename = opt->fullPath ? NULL : strrchr( filename,'\\' );
+    printFilename = opt->fullPath ? NULL : strrchrW( filename,'\\' );
     if( !printFilename ) printFilename = filename;
     else printFilename++;
   }
@@ -1915,7 +2032,7 @@ static void locOut( textColor *tc,uintptr_t addr,
   switch( lineno )
   {
     case DWST_BASE_ADDR:
-      printf( "  $B%X$N   $B%s\n",addr,printFilename );
+      printf( "  $B%X$N   $B%S\n",addr,printFilename );
       break;
 
     case DWST_NO_DBG_SYM:
@@ -1937,7 +2054,7 @@ static void locOut( textColor *tc,uintptr_t addr,
         printf( "    %X",addr );
       else
         printf( "      " PTR_SPACES );
-      printf( "   $O%s$N:$S%d$N",printFilename,lineno );
+      printf( "   $O%S$N:$S%d$N",printFilename,lineno );
       if( columnno>0 )
         printf( ":%d",columnno );
       if( funcname )
@@ -1947,7 +2064,7 @@ static void locOut( textColor *tc,uintptr_t addr,
       // show source code {{{
       if( opt->sourceCode )
       {
-        HANDLE file = CreateFile( filename,GENERIC_READ,FILE_SHARE_READ,
+        HANDLE file = CreateFileW( filename,GENERIC_READ,FILE_SHARE_READ,
             NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,0 );
         if( file!=INVALID_HANDLE_VALUE )
         {
@@ -2039,7 +2156,7 @@ static void sslOut( textColor *tc,
 }
 
 static void locXml( textColor *tc,uintptr_t addr,
-    const char *filename,int lineno,const char *funcname,
+    const wchar_t *filename,int lineno,const char *funcname,
     modInfo *mi )
 {
   printf( "    <frame>\n" );
@@ -2049,25 +2166,25 @@ static void locXml( textColor *tc,uintptr_t addr,
   {
     if( !addr && !funcname && !lineno )
       printf( "      <ip>%X</ip>\n",mi->base );
-    printf( "      <obj>%s</obj>\n",mi->path );
+    printf( "      <obj>%S</obj>\n",mi->path );
   }
   if( funcname )
     printf( "      <fn>%s</fn>\n",funcname );
   if( lineno>0 )
   {
-    const char *sep = strrchr( filename,'\\' );
-    const char *filepart;
+    const wchar_t *sep = strrchrW( filename,'\\' );
+    const wchar_t *filepart;
     if( sep )
     {
       printf( "      <dir>" );
-      const char *p = filename;
+      const wchar_t *p = filename;
       const char slash = '/';
       while( 1 )
       {
-        const char *backslash = strchr( p,'\\' );
+        const wchar_t *backslash = strchrW( p,'\\' );
         if( !backslash ) break;
         if( backslash>p )
-          tc->fWriteSubText( tc,p,backslash-p );
+          tc->fWriteSubTextW( tc,p,backslash-p );
         p = backslash + 1;
         if( p>sep ) break;
         tc->fWriteSubText( tc,&slash,1 );
@@ -2077,7 +2194,7 @@ static void locXml( textColor *tc,uintptr_t addr,
     }
     else
       filepart = filename;
-    printf( "      <file>%s</file>\n",filepart );
+    printf( "      <file>%S</file>\n",filepart );
     printf( "      <line>%d</line>\n",lineno );
   }
   printf( "    </frame>\n" );
@@ -2127,7 +2244,7 @@ static void printStackCount( void **framesV,int fc,
     if( k>=mi_q )
     {
       if( indent>=0 )
-        locOut( tc,frame,"?",DWST_BASE_ADDR,0,NULL,ds->opt,indent );
+        locOut( tc,frame,L"?",DWST_BASE_ADDR,0,NULL,ds->opt,indent );
       else
         locXml( tc,frame,NULL,0,NULL,NULL );
       j++;
@@ -3201,7 +3318,7 @@ static void printAttachedProcessInfo( appData *ad,textColor *tc )
 // }}}
 // common options {{{
 
-static char *readOption( char *args,appData *ad,HANDLE heap )
+static wchar_t *readOption( wchar_t *args,appData *ad,HANDLE heap )
 {
   if( !args || args[0]!='-' ) return( NULL );
 
@@ -3212,13 +3329,13 @@ static char *readOption( char *args,appData *ad,HANDLE heap )
   switch( args[1] )
   {
     case 'p':
-      opt->protect = atoi( args+2 );
+      opt->protect = wtoi( args+2 );
       if( opt->protect<0 ) opt->protect = 0;
       break;
 
     case 'a':
       {
-        int align = atoi( args+2 );
+        int align = wtoi( args+2 );
         if( align>0 && !(align&(align-1)) )
           opt->align = align;
       }
@@ -3226,12 +3343,12 @@ static char *readOption( char *args,appData *ad,HANDLE heap )
 
     case 'i':
       {
-        const char *pos = args + 2;
-        uint64_t init = atou64( pos );
+        const wchar_t *pos = args + 2;
+        uint64_t init = wtou64( pos );
         int initSize = 1;
         while( *pos && *pos!=' ' && *pos!=':' ) pos++;
         if( *pos==':' )
-          initSize = atoi( pos+1 );
+          initSize = wtoi( pos+1 );
         if( initSize<2 )
           init = init | ( init<<8 );
         if( initSize<4 )
@@ -3243,82 +3360,82 @@ static char *readOption( char *args,appData *ad,HANDLE heap )
       break;
 
     case 's':
-      opt->slackInit = args[2]=='-' ? -atoi( args+3 ) : atoi( args+2 );
+      opt->slackInit = args[2]=='-' ? -wtoi( args+3 ) : wtoi( args+2 );
       if( opt->slackInit>0xff ) opt->slackInit &= 0xff;
       break;
 
     case 'f':
-      opt->protectFree = atoi( args+2 );
+      opt->protectFree = wtoi( args+2 );
       break;
 
     case 'h':
-      opt->handleException = atoi( args+2 );
+      opt->handleException = wtoi( args+2 );
       break;
 
     case 'F':
-      opt->fullPath = atoi( args+2 );
+      opt->fullPath = wtoi( args+2 );
       break;
 
     case 'm':
-      opt->allocMethod = atoi( args+2 );
+      opt->allocMethod = wtoi( args+2 );
       break;
 
     case 'l':
-      opt->leakDetails = atoi( args+2 );
+      opt->leakDetails = wtoi( args+2 );
       break;
 
     case 'S':
-      opt->useSp = atoi( args+2 );
+      opt->useSp = wtoi( args+2 );
       break;
 
     case 'd':
-      opt->dlls = atoi( args+2 );
+      opt->dlls = wtoi( args+2 );
       break;
 
     case 'P':
-      opt->pid = atoi( args+2 );
+      opt->pid = wtoi( args+2 );
       break;
 
     case 'e':
-      opt->exitTrace = atoi( args+2 );
+      opt->exitTrace = wtoi( args+2 );
       break;
 
     case 'C':
-      opt->sourceCode = atoi( args+2 );
+      opt->sourceCode = wtoi( args+2 );
       break;
 
     case 'r':
-      opt->raiseException = atoi( args+2 );
+      opt->raiseException = wtoi( args+2 );
       break;
 
     case 'M':
-      opt->minProtectSize = atoi( args+2 );
+      opt->minProtectSize = wtoi( args+2 );
       if( opt->minProtectSize<1 ) opt->minProtectSize = 1;
       break;
 
     case 'n':
-      opt->findNearest = atoi( args+2 );
+      opt->findNearest = wtoi( args+2 );
       break;
 
     case 'L':
-      opt->leakContents = atoi( args+2 );
+      opt->leakContents = wtoi( args+2 );
       break;
 
     case 'g':
-      opt->groupLeaks = atoi( args+2 );
+      opt->groupLeaks = wtoi( args+2 );
       break;
 
     case 'z':
-      opt->minLeakSize = atop( args+2 );
+      opt->minLeakSize = wtop( args+2 );
       break;
 
     case 'k':
-      opt->leakRecording = atoi( args+2 );
+      opt->leakRecording = wtoi( args+2 );
       break;
 
     case 'R':
       {
-        size_t id = atop( args+2 );
+        size_t id = wtop( args+2 );
         if( !id ) break;
         int i;
         for( i=0; i<raise_alloc_q && raise_alloc_a[i]<id; i++ );
@@ -3337,12 +3454,12 @@ static char *readOption( char *args,appData *ad,HANDLE heap )
       break;
 
     case 'D':
-      opt->exceptionDetails = atoi( args+2 );
+      opt->exceptionDetails = wtoi( args+2 );
       break;
 
 #if USE_STACKWALK
     case 'I':
-      opt->samplingInterval = args[2]=='-' ? -atoi( args+3 ) : atoi( args+2 );
+      opt->samplingInterval = args[2]=='-' ? -wtoi( args+3 ) : wtoi( args+2 );
       break;
 #endif
 
@@ -3357,49 +3474,49 @@ static char *readOption( char *args,appData *ad,HANDLE heap )
   return( args );
 }
 
-static char *getStringOption( const char *start,HANDLE heap )
+static wchar_t *getStringOption( const wchar_t *start,HANDLE heap )
 {
-  const char *end = start;
+  const wchar_t *end = start;
   while( *end && *end!=' ' ) end++;
   if( end<=start ) return( NULL );
 
   size_t len = end - start;
-  char *str = HeapAlloc( heap,0,len+1 );
+  wchar_t *str = HeapAlloc( heap,0,2*(len+1) );
   if( !str ) return( NULL );
 
-  RtlMoveMemory( str,start,len );
+  RtlMoveMemory( str,start,2*len );
   str[len] = 0;
   return( str );
 }
 
-static char *expandFileNameVars( appData *ad,const char *origName,
-    const char *exePath )
+static wchar_t *expandFileNameVars( appData *ad,const wchar_t *origName,
+    const wchar_t *exePath )
 {
   HANDLE heap = ad->heap;
-  char *name = NULL;
+  wchar_t *name = NULL;
 
-  char *replaced = strreplacenum( origName,"%p",ad->pi.dwProcessId,heap );
+  wchar_t *replaced = strreplacenum( origName,L"%p",ad->pi.dwProcessId,heap );
   if( replaced )
     origName = name = replaced;
 
-  replaced = strreplacenum( origName,"%P",ad->ppid,heap );
+  replaced = strreplacenum( origName,L"%P",ad->ppid,heap );
   if( replaced )
   {
     if( name ) HeapFree( heap,0,name );
     origName = name = replaced;
   }
 
-  char *lastPoint = NULL;
+  wchar_t *lastPoint = NULL;
   if( !exePath )
   {
-    char *delim = strrchr( ad->exePath,'\\' );
+    wchar_t *delim = strrchrW( ad->exePathW,'\\' );
     if( delim ) delim++;
-    else delim = ad->exePath;
-    lastPoint = strrchr( delim,'.' );
+    else delim = ad->exePathW;
+    lastPoint = strrchrW( delim,'.' );
     if( lastPoint ) lastPoint[0] = 0;
     exePath = delim;
   }
-  replaced = strreplace( origName,"%n",exePath,heap );
+  replaced = strreplace( origName,L"%n",exePath,heap );
   if( lastPoint ) lastPoint[0] = '.';
   if( replaced )
   {
@@ -3560,14 +3677,14 @@ static textColor *writeXmlHeader( appData *ad,DWORD startTicks )
 {
   if( !ad->xmlName ) return( NULL );
 
-  char *fullName = expandFileNameVars( ad,ad->xmlName,NULL );
+  wchar_t *fullName = expandFileNameVars( ad,ad->xmlName,NULL );
   if( !fullName )
   {
     fullName = ad->xmlName;
     ad->xmlName = NULL;
   }
 
-  HANDLE xml = CreateFile( fullName,GENERIC_WRITE,FILE_SHARE_READ,
+  HANDLE xml = CreateFileW( fullName,GENERIC_WRITE,FILE_SHARE_READ,
       NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
   HeapFree( ad->heap,0,fullName );
   if( xml==INVALID_HANDLE_VALUE ) return( NULL );
@@ -4024,14 +4141,14 @@ static textColor *writeSvgHeader( appData *ad )
 {
   if( !ad->svgName ) return( NULL );
 
-  char *fullName = expandFileNameVars( ad,ad->svgName,NULL );
+  wchar_t *fullName = expandFileNameVars( ad,ad->svgName,NULL );
   if( !fullName )
   {
     fullName = ad->svgName;
     ad->svgName = NULL;
   }
 
-  HANDLE svg = CreateFile( fullName,GENERIC_WRITE,FILE_SHARE_READ,
+  HANDLE svg = CreateFileW( fullName,GENERIC_WRITE,FILE_SHARE_READ,
       NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
   HeapFree( ad->heap,0,fullName );
   if( svg==INVALID_HANDLE_VALUE ) return( NULL );
@@ -4058,15 +4175,15 @@ static textColor *writeSvgHeader( appData *ad )
   printf( "    ]]>\n" );
   printf( "  </script>\n" );
 
-  char *exePath = ad->exePath;
-  char *delim = strrchr( exePath,'\\' );
+  wchar_t *exePath = ad->exePathW;
+  wchar_t *delim = strrchrW( exePath,'\\' );
   if( delim ) delim++;
   else delim = exePath;
-  char *lastPoint = strrchr( delim,'.' );
+  wchar_t *lastPoint = strrchrW( delim,'.' );
   if( lastPoint ) lastPoint[0] = 0;
 
-  printf( "  <title>%s - heob " HEOB_VER "</title>\n",delim );
-  printf( "  <text id=\"cmd\" heobCmd=\"%S\">%s</text>\n",
+  printf( "  <title>%S - heob " HEOB_VER "</title>\n",delim );
+  printf( "  <text id=\"cmd\" heobCmd=\"%S\">%S</text>\n",
       ad->cmdLineW,delim );
 
   if( lastPoint ) lastPoint[0] = '.';
@@ -4079,8 +4196,8 @@ static void locSvg( textColor *tc,uintptr_t addr,int useAddr,
 #ifndef NO_THREADNAMES
     char **threadName_a,int threadName_q,int threadNameIdx,
 #endif
-    const char *filename,int lineno,const char *funcname,const char *modname,
-    int blocked )
+    const wchar_t *filename,int lineno,const char *funcname,
+    const wchar_t *modname,int blocked )
 {
   if( stack<=1 ) printf( "\n" );
 
@@ -4091,11 +4208,11 @@ static void locSvg( textColor *tc,uintptr_t addr,int useAddr,
   if( useAddr )
     printf( " heobAddr=\"%X\"",addr );
   if( lineno>0 )
-    printf( " heobSource=\"%s:%d\"",filename,lineno );
+    printf( " heobSource=\"%S:%d\"",filename,lineno );
   if( funcname )
     printf( " heobFunc=\"%s\"",funcname );
   if( modname )
-    printf( " heobMod=\"%s\"",modname );
+    printf( " heobMod=\"%S\"",modname );
 #ifndef NO_THREADNAMES
   if( threadNameIdx>0 && threadNameIdx<=threadName_q &&
       threadName_a[threadNameIdx-1] )
@@ -4645,8 +4762,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
           for( m=0; m<mi_q; m++ )
           {
             if( !ds->fSymGetModuleInfo64(ds->process,mi_a[m].base,&im) )
-              ds->fSymLoadModule64( ds->process,NULL,mi_a[m].path,NULL,
-                  mi_a[m].base,0 );
+              dbgsym_loadmodule( ds,mi_a[m].path,mi_a[m].base,0 );
           }
         }
 #endif
@@ -4708,7 +4824,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
               printf( "$S  modules:\n" );
               int m;
               for( m=0; m<mi_q; m++ )
-                printf( "    %X   %s\n",mi_a[m].base,mi_a[m].path );
+                printf( "    %X   %S\n",mi_a[m].base,mi_a[m].path );
             }
             // }}}
 
@@ -5338,15 +5454,15 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
 static void showHelpText( appData *ad,options *defopt,int fullhelp )
 {
   textColor *tc = ad->tcOut;
-  char *exePath = ad->exePath;
-  GetModuleFileName( NULL,exePath,MAX_PATH );
-  char *delim = strrchr( exePath,'\\' );
+  wchar_t *exePath = ad->exePathW;
+  GetModuleFileNameW( NULL,exePath,MAX_PATH );
+  wchar_t *delim = strrchrW( exePath,'\\' );
   if( delim ) delim++;
   else delim = exePath;
-  char *point = strrchr( delim,'.' );
+  wchar_t *point = strrchrW( delim,'.' );
   if( point ) point[0] = 0;
 
-  printf( "Usage: $O%s $I[OPTION]... $SAPP [APP-OPTION]...\n",
+  printf( "Usage: $O%S $I[OPTION]... $SAPP [APP-OPTION]...\n",
       delim );
   if( fullhelp )
     printf( "    $I-A$BX$N    attach to thread\n" );
@@ -5472,12 +5588,12 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   if( !FlushConsoleInputBuffer(ad->in) ) ad->in = NULL;
 
   // command line arguments {{{
-  char *cmdLine = GetCommandLineA();
-  char *args;
-  if( cmdLine[0]=='"' && (args=strchr(cmdLine+1,'"')) )
+  wchar_t *cmdLine = GetCommandLineW();
+  wchar_t *args;
+  if( cmdLine[0]=='"' && (args=strchrW(cmdLine+1,'"')) )
     args++;
   else
-    args = strchr( cmdLine,' ' );
+    args = strchrW( cmdLine,' ' );
   // default values {{{
   options defopt = {
     1,                              // page protection
@@ -5514,7 +5630,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   options opt = defopt;
   ad->opt = &opt;
   int fullhelp = 0;
-  char badArg = 0;
+  wchar_t badArg = 0;
   int keepSuspended = 0;
   int fakeAttached = 0;
   // permanent options {{{
@@ -5524,7 +5640,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   {
     while( args[0]==' ' ) args++;
     if( args[0]!='-' ) break;
-    char *ro = readOption( args,ad,heap );
+    wchar_t *ro = readOption( args,ad,heap );
     if( ro )
     {
       args = ro;
@@ -5533,7 +5649,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     switch( args[1] )
     {
       case 'c':
-        opt.newConsole = atoi( args+2 );
+        opt.newConsole = wtoi( args+2 );
         break;
 
       case 'o':
@@ -5568,18 +5684,18 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
           if( !fNtQueryInformationThread ) break;
 
           if( ad->pi.hProcess ) break;
-          char *start = args + 2;
-          ad->pi.dwThreadId = (DWORD)atop( start );
+          wchar_t *start = args + 2;
+          ad->pi.dwThreadId = (DWORD)wtop( start );
 
           while( start[0] && start[0]!=' ' && start[0]!='/' && start[0]!='+' )
             start++;
           if( start[0]=='/' )
           {
-            ad->ppid = (DWORD)atop( start+1 );
+            ad->ppid = (DWORD)wtop( start+1 );
             while( start[0] && start[0]!=' ' && start[0]!='+' ) start++;
           }
           if( start[0]=='+' )
-            keepSuspended = atoi( start+1 );
+            keepSuspended = wtoi( start+1 );
 
           ad->pi.hThread = OpenThread(
               STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0x3ff,
@@ -5618,32 +5734,32 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
         break;
 
       case 'E':
-        opt.leakErrorExitCode = atoi( args+2 );
+        opt.leakErrorExitCode = wtoi( args+2 );
         break;
 
       case 'O':
         {
-          char *optionStart = args + 2;
-          char *optionEnd = optionStart;
+          wchar_t *optionStart = args + 2;
+          wchar_t *optionEnd = optionStart;
           while( *optionEnd && *optionEnd!=' ' )
           {
-            optionEnd = strchr( optionEnd,':' );
+            optionEnd = strchrW( optionEnd,':' );
             if( !optionEnd ) break;
-            optionEnd = strchr( optionEnd+1,';' );
+            optionEnd = strchrW( optionEnd+1,';' );
             if( !optionEnd ) break;
             optionEnd++;
           }
           if( optionEnd && optionEnd>optionStart )
           {
             size_t curLen =
-              ad->specificOptions ? lstrlen( ad->specificOptions ) : 0;
+              ad->specificOptions ? lstrlenW( ad->specificOptions ) : 0;
             size_t addLen = optionEnd - optionStart;
             if( !ad->specificOptions )
-              ad->specificOptions = HeapAlloc( heap,0,curLen+addLen+1 );
+              ad->specificOptions = HeapAlloc( heap,0,2*(curLen+addLen+1) );
             else
               ad->specificOptions = HeapReAlloc(
-                  heap,0,ad->specificOptions,curLen+addLen+1 );
-            RtlMoveMemory( ad->specificOptions+curLen,optionStart,addLen );
+                  heap,0,ad->specificOptions,2*(curLen+addLen+1) );
+            RtlMoveMemory( ad->specificOptions+curLen,optionStart,2*addLen );
             ad->specificOptions[curLen+addLen] = 0;
           }
           args = optionEnd;
@@ -5652,11 +5768,11 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
 
       case '"':
         {
-          char *start = args + 2;
-          char *end = start;
+          wchar_t *start = args + 2;
+          wchar_t *end = start;
           while( *end && *end!='"' ) end++;
           if( !*end || end<=start ) break;
-          uintptr_t base = atop( end+1 );
+          uintptr_t base = wtop( end+1 );
           if( !base ) break;
           ad->a2l_mi_q++;
           if( !ad->a2l_mi_a )
@@ -5668,11 +5784,11 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
           mi->base = base;
           mi->size = 0;
           size_t len = end - start;
-          char *localName = HeapAlloc( heap,0,MAX_PATH );
-          RtlMoveMemory( localName,start,len );
+          wchar_t *localName = HeapAlloc( heap,0,2*MAX_PATH );
+          RtlMoveMemory( localName,start,2*len );
           localName[len] = 0;
-          if( !SearchPath(NULL,localName,NULL,MAX_PATH,mi->path,NULL) )
-            RtlMoveMemory( mi->path,localName,len+1 );
+          if( !SearchPathW(NULL,localName,NULL,MAX_PATH,mi->path,NULL) )
+            RtlMoveMemory( mi->path,localName,2*len+2 );
           HeapFree( heap,0,localName );
 
           args = end;
@@ -5713,8 +5829,8 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   // bad argument {{{
   if( badArg )
   {
-    char arg0[2] = { badArg,0 };
-    printf( "$Wunknown argument: $I-%s\n",arg0 );
+    wchar_t arg0[2] = { badArg,0 };
+    printf( "$Wunknown argument: $I-%S\n",arg0 );
 
     exitHeob( ad,HEOB_BAD_ARG,badArg,0x7fffffff );
   }
@@ -5729,7 +5845,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
 
     while( args && args[0]>='0' && args[0]<='9' )
     {
-      uintptr_t ptr = atop( args );
+      uintptr_t ptr = wtop( args );
       if( ptr && a->frameCount<PTRS )
       {
         a->frames[a->frameCount++] = (void*)ptr;
@@ -5759,7 +5875,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
       {
         int i;
         for( i=0; i<a2l_mi_q; i++ )
-          ds.fSymLoadModule64( ds.process,NULL,a2l_mi_a[i].path,NULL,
+          dbgsym_loadmodule( &ds,a2l_mi_a[i].path,
               a2l_mi_a[i].base,(DWORD)a2l_mi_a[i].size );
       }
 #endif
@@ -5810,48 +5926,21 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     opt.newConsole = 1;
 
   // create target application {{{
-  ad->cmdLineW = GetCommandLineW();
-  wchar_t *argsW = ad->cmdLineW;
-  if( argsW[0]=='"' )
-  {
-    argsW++;
-    while( argsW[0] && argsW[0]!='"' ) argsW++;
-    if( argsW[0]=='"' ) argsW++;
-  }
-  else
-  {
-    while( argsW[0] && argsW[0]!=' ' ) argsW++;
-  }
-  while( 1 )
-  {
-    while( argsW[0]==' ' ) argsW++;
-    if( argsW[0]!='-' ) break;
-    if( argsW[1]=='O' )
-    {
-      argsW += 2;
-      while( *argsW && *argsW!=' ' )
-      {
-        while( argsW[0] && argsW[0]!=':' ) argsW++;
-        while( argsW[0] && argsW[0]!=';' ) argsW++;
-        if( argsW[0] ) argsW++;
-      }
-    }
-    while( argsW[0] && argsW[0]!=' ' ) argsW++;
-  }
-  ad->argsW = argsW;
+  ad->cmdLineW = cmdLine;
+  ad->argsW = args;
 
   if( !opt.attached )
   {
     STARTUPINFOW si;
     RtlZeroMemory( &si,sizeof(STARTUPINFO) );
     si.cb = sizeof(STARTUPINFO);
-    BOOL result = CreateProcessW( NULL,argsW,NULL,NULL,FALSE,
+    BOOL result = CreateProcessW( NULL,args,NULL,NULL,FALSE,
         CREATE_SUSPENDED|(opt.newConsole&1?CREATE_NEW_CONSOLE:0),
         NULL,NULL,&si,&ad->pi );
     if( !result )
     {
       DWORD e = GetLastError();
-      printf( "$Wcan't create process for '%s' (%e)\n",args,e );
+      printf( "$Wcan't create process for '%S' (%e)\n",args,e );
       exitHeob( ad,HEOB_PROCESS_FAIL,e,0x7fffffff );
     }
 
@@ -5885,7 +5974,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   // }}}
 
   // executable name {{{
-  char *exePath = ad->exePath;
+  wchar_t *exePath = ad->exePathW;
   if( ad->specificOptions || opt.attached || ad->outName )
   {
     func_NtQueryInformationProcess *fNtQueryInformationProcess =
@@ -5908,11 +5997,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
           wchar_t *lastPoint = strrchrW( lastDelim,'.' );
           if( lastPoint ) lastPoint[0] = 0;
           setHeobConsoleTitle( heap,lastDelim );
-          int count = WideCharToMultiByte( CP_ACP,0,
-              lastDelim,-1,exePath,MAX_PATH,NULL,NULL );
-          if( count<0 || count>=MAX_PATH )
-            count = 0;
-          exePath[count] = 0;
+          lstrcpynW( exePath,lastDelim,MAX_PATH );
         }
         HeapFree( heap,0,oni );
       }
@@ -5924,18 +6009,18 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   defopt = opt;
   if( ad->specificOptions )
   {
-    int nameLen = lstrlen( exePath );
-    char *name = ad->specificOptions;
-    lstrcpy( exePath+nameLen,":" );
+    int nameLen = lstrlenW( exePath );
+    wchar_t *name = ad->specificOptions;
+    lstrcpyW( exePath+nameLen,L":" );
     int disable = 0;
     while( 1 )
     {
-      char *nameEnd = strchr( name,':' );
+      wchar_t *nameEnd = strchrW( name,':' );
       if( !nameEnd ) break;
-      char *so = NULL;
-      if( strstart(name,exePath) || strstart(name,"*" BITS ":") )
+      wchar_t *so = NULL;
+      if( strstartW(name,exePath) || strstartW(name,L"*" BITS ":") )
         so = nameEnd + 1;
-      name = strchr( nameEnd+1,';' );
+      name = strchrW( nameEnd+1,';' );
       if( !name ) break;
       name++;
 
@@ -5970,7 +6055,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   // }}}
 
   // output destination {{{
-  const char *subOutName = NULL;
+  const wchar_t *subOutName = NULL;
   if( ad->outName )
   {
     if( (ad->outName[0]>='0' && ad->outName[0]<='2') && !ad->outName[1] )
@@ -5981,16 +6066,16 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     }
     else
     {
-      if( strstr(ad->outName,"%p") )
+      if( strstrW(ad->outName,L"%p") )
       {
         subOutName = ad->outName;
         opt.children = 1;
       }
 
-      char *fullName = expandFileNameVars( ad,ad->outName,exePath );
-      char *usedName = fullName ? fullName : ad->outName;
+      wchar_t *fullName = expandFileNameVars( ad,ad->outName,exePath );
+      wchar_t *usedName = fullName ? fullName : ad->outName;
 
-      out = CreateFile( usedName,GENERIC_WRITE,FILE_SHARE_READ,
+      out = CreateFileW( usedName,GENERIC_WRITE,FILE_SHARE_READ,
           NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
       if( out==INVALID_HANDLE_VALUE ) out = tc->out;
 
@@ -6000,7 +6085,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     {
       ad->tcOutOrig = ad->tcOut;
       tc = ad->tcOut = HeapAlloc( heap,0,sizeof(textColor) );
-      checkOutputVariant( tc,out,ad->exePath );
+      checkOutputVariant( tc,out,ad->exePathW );
     }
   }
   else if( ad->xmlName || ad->svgName )
@@ -6017,14 +6102,14 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     opt.sourceCode = opt.leakContents = 0;
   // }}}
 
-  const char *subXmlName = NULL;
-  if( ad->xmlName && strstr(ad->xmlName,"%p") )
+  const wchar_t *subXmlName = NULL;
+  if( ad->xmlName && strstrW(ad->xmlName,L"%p") )
   {
     subXmlName = ad->xmlName;
     opt.children = 1;
   }
-  const char *subSvgName = NULL;
-  if( ad->svgName && strstr(ad->svgName,"%p") )
+  const wchar_t *subSvgName = NULL;
+  if( ad->svgName && strstrW(ad->svgName,L"%p") )
   {
     subSvgName = ad->svgName;
     opt.children = 1;
@@ -6064,11 +6149,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   UINT exitCode = 0x7fffffff;
   if( ad->readPipe )
   {
-    int count = WideCharToMultiByte( CP_ACP,0,
-        ad->exePathW,-1,exePath,MAX_PATH,NULL,NULL );
-    if( count<0 || count>=MAX_PATH ) count = 0;
-    exePath[count] = 0;
-    char *delim = strrchr( exePath,'\\' );
+    wchar_t *delim = strrchrW( ad->exePathW,'\\' );
     if( delim ) delim[0] = 0;
     dbgsym ds;
     dbgsym_init( &ds,ad->pi.hProcess,tc,&opt,funcnames,heap,exePath,TRUE,

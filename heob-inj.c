@@ -1,5 +1,5 @@
 
-//          Copyright Hannes Domani 2014 - 2018.
+//          Copyright Hannes Domani 2014 - 2019.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -154,14 +154,14 @@ typedef struct localData
 
   options opt;
   options globalopt;
-  char *specificOptions;
+  wchar_t *specificOptions;
   uint64_t slackInit64;
 
   int recording;
 
-  char subOutName[MAX_PATH];
-  char subXmlName[MAX_PATH];
-  char subSvgName[MAX_PATH];
+  wchar_t subOutName[MAX_PATH];
+  wchar_t subXmlName[MAX_PATH];
+  wchar_t subSvgName[MAX_PATH];
   wchar_t subCurDir[MAX_PATH];
 
 #if USE_STACKWALK
@@ -381,11 +381,10 @@ static void writeModsFind( modInfo **p_mi_a,int *p_mi_q )
       modInfo *mi = mi_a + mi_q;
       mi->base = (size_t)ldrEntry->DllBase;
       mi->size = ldrEntry->SizeOfImage;
-      int count = WideCharToMultiByte( CP_ACP,0,
-          ldrEntry->FullDllName.Buffer,ldrEntry->FullDllName.Length/2,
-          mi->path,MAX_PATH,NULL,NULL );
+      int count = ldrEntry->FullDllName.Length/2;
       if( count>0 && count<MAX_PATH )
       {
+        RtlMoveMemory( mi->path,ldrEntry->FullDllName.Buffer,count*2 );
         mi->path[count] = 0;
         mi_q++;
       }
@@ -1993,22 +1992,22 @@ static VOID WINAPI new_RaiseException(
 // }}}
 // replacement for CreateProcess {{{
 
-static void addOption( char *cmdLine,const char *optionStr,
-    uintptr_t val,uintptr_t defaultVal,char *numEnd )
+static void addOption( wchar_t *cmdLine,const wchar_t *optionStr,
+    uintptr_t val,uintptr_t defaultVal,wchar_t *numEnd )
 {
   if( val==defaultVal ) return;
 
-  lstrcat( cmdLine,optionStr );
-  lstrcat( cmdLine,num2str(numEnd,val,0) );
+  lstrcatW( cmdLine,optionStr );
+  lstrcatW( cmdLine,num2strW(numEnd,val,0) );
 }
 
 int heobSubProcess(
     DWORD creationFlags,LPPROCESS_INFORMATION processInformation,
     HMODULE heobMod,HANDLE heap,options *opt,
     func_CreateProcessW *fCreateProcessW,
-    const char *subOutName,const char *subXmlName,const char *subSvgName,
-    const wchar_t *subCurDir,
-    int raise_alloc_q,size_t *raise_alloc_a,const char *specificOptions )
+    const wchar_t *subOutName,const wchar_t *subXmlName,
+    const wchar_t *subSvgName,const wchar_t *subCurDir,
+    int raise_alloc_q,size_t *raise_alloc_a,const wchar_t *specificOptions )
 {
   wchar_t heobPath[MAX_PATH];
   if( !GetModuleFileNameW(heobMod,heobPath,MAX_PATH) )
@@ -2029,48 +2028,47 @@ int heobSubProcess(
       lstrcpyW( heobEnd,OTHER_HEOB );
     }
 
-    char *heobCmd = HeapAlloc( heap,0,32768 );
-    wchar_t *heobCmdW = HeapAlloc( heap,0,32768*2 );
-    if( heobCmd && heobCmdW )
+    wchar_t *heobCmd = HeapAlloc( heap,0,32768*2 );
+    if( heobCmd )
     {
       // heob command line {{{
-      char num[32];
-      char *numEnd = num + sizeof(num);
+      wchar_t num[32];
+      wchar_t *numEnd = num + sizeof(num)/2;
       *(--numEnd) = 0;
-      heobCmd[0] = 0;
+      lstrcpyW( heobCmd,heobEnd );
 #define ADD_OPTION( option,val,defVal ) \
-      addOption( heobCmd,option,opt->val,defVal,numEnd )
-      addOption( heobCmd," -A",processInformation->dwThreadId,0,numEnd );
+      addOption( heobCmd,L##option,opt->val,defVal,numEnd )
+      addOption( heobCmd,L" -A",processInformation->dwThreadId,0,numEnd );
       if( heobMod )
       {
-        addOption( heobCmd,"/",GetCurrentProcessId(),0,numEnd );
-        addOption( heobCmd,"+",keepSuspended,0,numEnd );
+        addOption( heobCmd,L"/",GetCurrentProcessId(),0,numEnd );
+        addOption( heobCmd,L"+",keepSuspended,0,numEnd );
       }
       else
         ADD_OPTION( " -c",newConsole,0 );
       if( subOutName && subOutName[0] )
       {
-        lstrcat( heobCmd," -o" );
-        lstrcat( heobCmd,subOutName );
+        lstrcatW( heobCmd,L" -o" );
+        lstrcatW( heobCmd,subOutName );
       }
       if( subXmlName && subXmlName[0] )
       {
-        lstrcat( heobCmd," -x" );
-        lstrcat( heobCmd,subXmlName );
+        lstrcatW( heobCmd,L" -x" );
+        lstrcatW( heobCmd,subXmlName );
       }
       if( subSvgName && subSvgName[0] )
       {
-        lstrcat( heobCmd," -v" );
-        lstrcat( heobCmd,subSvgName );
+        lstrcatW( heobCmd,L" -v" );
+        lstrcatW( heobCmd,subSvgName );
       }
       ADD_OPTION( " -p",protect,1 );
       ADD_OPTION( " -a",align,MEMORY_ALLOCATION_ALIGNMENT );
       if( opt->init!=0xffffffffffffffffULL )
       {
-        lstrcat( heobCmd," -i0x" );
-        *num2hexstr( num,opt->init,16 ) = 0;
-        lstrcat( heobCmd,num );
-        lstrcat( heobCmd,":8" );
+        lstrcatW( heobCmd,L" -i0x" );
+        *num2hexstrW( num,opt->init,16 ) = 0;
+        lstrcatW( heobCmd,num );
+        lstrcatW( heobCmd,L":8" );
       }
       ADD_OPTION( " -s",slackInit,-1 );
       ADD_OPTION( " -f",protectFree,0 );
@@ -2097,18 +2095,12 @@ int heobSubProcess(
 #undef ADD_OPTION
       int i;
       for( i=0; i<raise_alloc_q; i++ )
-        addOption( heobCmd," -R",raise_alloc_a[i],0,numEnd );
+        addOption( heobCmd,L" -R",raise_alloc_a[i],0,numEnd );
       if( specificOptions )
       {
-        lstrcat( heobCmd," -O" );
-        lstrcat( heobCmd,specificOptions );
+        lstrcatW( heobCmd,L" -O" );
+        lstrcatW( heobCmd,specificOptions );
       }
-
-      lstrcpyW( heobCmdW,heobEnd );
-      char *hc = heobCmd;
-      wchar_t *hcw = heobCmdW + lstrlenW( heobCmdW );
-      while( *hc ) hcw++[0] = hc++[0];
-      hcw[0] = 0;
       // }}}
 
       if( subCurDir && !subCurDir[0] ) subCurDir = NULL;
@@ -2121,7 +2113,7 @@ int heobSubProcess(
       PROCESS_INFORMATION pi;
       DWORD newConsole = heobMod || opt->newConsole>1 ? CREATE_NEW_CONSOLE : 0;
       RtlZeroMemory( &pi,sizeof(PROCESS_INFORMATION) );
-      if( fCreateProcessW(heobPath,heobCmdW,NULL,NULL,FALSE,
+      if( fCreateProcessW(heobPath,heobCmd,NULL,NULL,FALSE,
             CREATE_SUSPENDED|newConsole,NULL,subCurDir,&si,&pi) )
       {
         char eventName[32] = "heob.attach.";
@@ -2152,8 +2144,6 @@ int heobSubProcess(
     }
     if( heobCmd )
       HeapFree( heap,0,heobCmd );
-    if( heobCmdW )
-      HeapFree( heap,0,heobCmdW );
   }
 
   if( !withHeob && heobMod && !keepSuspended )
@@ -4214,8 +4204,9 @@ VOID CALLBACK heob( ULONG_PTR arg )
   RtlMoveMemory( &ld->globalopt,&rd->globalopt,sizeof(options) );
   if( rd->specificOptions )
   {
-    ld->specificOptions = HeapAlloc( heap,0,lstrlen(rd->specificOptions)+1 );
-    lstrcpy( ld->specificOptions,rd->specificOptions );
+    ld->specificOptions = HeapAlloc(
+        heap,0,2*lstrlenW(rd->specificOptions)+2 );
+    lstrcpyW( ld->specificOptions,rd->specificOptions );
   }
   ld->slackInit64 = rd->opt.slackInit;
   ld->slackInit64 |= ld->slackInit64<<8;
@@ -4254,9 +4245,9 @@ VOID CALLBACK heob( ULONG_PTR arg )
   ld->ei = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(exceptionInfo) );
   ld->maxStackFrames = LOBYTE(LOWORD(GetVersion()))>=6 ? 1024 : 62;
 
-  lstrcpy( ld->subOutName,rd->subOutName );
-  lstrcpy( ld->subXmlName,rd->subXmlName );
-  lstrcpy( ld->subSvgName,rd->subSvgName );
+  lstrcpyW( ld->subOutName,rd->subOutName );
+  lstrcpyW( ld->subXmlName,rd->subXmlName );
+  lstrcpyW( ld->subSvgName,rd->subSvgName );
   lstrcpyW( ld->subCurDir,rd->subCurDir );
 
   if( !ld->noCRT )
