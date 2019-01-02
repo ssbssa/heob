@@ -1391,6 +1391,8 @@ static CODE_SEG(".text$2") HANDLE inject(
 #ifndef NO_DWARFSTACK
 typedef int func_dwstOfFile( const char*,uint64_t,uint64_t*,int,
     dwstCallback*,struct dbgsym* );
+typedef int func_dwstOfFileW( const wchar_t*,uint64_t,uint64_t*,int,
+    dwstCallbackW*,struct dbgsym* );
 typedef size_t func_dwstDemangle( const char*,char*,size_t );
 #endif
 
@@ -1444,6 +1446,7 @@ typedef struct dbgsym
 #ifndef NO_DWARFSTACK
   HMODULE dwstMod;
   func_dwstOfFile *fdwstOfFile;
+  func_dwstOfFileW *fdwstOfFileW;
   func_dwstDemangle *fdwstDemangle;
 #endif
   wchar_t *absPath;
@@ -1607,6 +1610,8 @@ static void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
   {
     ds->fdwstOfFile =
       (func_dwstOfFile*)GetProcAddress( ds->dwstMod,"dwstOfFile" );
+    ds->fdwstOfFileW =
+      (func_dwstOfFileW*)GetProcAddress( ds->dwstMod,"dwstOfFileW" );
     ds->fdwstDemangle =
       (func_dwstDemangle*)GetProcAddress( ds->dwstMod,"dwstDemangle" );
   }
@@ -1992,7 +1997,9 @@ static void cacheSymbolData(
 
     // GCC debug info {{{
 #ifndef NO_DWARFSTACK
-    if( ds->fdwstOfFile )
+    if( ds->fdwstOfFileW )
+      ds->fdwstOfFileW( mi->path,mi->base,frames+j,l-j,locFuncCache,ds );
+    else if( ds->fdwstOfFile )
     {
       char *ansiPath = ds->ansiPath;
       int count = WideCharToMultiByte( CP_ACP,0,
