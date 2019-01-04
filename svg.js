@@ -56,6 +56,7 @@ function heobInit()
   let colorMapAddr = new Map();
   let colorMapBlocked = new Map();
   let colorMapThread = new Map();
+  let blockedCount = 0;
   for (let i = 0; i < svgs.length; i++)
   {
     let svg = svgs[i];
@@ -171,6 +172,9 @@ function heobInit()
       continue;
     addText(svg, svgNs, t);
 
+    if (svg.attributes['heobBlocked'] != undefined)
+      blockedCount++;
+
     if (svg.attributes['heobThread'] != undefined)
     {
       let thread = svg.attributes['heobThread'].value;
@@ -258,8 +262,10 @@ function heobInit()
 
   let extraCount = Math.max(showCount, threadArray.length);
   let svgHeight = fullHeight;
+  if (extraCount > 0 || blockedCount > 0)
+    svgHeight += 40;
   if (extraCount > 0)
-    svgHeight += 40 + extraCount * 16;
+    svgHeight += extraCount * 16;
   svg.setAttribute('height', svgHeight);
   svg.setAttribute('viewBox', '0 0 ' + svgWidth + ' ' + svgHeight);
 
@@ -1121,7 +1127,7 @@ function zoomArr(zoomers)
     }
   }
   let blockedSvg = document.getElementById('blocked');
-  setButtonEnabled(blockedSvg, blockedCount);
+  setButtonVisible(blockedSvg, blockedCount);
 
   sortCountMap(addrCountMap, addrCountArr);
   sortCountMap(sourceCountMap, sourceCountArr);
@@ -1156,6 +1162,12 @@ function zoomArr(zoomers)
   halfWidth = fullWidth;
   if (showCount > 0 && threadCount > 0)
     halfWidth = (fullWidth - spacer) / 2;
+
+  for (let i = 0; i < 3; i++)
+  {
+    let svg = document.getElementById('showType' + i);
+    setButtonVisible(svg, showCount);
+  }
 
   showTypeData();
 
@@ -1282,6 +1294,14 @@ function setButtonEnabled(svg, b)
     svg.setAttribute('class', 'sample');
     svg.style['opacity'] = 1;
   }
+}
+
+function setButtonVisible(svg, b)
+{
+  if (!b)
+    svg.style['display'] = 'none';
+  else
+    svg.style['display'] = 'block';
 }
 
 function showType(t, refresh)
