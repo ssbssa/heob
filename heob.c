@@ -3195,10 +3195,13 @@ static DWORD WINAPI samplingThread( LPVOID arg )
   if( interval<0 ) interval = -interval;
 
   typedef BOOL WINAPI func_QueryThreadCycleTime( HANDLE,PULONG64 );
-  HMODULE kernel32 = GetModuleHandle( "kernel32.dll" );
-  func_QueryThreadCycleTime *fQueryThreadCycleTime =
-    (func_QueryThreadCycleTime*)GetProcAddress(
+  func_QueryThreadCycleTime *fQueryThreadCycleTime = NULL;
+  if( ad->svgName )
+  {
+    HMODULE kernel32 = GetModuleHandle( "kernel32.dll" );
+    fQueryThreadCycleTime = (func_QueryThreadCycleTime*)GetProcAddress(
         kernel32,"QueryThreadCycleTime" );
+  }
   ULONG64 maxCycleBlocked = 1000000;
 
   SetEvent( ad->samplingInit );
