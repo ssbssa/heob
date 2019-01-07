@@ -900,7 +900,7 @@ static void checkOutputVariant( textColor *tc,HANDLE out,
 }
 
 // }}}
-// compare process bitness {{{
+// process bitness / name {{{
 
 int isWrongArch( HANDLE process )
 {
@@ -908,6 +908,39 @@ int isWrongArch( HANDLE process )
   IsWow64Process( process,&remoteWow64 );
   IsWow64Process( GetCurrentProcess(),&meWow64 );
   return( remoteWow64!=meWow64 );
+}
+
+static void nameOfProcess( HMODULE ntdll,HANDLE heap,
+    HANDLE process,wchar_t *name,int noExt )
+{
+  name[0] = 0;
+  if( !ntdll ) return;
+
+  func_NtQueryInformationProcess *fNtQueryInformationProcess =
+    (func_NtQueryInformationProcess*)GetProcAddress(
+        ntdll,"NtQueryInformationProcess" );
+  if( !fNtQueryInformationProcess ) return;
+
+  OBJECT_NAME_INFORMATION *oni =
+    HeapAlloc( heap,0,sizeof(OBJECT_NAME_INFORMATION) );
+  if( !oni ) return;
+
+  ULONG len;
+  if( !fNtQueryInformationProcess(process,ProcessImageFileName,
+        oni,sizeof(OBJECT_NAME_INFORMATION),&len) )
+  {
+    oni->Name.Buffer[oni->Name.Length/2] = 0;
+    wchar_t *lastDelim = strrchrW( oni->Name.Buffer,'\\' );
+    if( lastDelim ) lastDelim++;
+    else lastDelim = oni->Name.Buffer;
+    if( noExt )
+    {
+      wchar_t *lastPoint = strrchrW( lastDelim,'.' );
+      if( lastPoint ) lastPoint[0] = 0;
+    }
+    lstrcpynW( name,lastDelim,MAX_PATH );
+  }
+  HeapFree( heap,0,oni );
 }
 
 // }}}
@@ -999,6 +1032,7 @@ typedef struct appData
   modInfo *a2l_mi_a;
   int a2l_mi_q;
   DWORD ppid;
+  wchar_t pExePath[MAX_PATH];
   DWORD dbgPid;
   attachedProcessInfo *api;
   wchar_t *cmdLineW;
@@ -3314,6 +3348,8 @@ static void printAttachedProcessInfo( appData *ad,textColor *tc )
   printf( "$IPID: $N%u\n",ad->pi.dwProcessId );
   if( ad->ppid )
     printf( "$Iparent PID: $N%u\n",ad->ppid );
+  if( ad->pExePath[0] )
+    printf( "$Iparent application: $N%S\n",ad->pExePath );
   if( api->stdinName[0] )
     printf( "$Istdin: $N%S\n",api->stdinName );
   if( api->stdoutName[0] )
@@ -3528,6 +3564,13 @@ static wchar_t *expandFileNameVars( appData *ad,const wchar_t *origName,
   }
   replaced = strreplace( origName,L"%n",exePath,heap );
   if( lastPoint ) lastPoint[0] = '.';
+  if( replaced )
+  {
+    if( name ) HeapFree( heap,0,name );
+    origName = name = replaced;
+  }
+
+  replaced = strreplace( origName,L"%N",ad->pExePath,heap );
   if( replaced )
   {
     if( name ) HeapFree( heap,0,name );
@@ -5703,6 +5746,17 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
           {
             ad->ppid = (DWORD)wtop( start+1 );
             while( start[0] && start[0]!=' ' && start[0]!='+' ) start++;
+
+            if( ad->ppid )
+            {
+              HANDLE pProcess = OpenProcess(
+                  PROCESS_QUERY_INFORMATION,FALSE,ad->ppid );
+              if( pProcess )
+              {
+                nameOfProcess( ntdll,heap,pProcess,ad->pExePath,0 );
+                CloseHandle( pProcess );
+              }
+            }
           }
           if( start[0]=='+' )
             keepSuspended = wtoi( start+1 );
@@ -5987,31 +6041,8 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   wchar_t *exePath = ad->exePathW;
   if( ad->specificOptions || opt.attached || ad->outName )
   {
-    func_NtQueryInformationProcess *fNtQueryInformationProcess =
-      ntdll ? (func_NtQueryInformationProcess*)GetProcAddress(
-          ntdll,"NtQueryInformationProcess" ) : NULL;
-    if( fNtQueryInformationProcess )
-    {
-      OBJECT_NAME_INFORMATION *oni =
-        HeapAlloc( heap,0,sizeof(OBJECT_NAME_INFORMATION) );
-      if( oni )
-      {
-        ULONG len;
-        if( !fNtQueryInformationProcess(ad->pi.hProcess,ProcessImageFileName,
-              oni,sizeof(OBJECT_NAME_INFORMATION),&len) )
-        {
-          oni->Name.Buffer[oni->Name.Length/2] = 0;
-          wchar_t *lastDelim = strrchrW( oni->Name.Buffer,'\\' );
-          if( lastDelim ) lastDelim++;
-          else lastDelim = oni->Name.Buffer;
-          wchar_t *lastPoint = strrchrW( lastDelim,'.' );
-          if( lastPoint ) lastPoint[0] = 0;
-          setHeobConsoleTitle( heap,lastDelim );
-          lstrcpynW( exePath,lastDelim,MAX_PATH );
-        }
-        HeapFree( heap,0,oni );
-      }
-    }
+    nameOfProcess( ntdll,heap,ad->pi.hProcess,exePath,1 );
+    setHeobConsoleTitle( heap,exePath );
   }
   // }}}
 
