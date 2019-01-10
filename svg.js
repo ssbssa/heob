@@ -20,6 +20,7 @@ var infoTextReset = '';
 var threadTextReset = '';
 var lastZoomers;
 var mapType;
+var showAllStacks = true;
 
 var addrCountMap = new Map();
 var sourceCountMap = new Map();
@@ -272,6 +273,10 @@ function heobInit()
   halfWidth = fullWidth;
   if (showCount > 0 && threadArray.length > 0)
     halfWidth = (fullWidth - spacer) / 2;
+
+  let plusMinusY = headerHeight + (maxStack - 2) * 16 + 3.5;
+  addPlusMinus(svg, svgNs, 1, plusMinusY, true);
+  addPlusMinus(svg, svgNs, 1, plusMinusY, false);
 
   for (let i = 0; i < showCount; i++)
   {
@@ -615,6 +620,42 @@ function addRect(par, svgNs, color)
   newRect.setAttribute('rx', '3');
   newRect.setAttribute('ry', '3');
   par.appendChild(newRect);
+}
+
+function addLine(par, svgNs, x1, y1, x2, y2, color)
+{
+  let line = document.createElementNS(svgNs, 'line');
+  line.setAttribute('x1', x1);
+  line.setAttribute('y1', y1);
+  line.setAttribute('x2', x2);
+  line.setAttribute('y2', y2);
+  line.setAttribute('stroke', color);
+  par.appendChild(line);
+}
+
+function addPlusMinus(par, svgNs, x, y, minus)
+{
+  let svg = createSvg(svgNs, x, y, 8, 8, minus ? 'minus' : 'plus');
+  svg.appendChild(addRectPara(svgNs, '100%', '100%', '#ffffff'));
+  addLine(svg, svgNs, 1, 4, 7, 4, 'black');
+  if (!minus)
+    addLine(svg, svgNs, 4, 1, 4, 7, 'black');
+  svg.setAttribute('onclick', 'plusMinus(' + (minus ? '0' : '1') + ')');
+  if (!minus)
+    svg.style['display'] = 'none';
+  addTitle(svg, svgNs,
+      minus ? 'suppress irrelevant stack frames' : 'show all stack frames');
+  par.appendChild(svg);
+}
+
+function plusMinus(sas)
+{
+  showAllStacks = sas;
+  let minusSvg = document.getElementById('minus');
+  minusSvg.style['display'] = sas ? 'block' : 'none';
+  let plusSvg = document.getElementById('plus');
+  plusSvg.style['display'] = sas ? 'none' : 'block';
+  zoomArr(lastZoomers);
 }
 
 function attributeToText(svg, attr)
@@ -989,8 +1030,12 @@ function zoomArr(zoomers)
   lastZoomers = zoomers;
 
   let zoomSamples = 0;
+  let minStack = showAllStacks ? 0 : maxStack;
   for (let i = 0; i < zoomers.length; i++)
+  {
     zoomSamples += zoomers[i][2];
+    minStack = Math.min(minStack, zoomers[i][1]);
+  }
 
   resetCountMap(addrCountMap);
   resetCountMap(sourceCountMap);
@@ -1021,6 +1066,8 @@ function zoomArr(zoomers)
   let sumBytes = 0;
   let sumAllocs = 0;
   let blockedCount = 0;
+  let stackShowMin = minStack > 3 ? minStack - 1 : 0;
+  let stackShowDiff = stackShowMin ? stackShowMin - 2 : 0;
   for (let i = 0; i < svgs.length; i++)
   {
     let svg = svgs[i];
@@ -1041,6 +1088,12 @@ function zoomArr(zoomers)
       zidx++;
     }
     if (zidx >= zoomers.length || ofs + samples - 0.1 <= zoomers[zidx][0])
+    {
+      svg.style['display'] = 'none';
+      continue;
+    }
+
+    if (stack > 0 && stack < stackShowMin)
     {
       svg.style['display'] = 'none';
       continue;
@@ -1090,6 +1143,9 @@ function zoomArr(zoomers)
     let width = shownSamples * fullWidth / zoomSamples;
     let height = 16;
     let opacity = stack >= zoomers[zidx][1] ? 1 : 0.5;
+
+    if (stack > 1)
+      y += stackShowDiff * 16;
 
     svg.setAttribute('x', x);
     svg.setAttribute('y', y);
