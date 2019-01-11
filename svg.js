@@ -221,8 +221,8 @@ function heobInit()
     let svg = svgs[i];
     if (svg.attributes['heobSum'] == undefined) continue;
 
-    let t = withNL(funcAttribute(svg)) + withNL(sourceAttribute(svg)) +
-      withNL(addrModAttribute(svg)) + withNL(sumAttribute(svg)) +
+    let t = withNL(funcAttribute(svg)) + withNL(sourceAttribute(svg, true)) +
+      withNL(addrModAttribute(svg, true)) + withNL(sumAttribute(svg)) +
       withNL(threadAttribute(svg));
     svg.getElementsByTagName('title')[0].textContent = t;
   }
@@ -663,10 +663,19 @@ function plusMinus(stack)
   zoomArr(lastZoomers);
 }
 
-function attributeToText(svg, attr)
+function attributeToText(svg, attr, noPath)
 {
   if (svg.attributes[attr] != undefined)
-    return svg.attributes[attr].value;
+  {
+    let t = svg.attributes[attr].value;
+    if (noPath == true)
+    {
+      let delim = t.lastIndexOf('\\');
+      if (delim >= 0)
+        t = t.substr(delim + 1);
+    }
+    return t;
+  }
   else
     return '';
 }
@@ -676,15 +685,15 @@ function funcAttribute(svg)
   return attributeToText(svg, 'heobFunc');
 }
 
-function sourceAttribute(svg)
+function sourceAttribute(svg, noPath)
 {
-  return attributeToText(svg, 'heobSource');
+  return attributeToText(svg, 'heobSource', noPath);
 }
 
-function addrModAttribute(svg)
+function addrModAttribute(svg, noPath)
 {
   let tAddr = attributeToText(svg, 'heobAddr');
-  let tMod = attributeToText(svg, 'heobMod');
+  let tMod = attributeToText(svg, 'heobMod', noPath);
   if (tAddr.length == 0 && tMod.length > 0)
     tAddr = 'inlined';
   if (tAddr.length > 0 && tMod.length > 0)
@@ -1344,8 +1353,8 @@ function showTypeData()
     let text = svg.getElementsByTagName('text')[0];
 
     let t = withNL(funcAttribute(refSvg));
-    if (value[5]) t += withNL(sourceAttribute(refSvg));
-    if (value[6]) t += withNL(addrModAttribute(refSvg));
+    if (value[5]) t += withNL(sourceAttribute(refSvg, true));
+    if (value[6]) t += withNL(addrModAttribute(refSvg, true));
     t += sumText(mapType ? sum : 0, mapType ? 0 : sum, value[4]);
     title.textContent = t;
 
