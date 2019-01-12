@@ -2538,7 +2538,7 @@ static int cmp_frame_allocation( const void *av,const void *bv )
 // leak recording status {{{
 
 static void showRecording( const char *title,HANDLE err,int recording,
-    COORD *consoleCoord,int *errColorP )
+    COORD *consoleCoord,int *errColorP,int threads )
 {
   DWORD didwrite;
   WriteFile( err,"\n",1,&didwrite,NULL );
@@ -2604,6 +2604,20 @@ static void showRecording( const char *title,HANDLE err,int recording,
     WriteFile( err,recText+19,6,&didwrite,NULL );
   }
   SetConsoleTextAttribute( err,errColor );
+
+  if( threads )
+  {
+    const char *threadText = "     threads";
+    WriteFile( err,threadText,4,&didwrite,NULL );
+    char str[16];
+    char *end = str + sizeof(str);
+    char *start = num2str( end,threads,0 );
+    SetConsoleTextAttribute( err,
+        errColor^(FOREGROUND_RED|FOREGROUND_INTENSITY) );
+    WriteFile( err,start,(DWORD)(end-start),&didwrite,NULL );
+    WriteFile( err,threadText+4,7+(threads>1),&didwrite,NULL );
+    SetConsoleTextAttribute( err,errColor );
+  }
 }
 
 static void clearRecording( const char *title,HANDLE err,
@@ -2613,7 +2627,7 @@ static void clearRecording( const char *title,HANDLE err,
   SetConsoleCursorPosition( err,moveCoord );
 
   DWORD didwrite;
-  int recTextLen = lstrlen( title ) + 25;
+  int recTextLen = lstrlen( title ) + 25 + 22;
   FillConsoleOutputAttribute( err,errColor,recTextLen,consoleCoord,&didwrite );
   FillConsoleOutputCharacter( err,' ',recTextLen,consoleCoord,&didwrite );
 }
@@ -4574,10 +4588,12 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
   exceptionInfo *eiPtr = HeapAlloc( heap,0,sizeof(exceptionInfo) );
   DWORD flashStart = 0;
   int sample_times = 0;
+  int tsq = 0;
   if( in ) showConsole();
   const char *title = opt->handleException>=2 ?
     "profiling sample recording: " : "leak recording: ";
 #if USE_STACKWALK
+  int tsqShow = in && opt->handleException>=2;
   ad->recordingSamples = opt->handleException>=2 ? recording>0 : 1;
 #endif
   while( 1 )
@@ -4589,7 +4605,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
       needData = 0;
 
       if( in )
-        showRecording( title,err,recording,&consoleCoord,&errColor );
+        showRecording( title,err,recording,&consoleCoord,&errColor,tsq );
     }
 
     DWORD waitTime = INFINITE;
@@ -4603,7 +4619,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
         flashStart = 0;
         recording = 1;
         clearRecording( title,err,consoleCoord,errColor );
-        showRecording( title,err,recording,&consoleCoord,&errColor );
+        showRecording( title,err,recording,&consoleCoord,&errColor,tsq );
       }
       else
         waitTime = FLASH_TIMEOUT - flashTime;
@@ -4660,7 +4676,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
             flashStart = GetTickCount();
             recording = cmd;
             clearRecording( title,err,consoleCoord,errColor );
-            showRecording( title,err,recording,&consoleCoord,&errColor );
+            showRecording( title,err,recording,&consoleCoord,&errColor,tsq );
           }
           // }}}
         }
@@ -4678,7 +4694,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
           if( prevRecording!=recording )
           {
             clearRecording( title,err,consoleCoord,errColor );
-            showRecording( title,err,recording,&consoleCoord,&errColor );
+            showRecording( title,err,recording,&consoleCoord,&errColor,tsq );
           }
 
 #if USE_STACKWALK
@@ -5443,6 +5459,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
           }
           else
             CloseHandle( tst.thread );
+          if( tsqShow ) tsq = ad->thread_samp_q;
         }
         break;
 
@@ -5465,6 +5482,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
               thread_samp_a[ts] = thread_samp_a[thread_samp_q];
             break;
           }
+          if( tsqShow ) tsq = thread_samp_q;
         }
         break;
 #endif
