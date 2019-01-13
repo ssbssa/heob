@@ -441,7 +441,7 @@ static NOINLINE int allocSizeAndState( void *p,size_t *s,int enable )
 
   int splitIdx = (((uintptr_t)p)>>rd->ptrShift)&SPLIT_MASK;
   splitAllocation *sa = rd->splits + splitIdx;
-  int prevEnable = 0;
+  int prevEnable = -1;
   size_t freeSize = -1;
 
   EnterCriticalSection( &sa->cs );
@@ -451,7 +451,11 @@ static NOINLINE int allocSizeAndState( void *p,size_t *s,int enable )
   {
     allocation *a = sa->alloc_a + i;
     if( a->ptr!=p ) continue;
-    if( !a->frameCount ) break;
+    if( !a->frameCount )
+    {
+      prevEnable = 0;
+      break;
+    }
 
     prevEnable = 1;
     a->frameCount = enable;
@@ -468,6 +472,8 @@ static NOINLINE int allocSizeAndState( void *p,size_t *s,int enable )
 
 static NOINLINE size_t heap_block_size( HANDLE heap,void *ptr )
 {
+  if( !heap ) return( -1 );
+
   PROCESS_HEAP_ENTRY phe;
   phe.lpData = NULL;
   size_t s = -1;
@@ -497,10 +503,11 @@ static NOINLINE size_t heap_block_size( HANDLE heap,void *ptr )
   return( s );
 }
 
-static NOINLINE void trackFree(
+static NOINLINE int trackFree(
     void *free_ptr,allocType at,funcType ft,int failed_realloc,int enable,
     void *caller )
 {
+  int ret = 1;
   if( free_ptr )
   {
     GET_REMOTEDATA( rd );
@@ -667,7 +674,7 @@ static NOINLINE void trackFree(
       }
       // }}}
 
-      if( i>=0 || !rd->crtHeap );
+      if( i>=0 );
       else if( heap_block_size(rd->crtHeap,free_ptr)!=(size_t)-1 )
       {
         if( at==AT_MALLOC )
@@ -936,11 +943,15 @@ static NOINLINE void trackFree(
       }
 
       HeapFree( rd->heap,0,aa );
+
+      ret = 0;
     }
     // }}}
 
     TlsSetValue( rd->freeSizeTls,(void*)freeSize );
   }
+
+  return( ret );
 }
 #define trackFree(f,at,ft,fr,e) trackFree(f,at,ft,fr,e,RETURN_ADDRESS())
 
@@ -1118,7 +1129,8 @@ static void *new_calloc( size_t n,size_t s )
 
 static void new_free( void *b )
 {
-  trackFree( b,AT_MALLOC,FT_FREE,0,0 );
+  if( UNLIKELY(!trackFree(b,AT_MALLOC,FT_FREE,0,0)) )
+    return;
 
   GET_REMOTEDATA( rd );
   rd->ffree( b );
@@ -1128,17 +1140,24 @@ static void *new_realloc( void *b,size_t s )
 {
   GET_REMOTEDATA( rd );
 
-  size_t os = -1;
   int enable = 0;
+  int doTrackFree = 1;
   if( b )
   {
-    enable = allocSizeAndState( b,&os,0 );
+    size_t os = -1;
+    int allocState = allocSizeAndState( b,&os,0 );
+    enable = allocState>0;
     TlsSetValue( rd->freeSizeTls,(void*)os );
+
+    if( UNLIKELY(allocState<0) && !rd->opt.protect &&
+        heap_block_size(rd->crtHeap,b)!=(size_t)-1 )
+      doTrackFree = 0;
   }
 
   void *nb = rd->frealloc( b,s );
 
-  trackFree( b,AT_MALLOC,FT_REALLOC,!nb && s,enable );
+  if( doTrackFree )
+    trackFree( b,AT_MALLOC,FT_REALLOC,!nb && s,enable );
   trackAlloc( nb,s,AT_MALLOC,FT_REALLOC );
 
   return( nb );
@@ -1176,7 +1195,8 @@ static void *new_op_new( size_t s )
 
 static void new_op_delete( void *b )
 {
-  trackFree( b,AT_NEW,FT_OP_DELETE,0,0 );
+  if( UNLIKELY(!trackFree(b,AT_NEW,FT_OP_DELETE,0,0)) )
+    return;
 
   GET_REMOTEDATA( rd );
   rd->fop_delete( b );
@@ -1196,7 +1216,8 @@ static void new_op_delete_a( void *b )
 {
   GET_REMOTEDATA( rd );
 
-  trackFree( b,rd->newArrAllocMethod,FT_OP_DELETE_A,0,0 );
+  if( UNLIKELY(!trackFree(b,rd->newArrAllocMethod,FT_OP_DELETE_A,0,0)) )
+    return;
 
   rd->fop_delete_a( b );
 }
@@ -1305,7 +1326,8 @@ static wchar_t *new_wtempnam( wchar_t *dir,wchar_t *prefix )
 
 static void new_free_dbg( void *b,int blockType )
 {
-  trackFree( b,AT_MALLOC,FT_FREE_DBG,0,0 );
+  if( UNLIKELY(!trackFree(b,AT_MALLOC,FT_FREE_DBG,0,0)) )
+    return;
 
   GET_REMOTEDATA( rd );
   rd->ffree_dbg( b,blockType );
@@ -1315,17 +1337,24 @@ static void *new_recalloc( void *b,size_t n,size_t s )
 {
   GET_REMOTEDATA( rd );
 
-  size_t os = -1;
   int enable = 0;
+  int doTrackFree = 1;
   if( b )
   {
-    enable = allocSizeAndState( b,&os,0 );
+    size_t os = -1;
+    int allocState = allocSizeAndState( b,&os,0 );
+    enable = allocState>0;
     TlsSetValue( rd->freeSizeTls,(void*)os );
+
+    if( UNLIKELY(allocState<0) && !rd->opt.protect &&
+        heap_block_size(rd->crtHeap,b)!=(size_t)-1 )
+      doTrackFree = 0;
   }
 
   void *nb = rd->frecalloc( b,n,s );
 
-  trackFree( b,AT_MALLOC,FT_RECALLOC,!nb && n && s,enable );
+  if( doTrackFree )
+    trackFree( b,AT_MALLOC,FT_RECALLOC,!nb && n && s,enable );
   trackCalloc( nb,n,s,AT_MALLOC,FT_RECALLOC );
 
   return( nb );
@@ -2512,9 +2541,6 @@ static void *protect_realloc( void *b,size_t s )
   int extern_alloc = os==(size_t)-1;
   if( UNLIKELY(extern_alloc) )
   {
-    if( !rd->crtHeap )
-      return( NULL );
-
     os = heap_block_size( rd->crtHeap,b );
     if( os==(size_t)-1 )
       return( NULL );
@@ -2748,9 +2774,6 @@ static void *protect_recalloc( void *b,size_t n,size_t s )
   int extern_alloc = os==(size_t)-1;
   if( UNLIKELY(extern_alloc) )
   {
-    if( !rd->crtHeap )
-      return( NULL );
-
     os = heap_block_size( rd->crtHeap,b );
     if( os==(size_t)-1 )
       return( NULL );
@@ -2775,7 +2798,7 @@ static size_t protect_msize( void *b )
   size_t s = -1;
   if( b )
     allocSizeAndState( b,&s,1 );
-  if( s==(size_t)-1 && rd->crtHeap )
+  if( s==(size_t)-1 )
     s = heap_block_size( rd->crtHeap,b );
   return( s );
 }
@@ -3094,6 +3117,15 @@ static void replaceModFuncs( void )
         if( !ucrtbase )
           msvcrt = dll_msvcrt;
         addModule( dll_msvcrt );
+
+        rd->ofree = rd->fGetProcAddress( dll_msvcrt,"free" );
+        rd->oop_delete = rd->fGetProcAddress( dll_msvcrt,fname_op_delete );
+        rd->oop_delete_a = rd->fGetProcAddress( dll_msvcrt,fname_op_delete_a );
+
+        HANDLE (*fget_heap_handle)( void ) =
+          rd->fGetProcAddress( dll_msvcrt,"_get_heap_handle" );
+        if( fget_heap_handle )
+          rd->crtHeap = fget_heap_handle();
       }
       else
       {
@@ -3121,9 +3153,6 @@ static void replaceModFuncs( void )
 
       if( dll_msvcrt && rd->opt.protect )
       {
-        rd->ofree = rd->fGetProcAddress( dll_msvcrt,"free" );
-        rd->oop_delete = rd->fGetProcAddress( dll_msvcrt,fname_op_delete );
-        rd->oop_delete_a = rd->fGetProcAddress( dll_msvcrt,fname_op_delete_a );
         rd->ogetcwd = rd->fGetProcAddress( dll_msvcrt,"_getcwd" );
         rd->owgetcwd = rd->fGetProcAddress( dll_msvcrt,"_wgetcwd" );
         rd->ogetdcwd = rd->fGetProcAddress( dll_msvcrt,"_getdcwd" );
@@ -3132,11 +3161,6 @@ static void replaceModFuncs( void )
         rd->owfullpath = rd->fGetProcAddress( dll_msvcrt,"_wfullpath" );
         rd->otempnam = rd->fGetProcAddress( dll_msvcrt,"_tempnam" );
         rd->owtempnam = rd->fGetProcAddress( dll_msvcrt,"_wtempnam" );
-
-        HANDLE (*fget_heap_handle)( void ) =
-          rd->fGetProcAddress( dll_msvcrt,"_get_heap_handle" );
-        if( fget_heap_handle )
-          rd->crtHeap = fget_heap_handle();
       }
     }
 
@@ -4244,6 +4268,12 @@ VOID CALLBACK heob( ULONG_PTR arg )
   ld->processors = si.dwNumberOfProcessors;
   ld->ei = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(exceptionInfo) );
   ld->maxStackFrames = LOBYTE(LOWORD(GetVersion()))>=6 ? 1024 : 62;
+
+  if( !rd->opt.protect )
+  {
+    ld->pageSize = rd->opt.align;
+    ld->pageAdd = 0;
+  }
 
   lstrcpyW( ld->subOutName,rd->subOutName );
   lstrcpyW( ld->subXmlName,rd->subXmlName );
