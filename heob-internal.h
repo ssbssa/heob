@@ -359,8 +359,8 @@ typedef struct
       unsigned char frameCount;
     };
   };
-#ifndef NO_THREADNAMES
-  int threadNameIdx;
+#ifndef NO_THREADS
+  int threadNum;
 #endif
 }
 allocation;
@@ -483,7 +483,7 @@ enum
   WRITE_MAIN_ALLOC_FAIL,
   WRITE_WRONG_DEALLOC,
   WRITE_RAISE_ALLOCATION,
-#ifndef NO_THREADNAMES
+#ifndef NO_THREADS
   WRITE_THREAD_NAME,
 #endif
   WRITE_EXIT_TRACE,
@@ -519,8 +519,8 @@ exceptionInfo;
 typedef struct
 {
   HANDLE thread;
-#ifndef NO_THREADNAMES
-  int threadNameIdx;
+#ifndef NO_THREADS
+  int threadNum;
 #endif
   DWORD threadId;
   ULONG64 cycleTime;

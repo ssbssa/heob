@@ -2354,15 +2354,14 @@ static char *undecorateVCsymbol( dbgsym *ds,char *decorName )
 // }}}
 // thread name {{{
 
-#ifndef NO_THREADNAMES
-static void printThreadName( int threadNameIdx,
+#ifndef NO_THREADS
+static void printThreadName( int threadNum,
     textColor *tc,int threadName_q,char **threadName_a )
 {
-  if( threadNameIdx>0 && threadNameIdx<=threadName_q &&
-      threadName_a[threadNameIdx-1] )
-    printf( " $S'%d: %s'\n",threadNameIdx,threadName_a[threadNameIdx-1] );
-  else if( threadNameIdx>1 )
-    printf( " $S'%d'\n",threadNameIdx );
+  if( threadNum>0 && threadNum<=threadName_q && threadName_a[threadNum-1] )
+    printf( " $S'%d: %s'\n",threadNum,threadName_a[threadNum-1] );
+  else if( threadNum>1 )
+    printf( " $S'%d'\n",threadNum );
   else
     printf( "\n" );
 }
@@ -2462,9 +2461,9 @@ static int cmp_merge_allocation( const void *av,const void *bv )
   int c = memcmp( a->frames,b->frames,PTRS*sizeof(void*) );
   if( c ) return( c>0 ? 2 : -2 );
 
-#ifndef NO_THREADNAMES
-  if( a->threadNameIdx>b->threadNameIdx ) return( -2 );
-  if( a->threadNameIdx<b->threadNameIdx ) return( 2 );
+#ifndef NO_THREADS
+  if( a->threadNum>b->threadNum ) return( -2 );
+  if( a->threadNum<b->threadNum ) return( 2 );
 #endif
 
   return( a->id>b->id ? 1 : -1 );
@@ -2478,9 +2477,9 @@ static int cmp_time_allocation( const void *av,const void *bv )
   if( a->lt>b->lt ) return( 2 );
   if( a->lt<b->lt ) return( -2 );
 
-#ifndef NO_THREADNAMES
-  if( a->threadNameIdx>b->threadNameIdx ) return( -2 );
-  if( a->threadNameIdx<b->threadNameIdx ) return( 2 );
+#ifndef NO_THREADS
+  if( a->threadNum>b->threadNum ) return( -2 );
+  if( a->threadNum<b->threadNum ) return( 2 );
 #endif
 
   return( a->id>b->id ? 1 : -1 );
@@ -2526,9 +2525,9 @@ static int cmp_frame_allocation( const void *av,const void *bv )
   if( a->size>b->size ) return( -2 );
   if( a->size<b->size ) return( 2 );
 
-#ifndef NO_THREADNAMES
-  if( a->threadNameIdx>b->threadNameIdx ) return( -2 );
-  if( a->threadNameIdx<b->threadNameIdx ) return( 2 );
+#ifndef NO_THREADS
+  if( a->threadNum>b->threadNum ) return( -2 );
+  if( a->threadNum<b->threadNum ) return( 2 );
 #endif
 
   return( a->id>b->id ? 1 : -1 );
@@ -2749,7 +2748,7 @@ static void sortStackGroup( stackGroup *sg,HANDLE heap )
 
 static void printStackGroup( stackGroup *sg,
     allocation *alloc_a,const int *alloc_idxs,
-#ifndef NO_THREADNAMES
+#ifndef NO_THREADS
     char **threadName_a,int threadName_q,
 #endif
     unsigned char **content_ptrs,modInfo *mi_a,int mi_q,dbgsym *ds,
@@ -2767,7 +2766,7 @@ static void printStackGroup( stackGroup *sg,
   {
     int idx = childSorted_a ? childSorted_a[i] : i;
     printStackGroup( child_a+idx,alloc_a,alloc_idxs,
-#ifndef NO_THREADNAMES
+#ifndef NO_THREADS
         threadName_a,threadName_q,
 #endif
         content_ptrs,mi_a,mi_q,ds,sampling );
@@ -2799,7 +2798,7 @@ static void printStackGroup( stackGroup *sg,
       else
         printf( "%E$W%d sample%s ",indent,a->count,a->count>1?"s":NULL );
       printf( "$N(#%U)",a->id );
-      printThreadName( a->threadNameIdx );
+      printThreadName( a->threadNum );
       if( allocCount>1 )
         printStackCount( NULL,0,NULL,0,ds,a->ft,indent );
       else
@@ -2873,7 +2872,7 @@ static void printStackGroup( stackGroup *sg,
 
 static int printStackGroupXml( stackGroup *sg,
     allocation *alloc_a,const int *alloc_idxs,int alloc_q,
-#ifndef NO_THREADNAMES
+#ifndef NO_THREADS
     char **threadName_a,int threadName_q,
 #endif
     modInfo *mi_a,int mi_q,dbgsym *ds,const char **leakTypeNames,
@@ -2887,7 +2886,7 @@ static int printStackGroupXml( stackGroup *sg,
   {
     int idx = childSorted_a ? childSorted_a[i] : i;
     xmlRecordNum = printStackGroupXml( child_a+idx,alloc_a,alloc_idxs,alloc_q,
-#ifndef NO_THREADNAMES
+#ifndef NO_THREADS
         threadName_a,threadName_q,
 #endif
         mi_a,mi_q,ds,leakTypeNames,xmlRecordNum,sampling );
@@ -2920,14 +2919,12 @@ static int printStackGroupXml( stackGroup *sg,
 
       printf( "<error>\n" );
       printf( "  <unique>%X</unique>\n",a->id );
-#ifndef NO_THREADNAMES
-      int threadNameIdx = a->threadNameIdx;
-      if( threadNameIdx )
-        printf( "  <tid>%d</tid>\n",threadNameIdx );
-      if( threadNameIdx>0 && threadNameIdx<=threadName_q &&
-          threadName_a[threadNameIdx-1] )
-        printf( "  <threadname>%s</threadname>\n",
-            threadName_a[threadNameIdx-1] );
+#ifndef NO_THREADS
+      int threadNum = a->threadNum;
+      if( threadNum )
+        printf( "  <tid>%d</tid>\n",threadNum );
+      if( threadNum>0 && threadNum<=threadName_q && threadName_a[threadNum-1] )
+        printf( "  <threadname>%s</threadname>\n",threadName_a[threadNum-1] );
 #endif
       printf( "  <kind>%s</kind>\n",xmlLeakTypeNames[a->lt] );
       printf( "  <xwhat>\n" );
@@ -2967,7 +2964,7 @@ static void freeStackGroup( stackGroup *sg,HANDLE heap )
 
 static void printFullStackGroupSvg( appData *ad,stackGroup *sg,textColor *tc,
     allocation *alloc_a,const int *alloc_idxs,
-#ifndef NO_THREADNAMES
+#ifndef NO_THREADS
     char **threadName_a,int threadName_q,
 #endif
     modInfo *mi_a,int mi_q,dbgsym *ds,
@@ -2977,7 +2974,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
     int alloc_ignore_q,size_t alloc_ignore_sum,
     int alloc_ignore_ind_q,size_t alloc_ignore_ind_sum,
     unsigned char **content_ptrs,modInfo *mi_a,int mi_q,
-#ifndef NO_THREADNAMES
+#ifndef NO_THREADS
     char **threadName_a,int threadName_q,
 #endif
     options *opt,textColor *tc,dbgsym *ds,HANDLE heap,textColor *tcXml,
@@ -3192,7 +3189,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
       printf( ":\n" );
       if( l<lDetails )
         printStackGroup( sg,alloc_a,alloc_idxs,
-#ifndef NO_THREADNAMES
+#ifndef NO_THREADS
             threadName_a,threadName_q,
 #endif
             content_ptrs,mi_a,mi_q,ds,sampling );
@@ -3206,7 +3203,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
       textColor *tcOrig = tc;
       ds->tc = tcXml;
       xmlRecordNum = printStackGroupXml( sg,alloc_a,alloc_idxs,combined_q,
-#ifndef NO_THREADNAMES
+#ifndef NO_THREADS
           threadName_a,threadName_q,
 #endif
           mi_a,mi_q,ds,leakTypeNames,xmlRecordNum,sampling );
@@ -3214,7 +3211,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
     }
     if( sg->allocSum && tcSvg && l<lDetails )
       printFullStackGroupSvg( ad,sg,tcSvg,alloc_a,alloc_idxs,
-#ifndef NO_THREADNAMES
+#ifndef NO_THREADS
           threadName_a,threadName_q,
 #endif
           mi_a,mi_q,ds,groupName,groupTypeName,sampling );
@@ -3294,8 +3291,8 @@ static DWORD WINAPI samplingThread( LPVOID arg )
       a->ft = FT_COUNT;
       a->id = ++ad->samp_id;
 
-#ifndef NO_THREADNAMES
-      a->threadNameIdx = thread_samp_a[ts].threadNameIdx;
+#ifndef NO_THREADS
+      a->threadNum = thread_samp_a[ts].threadNum;
 #endif
 
       HANDLE thread = thread_samp_a[ts].thread;
@@ -4260,8 +4257,8 @@ static textColor *writeSvgHeader( appData *ad )
 
 static void locSvg( textColor *tc,uintptr_t addr,int useAddr,
     size_t samples,size_t ofs,int stack,int allocs,
-#ifndef NO_THREADNAMES
-    char **threadName_a,int threadName_q,int threadNameIdx,
+#ifndef NO_THREADS
+    char **threadName_a,int threadName_q,int threadNum,
 #endif
     const wchar_t *filename,int lineno,const char *funcname,
     const wchar_t *modname,int blocked )
@@ -4280,13 +4277,12 @@ static void locSvg( textColor *tc,uintptr_t addr,int useAddr,
     printf( " heobFunc=\"%s\"",funcname );
   if( modname )
     printf( " heobMod=\"%S\"",modname );
-#ifndef NO_THREADNAMES
-  if( threadNameIdx>0 && threadNameIdx<=threadName_q &&
-      threadName_a[threadNameIdx-1] )
+#ifndef NO_THREADS
+  if( threadNum>0 && threadNum<=threadName_q && threadName_a[threadNum-1] )
     printf( " heobThread=\"thread %d: %s\"",
-        threadNameIdx,threadName_a[threadNameIdx-1] );
-  else if( threadNameIdx )
-    printf( " heobThread=\"thread %d\"",threadNameIdx );
+        threadNum,threadName_a[threadNum-1] );
+  else if( threadNum )
+    printf( " heobThread=\"thread %d\"",threadNum );
 #endif
   if( blocked )
     printf( " heobBlocked=\"%d\"",blocked );
@@ -4294,8 +4290,8 @@ static void locSvg( textColor *tc,uintptr_t addr,int useAddr,
 }
 
 static int printStackCountSvg( void **framesV,int fc,
-#ifndef NO_THREADNAMES
-    char **threadName_a,int threadName_q,int threadNameIdx,
+#ifndef NO_THREADS
+    char **threadName_a,int threadName_q,int threadNum,
 #endif
     textColor *tc,modInfo *mi_a,int mi_q,dbgsym *ds,funcType ft,
     size_t samples,size_t ofs,int stack,int allocs,int sampling )
@@ -4314,8 +4310,8 @@ static int printStackCountSvg( void **framesV,int fc,
     if( k>=mi_q )
     {
       locSvg( tc,frame,1,samples,ofs,stack+stackCount,sampling?0:allocs,
-#ifndef NO_THREADNAMES
-          threadName_a,threadName_q,threadNameIdx,
+#ifndef NO_THREADS
+          threadName_a,threadName_q,threadNum,
 #endif
           NULL,0,NULL,NULL,ft==FT_BLOCKED );
       j--;
@@ -4335,8 +4331,8 @@ static int printStackCountSvg( void **framesV,int fc,
       if( !s )
       {
         locSvg( tc,frame,1,samples,ofs,stack+stackCount,sampling?0:allocs,
-#ifndef NO_THREADNAMES
-            threadName_a,threadName_q,threadNameIdx,
+#ifndef NO_THREADS
+            threadName_a,threadName_q,threadNum,
 #endif
             NULL,0,NULL,mi->path,ft==FT_BLOCKED );
         stackCount++;
@@ -4355,8 +4351,8 @@ static int printStackCountSvg( void **framesV,int fc,
       int stackPos = stack + stackCount;
       // output first the bottom stack
       locSvg( tc,frame,1,samples,ofs,stackPos,sampling?0:allocs,
-#ifndef NO_THREADNAMES
-          threadName_a,threadName_q,threadNameIdx,
+#ifndef NO_THREADS
+          threadName_a,threadName_q,threadNum,
 #endif
           sl->filename,sl->lineno,sl->funcname,mi->path,ft==FT_BLOCKED );
       // then the rest from top to bottom+1
@@ -4365,8 +4361,8 @@ static int printStackCountSvg( void **framesV,int fc,
       while( inlinePos>0 )
       {
         locSvg( tc,0,0,samples,ofs,stackPos+inlinePos,sampling?0:allocs,
-#ifndef NO_THREADNAMES
-            threadName_a,threadName_q,threadNameIdx,
+#ifndef NO_THREADS
+            threadName_a,threadName_q,threadNum,
 #endif
             sl->filename,sl->lineno,sl->funcname,mi->path,ft==FT_BLOCKED );
 
@@ -4379,8 +4375,8 @@ static int printStackCountSvg( void **framesV,int fc,
   if( ft<FT_COUNT )
   {
     locSvg( tc,0,0,samples,ofs,stack+stackCount,sampling?0:allocs,
-#ifndef NO_THREADNAMES
-        threadName_a,threadName_q,threadNameIdx,
+#ifndef NO_THREADS
+        threadName_a,threadName_q,threadNum,
 #endif
         NULL,0,ds->funcnames[ft],NULL,0 );
     stackCount++;
@@ -4390,7 +4386,7 @@ static int printStackCountSvg( void **framesV,int fc,
 
 static void printStackGroupSvg( stackGroup *sg,textColor *tc,
     allocation *alloc_a,const int *alloc_idxs,
-#ifndef NO_THREADNAMES
+#ifndef NO_THREADS
     char **threadName_a,int threadName_q,
 #endif
     modInfo *mi_a,int mi_q,dbgsym *ds,size_t ofs,int stack,int sampling )
@@ -4404,17 +4400,17 @@ static void printStackGroupSvg( stackGroup *sg,textColor *tc,
       (sg->stackStart+sg->stackCount!=a->frameCount ||
        allocCount>1) )
   {
-#ifndef NO_THREADNAMES
-    int threadNameIdx = 0;
+#ifndef NO_THREADS
+    int threadNum = 0;
     for( i=0; i<allocCount; i++ )
     {
       int idx = alloc_idxs[allocStart+i];
       allocation *aIdx = alloc_a + idx;
-      if( !threadNameIdx )
-        threadNameIdx = aIdx->threadNameIdx;
-      else if( threadNameIdx!=aIdx->threadNameIdx )
+      if( !threadNum )
+        threadNum = aIdx->threadNum;
+      else if( threadNum!=aIdx->threadNum )
       {
-        threadNameIdx = 0;
+        threadNum = 0;
         break;
       }
     }
@@ -4438,8 +4434,8 @@ static void printStackGroupSvg( stackGroup *sg,textColor *tc,
     stack += printStackCountSvg(
         a->frames+(a->frameCount-(sg->stackStart+sg->stackCount)),
         sg->stackCount,
-#ifndef NO_THREADNAMES
-        threadName_a,threadName_q,threadNameIdx,
+#ifndef NO_THREADS
+        threadName_a,threadName_q,threadNum,
 #endif
         tc,mi_a,mi_q,ds,blocked,
         sg->allocSumSize,ofs,stack,sg->allocSum,sampling );
@@ -4456,16 +4452,16 @@ static void printStackGroupSvg( stackGroup *sg,textColor *tc,
       if( combSize<minLeakSize ) continue;
       if( allocCount>1 )
       {
-#ifndef NO_THREADNAMES
+#ifndef NO_THREADS
         if( sampling )
           locSvg( tc,0,0,combSize,ofs,stack,0,
-              threadName_a,threadName_q,a->threadNameIdx,
+              threadName_a,threadName_q,a->threadNum,
               NULL,0,NULL,NULL,a->ft==FT_BLOCKED );
         else
 #endif
           printStackCountSvg( NULL,0,
-#ifndef NO_THREADNAMES
-              threadName_a,threadName_q,a->threadNameIdx,
+#ifndef NO_THREADS
+              threadName_a,threadName_q,a->threadNum,
 #endif
               tc,NULL,0,ds,a->ft,
               combSize,ofs,stack,a->count,sampling );
@@ -4474,8 +4470,8 @@ static void printStackGroupSvg( stackGroup *sg,textColor *tc,
         stack += printStackCountSvg(
             a->frames+(a->frameCount-(sg->stackStart+sg->stackCount)),
             sg->stackCount,
-#ifndef NO_THREADNAMES
-            threadName_a,threadName_q,a->threadNameIdx,
+#ifndef NO_THREADS
+            threadName_a,threadName_q,a->threadNum,
 #endif
             tc,mi_a,mi_q,ds,a->ft,
             combSize,ofs,stack,a->count,sampling );
@@ -4493,7 +4489,7 @@ static void printStackGroupSvg( stackGroup *sg,textColor *tc,
     size_t allocSumSize = sgc->allocSumSize;
     if( allocSumSize<minLeakSize ) continue;
     printStackGroupSvg( sgc,tc,alloc_a,alloc_idxs,
-#ifndef NO_THREADNAMES
+#ifndef NO_THREADS
         threadName_a,threadName_q,
 #endif
         mi_a,mi_q,ds,ofs,stack,sampling );
@@ -4503,7 +4499,7 @@ static void printStackGroupSvg( stackGroup *sg,textColor *tc,
 
 static void printFullStackGroupSvg( appData *ad,stackGroup *sg,textColor *tc,
     allocation *alloc_a,const int *alloc_idxs,
-#ifndef NO_THREADNAMES
+#ifndef NO_THREADS
     char **threadName_a,int threadName_q,
 #endif
     modInfo *mi_a,int mi_q,dbgsym *ds,
@@ -4522,14 +4518,14 @@ static void printFullStackGroupSvg( appData *ad,stackGroup *sg,textColor *tc,
     fullName = fullTypeName;
   }
   locSvg( tc,0,0,sg->allocSumSize,ad->svgSum,1,sampling?0:sg->allocSum,
-#ifndef NO_THREADNAMES
+#ifndef NO_THREADS
       NULL,0,0,
 #endif
       NULL,0,fullName,NULL,0 );
   if( fullTypeName ) HeapFree( ad->heap,0,fullTypeName );
 
   printStackGroupSvg( sg,tc,alloc_a,alloc_idxs,
-#ifndef NO_THREADNAMES
+#ifndef NO_THREADS
       threadName_a,threadName_q,
 #endif
       mi_a,mi_q,ds,ad->svgSum,2,sampling );
@@ -4567,7 +4563,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
   int terminated = -2;
   int alloc_show_q = 0;
   int error_q = 0;
-#ifndef NO_THREADNAMES
+#ifndef NO_THREADS
   int threadName_q = 0;
   char **threadName_a = NULL;
 #endif
@@ -4797,7 +4793,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
               alloc_ignore_q,alloc_ignore_sum,
               alloc_ignore_ind_q,alloc_ignore_ind_sum,
               content_ptrs,mi_a,mi_q,
-#ifndef NO_THREADNAMES
+#ifndef NO_THREADS
               threadName_a,threadName_q,
 #endif
               opt,tc,ds,heap,tcXml,ad,tcSvg,0 );
@@ -4993,7 +4989,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
 #endif
 
           printf( "$S  exception on:" );
-          printThreadName( ei.aa[0].threadNameIdx );
+          printThreadName( ei.aa[0].threadNum );
           printStackCount( ei.aa[0].frames,ei.aa[0].frameCount,
               mi_a,mi_q,ds,FT_COUNT,0 );
 
@@ -5024,14 +5020,14 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
                   nearBlock,blockType,
                   ptr,size,accessPos>0?"+":"",accessPos );
               printf( "$S  allocated on: $N(#%U)",ei.aa[1].id );
-              printThreadName( ei.aa[1].threadNameIdx );
+              printThreadName( ei.aa[1].threadNum );
               printStackCount( ei.aa[1].frames,ei.aa[1].frameCount,
                   mi_a,mi_q,ds,ei.aa[1].ft,0 );
 
               if( ei.aq>2 )
               {
                 printf( "$S  freed on:" );
-                printThreadName( ei.aa[2].threadNameIdx );
+                printThreadName( ei.aa[2].threadNum );
                 printStackCount( ei.aa[2].frames,ei.aa[2].frameCount,
                     mi_a,mi_q,ds,ei.aa[2].ft,0 );
               }
@@ -5079,7 +5075,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
           else
             printf( "\n$Wallocation failed of %U bytes\n",aa->size );
           printf( "$S  called on: $N(#%U)",aa->id );
-          printThreadName( aa->threadNameIdx );
+          printThreadName( aa->threadNum );
           printStackCount( aa->frames,aa->frameCount,
               mi_a,mi_q,ds,aa->ft,0 );
 
@@ -5115,7 +5111,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
 
           printf( "\n$Wdeallocation of invalid pointer %p\n",aa->ptr );
           printf( "$S  called on:" );
-          printThreadName( aa->threadNameIdx );
+          printThreadName( aa->threadNum );
           printStackCount( aa->frames,aa->frameCount,
               mi_a,mi_q,ds,aa->ft,0 );
 
@@ -5129,14 +5125,14 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
             printf( "$I  pointing to %sblock %p (size %U, offset %s%D)\n",
                 block,addr,size,ptr>addr?"+":"",ptr-addr );
             printf( "$S  allocated on: $N(#%U)",aa[1].id );
-            printThreadName( aa[1].threadNameIdx );
+            printThreadName( aa[1].threadNum );
             printStackCount( aa[1].frames,aa[1].frameCount,
                 mi_a,mi_q,ds,aa[1].ft,0 );
 
             if( aa[2].ptr )
             {
               printf( "$S  freed on:" );
-              printThreadName( aa[2].threadNameIdx );
+              printThreadName( aa[2].threadNum );
               printStackCount( aa[2].frames,aa[2].frameCount,
                   mi_a,mi_q,ds,aa[2].ft,0 );
             }
@@ -5145,7 +5141,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
           {
             printf( "$I  pointing to stack\n" );
             printf( "$S  possibly same frame as:" );
-            printThreadName( aa[1].threadNameIdx );
+            printThreadName( aa[1].threadNum );
             printStackCount( aa[1].frames,aa[1].frameCount,
                 mi_a,mi_q,ds,FT_COUNT,0 );
           }
@@ -5170,7 +5166,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
             printf( "$I  referenced by block %p (size %U, offset +%U)\n",
                 aa[3].ptr,aa[3].size,aa[2].size );
             printf( "$S  allocated on: $N(#%U)",aa[3].id );
-            printThreadName( aa[3].threadNameIdx );
+            printThreadName( aa[3].threadNum );
             printStackCount( aa[3].frames,aa[3].frameCount,
                 mi_a,mi_q,ds,aa[3].ft,0 );
           }
@@ -5193,17 +5189,17 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
 
           printf( "\n$Wdouble free of %p (size %U)\n",aa[1].ptr,aa[1].size );
           printf( "$S  called on:" );
-          printThreadName( aa[0].threadNameIdx );
+          printThreadName( aa[0].threadNum );
           printStackCount( aa[0].frames,aa[0].frameCount,
               mi_a,mi_q,ds,aa[0].ft,0 );
 
           printf( "$S  allocated on: $N(#%U)",aa[1].id );
-          printThreadName( aa[1].threadNameIdx );
+          printThreadName( aa[1].threadNum );
           printStackCount( aa[1].frames,aa[1].frameCount,
               mi_a,mi_q,ds,aa[1].ft,0 );
 
           printf( "$S  freed on:" );
-          printThreadName( aa[2].threadNameIdx );
+          printThreadName( aa[2].threadNum );
           printStackCount( aa[2].frames,aa[2].frameCount,
               mi_a,mi_q,ds,aa[2].ft,0 );
 
@@ -5228,11 +5224,11 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
               aa[0].ptr,aa[0].size,
               aa[1].ptr>aa[0].ptr?"+":"",(char*)aa[1].ptr-(char*)aa[0].ptr );
           printf( "$S  allocated on: $N(#%U)",aa[0].id );
-          printThreadName( aa[0].threadNameIdx );
+          printThreadName( aa[0].threadNum );
           printStackCount( aa[0].frames,aa[0].frameCount,
               mi_a,mi_q,ds,aa[0].ft,0 );
           printf( "$S  freed on:" );
-          printThreadName( aa[1].threadNameIdx );
+          printThreadName( aa[1].threadNum );
           printStackCount( aa[1].frames,aa[1].frameCount,
               mi_a,mi_q,ds,aa[1].ft,0 );
 
@@ -5264,11 +5260,11 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
           printf( "\n$Wmismatching allocation/release method"
               " of %p (size %U)\n",aa[0].ptr,aa[0].size );
           printf( "$S  allocated on: $N(#%U)",aa[0].id );
-          printThreadName( aa[0].threadNameIdx );
+          printThreadName( aa[0].threadNum );
           printStackCount( aa[0].frames,aa[0].frameCount,
               mi_a,mi_q,ds,aa[0].ft,0 );
           printf( "$S  freed on:" );
-          printThreadName( aa[1].threadNameIdx );
+          printThreadName( aa[1].threadNum );
           printStackCount( aa[1].frames,aa[1].frameCount,
               mi_a,mi_q,ds,aa[1].ft,0 );
 
@@ -5298,14 +5294,14 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
         // }}}
         // thread names {{{
 
-#ifndef NO_THREADNAMES
+#ifndef NO_THREADS
       case WRITE_THREAD_NAME:
         {
-          int threadNameIdx;
-          if( !readFile(readPipe,&threadNameIdx,sizeof(int),&ov) )
+          int threadNum;
+          if( !readFile(readPipe,&threadNum,sizeof(int),&ov) )
             break;
           int tnq = threadName_q;
-          while( tnq<threadNameIdx ) tnq += 64;
+          while( tnq<threadNum ) tnq += 64;
           if( tnq>threadName_q )
           {
             if( !threadName_a )
@@ -5322,11 +5318,11 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
           int len;
           if( !readFile(readPipe,&len,sizeof(int),&ov) )
             break;
-          if( threadName_a[threadNameIdx-1] )
-            HeapFree( heap,0,threadName_a[threadNameIdx-1] );
-          threadName_a[threadNameIdx-1] =
+          if( threadName_a[threadNum-1] )
+            HeapFree( heap,0,threadName_a[threadNum-1] );
+          threadName_a[threadNum-1] =
             HeapAlloc( heap,HEAP_ZERO_MEMORY,len+1 );
-          if( !readFile(readPipe,threadName_a[threadNameIdx-1],len,&ov) )
+          if( !readFile(readPipe,threadName_a[threadNum-1],len,&ov) )
             break;
         }
         break;
@@ -5343,7 +5339,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
 
           cacheSymbolData( exitTrace,NULL,1,mi_a,mi_q,ds,1 );
           printf( "$Sexit on:" );
-          printThreadName( exitTrace->threadNameIdx );
+          printThreadName( exitTrace->threadNum );
           printStackCount( exitTrace->frames,exitTrace->frameCount,
               mi_a,mi_q,ds,FT_COUNT,0 );
         }
@@ -5422,7 +5418,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
           sample_times += ad->sample_times;
 
           printLeaks( ad->samp_a,ad->samp_q,0,0,0,0,NULL,mi_a,mi_q,
-#ifndef NO_THREADNAMES
+#ifndef NO_THREADS
               threadName_a,threadName_q,
 #endif
               opt,tc,ds,heap,tcXml,ad,tcSvg,1 );
@@ -5505,7 +5501,7 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
   HeapFree( heap,0,aa );
   HeapFree( heap,0,eiPtr );
   if( mi_a ) HeapFree( heap,0,mi_a );
-#ifndef NO_THREADNAMES
+#ifndef NO_THREADS
   if( threadName_a )
   {
     int i;

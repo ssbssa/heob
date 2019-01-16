@@ -43,8 +43,8 @@ typedef struct
 {
   allocation a;
   void *frames[PTRS];
-#ifndef NO_THREADNAMES
-  int threadNameIdx;
+#ifndef NO_THREADS
+  int threadNum;
 #endif
 }
 freed;
@@ -79,7 +79,7 @@ typedef struct localData
   func_CreateProcessA *fCreateProcessA;
   func_CreateProcessW *fCreateProcessW;
 
-#ifndef NO_THREADNAMES
+#ifndef NO_THREADS
   func_RaiseException *fRaiseException;
 #endif
   func_NtQueryInformationThread *fNtQueryInformationThread;
@@ -145,9 +145,8 @@ typedef struct localData
   int maxStackFrames;
   int noCRT;
 
-#ifndef NO_THREADNAMES
-  DWORD threadNameTls;
-  int threadNameIdx;
+#ifndef NO_THREADS
+  DWORD threadNumTls;
 #endif
 
   DWORD freeSizeTls;
@@ -174,8 +173,8 @@ typedef struct localData
   CRITICAL_SECTION csAllocId;
   CRITICAL_SECTION csWrite;
   CRITICAL_SECTION csFreedMod;
-#ifndef NO_THREADNAMES
-  CRITICAL_SECTION csThreadNameIdx;
+#ifndef NO_THREADS
+  CRITICAL_SECTION csThreadNum;
 #endif
 
   // protected by csMod {{{
@@ -212,6 +211,13 @@ typedef struct localData
   int freed_mod_q;
   int freed_mod_s;
   int inExit;
+
+  // }}}
+  // protected by csThreadNum {{{
+
+#ifndef NO_THREADS
+  int threadNum;
+#endif
 
   // }}}
 }
@@ -543,8 +549,8 @@ static NOINLINE int trackFree(
       if( rd->opt.protectFree && !failed_realloc )
       {
         fa.ftFreed = ft;
-#ifndef NO_THREADNAMES
-        int threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
+#ifndef NO_THREADS
+        int threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
 #endif
 
         splitFreed *sf = rd->freeds + splitIdx;
@@ -557,8 +563,8 @@ static NOINLINE int trackFree(
 
         freed *f = sf->freed_a + sf->freed_q;
         RtlMoveMemory( &f->a,&fa,sizeof(allocation) );
-#ifndef NO_THREADNAMES
-        f->threadNameIdx = threadNameIdx;
+#ifndef NO_THREADS
+        f->threadNum = threadNum;
 #endif
 
         CAPTURE_STACK_TRACE( 2,PTRS,f->frames,caller,rd->maxStackFrames );
@@ -583,8 +589,8 @@ static NOINLINE int trackFree(
         aa[1].at = at;
         aa[1].lt = LT_LOST;
         aa[1].ft = ft;
-#ifndef NO_THREADNAMES
-        aa[1].threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
+#ifndef NO_THREADS
+        aa[1].threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
 #endif
 
         writeAllocs( aa,2,WRITE_WRONG_DEALLOC );
@@ -621,9 +627,8 @@ static NOINLINE int trackFree(
         // this block was realloc()'d at the same time in another thread
         CAPTURE_STACK_TRACE( 2,PTRS,aa[0].frames,caller,rd->maxStackFrames );
         aa[0].ft = ft;
-#ifndef NO_THREADNAMES
-        aa[0].threadNameIdx =
-          (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
+#ifndef NO_THREADS
+        aa[0].threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
 #endif
 
         RtlMoveMemory( &aa[1],&fa,sizeof(allocation) );
@@ -649,17 +654,16 @@ static NOINLINE int trackFree(
           RtlMoveMemory( &aa[1],&f->a,sizeof(allocation) );
 
           RtlMoveMemory( aa[2].frames,f->frames,PTRS*sizeof(void*) );
-#ifndef NO_THREADNAMES
-          aa[2].threadNameIdx = f->threadNameIdx;
+#ifndef NO_THREADS
+          aa[2].threadNum = f->threadNum;
 #endif
 
           LeaveCriticalSection( &sf->cs );
 
           CAPTURE_STACK_TRACE( 2,PTRS,aa[0].frames,caller,rd->maxStackFrames );
           aa[0].ft = ft;
-#ifndef NO_THREADNAMES
-          aa[0].threadNameIdx =
-            (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
+#ifndef NO_THREADS
+          aa[0].threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
 #endif
 
           aa[2].ft = aa[1].ftFreed;
@@ -691,8 +695,8 @@ static NOINLINE int trackFree(
         aa->at = at;
         aa->lt = LT_LOST;
         aa->ft = ft;
-#ifndef NO_THREADNAMES
-        aa->threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
+#ifndef NO_THREADS
+        aa->threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
 #endif
 
         CAPTURE_STACK_TRACE( 2,PTRS,aa->frames,caller,rd->maxStackFrames );
@@ -816,8 +820,8 @@ static NOINLINE int trackFree(
                   aa[2].ptr = aa[1].ptr;
                   RtlMoveMemory( aa[2].frames,ff->frames,PTRS*sizeof(void*) );
                   aa[2].ft = ff->a.ftFreed;
-#ifndef NO_THREADNAMES
-                  aa[2].threadNameIdx = ff->threadNameIdx;
+#ifndef NO_THREADS
+                  aa[2].threadNum = ff->threadNum;
 #endif
                   foundAlloc = 1;
                   break;
@@ -973,8 +977,8 @@ static NOINLINE void trackAllocSuccess(
     a.ft = ft;
     a.frameCount = 1; // is 0 while realloc() is called (state unknown)
     a.id = IL_INC( (IL_INT*)&rd->cur_id );
-#ifndef NO_THREADNAMES
-    a.threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
+#ifndef NO_THREADS
+    a.threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
 #endif
 
     CAPTURE_STACK_TRACE( 2,PTRS,a.frames,caller,rd->maxStackFrames );
@@ -1038,8 +1042,8 @@ static NOINLINE void trackAllocFailure(
     a.lt = LT_LOST;
     a.ft = ft;
     a.id = IL_INC( (IL_INT*)&rd->cur_id );
-#ifndef NO_THREADNAMES
-    a.threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
+#ifndef NO_THREADS
+    a.threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
 #endif
 
     CAPTURE_STACK_TRACE( 2,PTRS,a.frames,caller,rd->maxStackFrames );
@@ -1806,8 +1810,8 @@ static VOID WINAPI new_ExitProcess( UINT c )
   allocation *exitTracePtr = NULL;
   if( rd->opt.exitTrace )
   {
-#ifndef NO_THREADNAMES
-    exitTrace.threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
+#ifndef NO_THREADS
+    exitTrace.threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
 #endif
 
     CAPTURE_STACK_TRACE( 1,PTRS,exitTrace.frames,RETURN_ADDRESS(),
@@ -1914,7 +1918,7 @@ static BOOL WINAPI new_TerminateProcess( HANDLE p,UINT c )
 // }}}
 // replacement for RaiseException {{{
 
-#ifndef NO_THREADNAMES
+#ifndef NO_THREADS
 static void **getTlsSlotAddress( HANDLE thread,DWORD tls )
 {
   GET_REMOTEDATA( rd );
@@ -1967,43 +1971,43 @@ static VOID WINAPI new_RaiseException(
     {
       // thread name index {{{
       DWORD threadId = tni->dwThreadID;
-      DWORD threadNameTls = rd->threadNameTls;
-      int threadNameIdx = 0;
+      DWORD threadNumTls = rd->threadNumTls;
+      int threadNum = 0;
       if( threadId==(DWORD)-1 || threadId==GetCurrentThreadId() )
-        threadNameIdx = (int)(uintptr_t)TlsGetValue( threadNameTls );
+        threadNum = (int)(uintptr_t)TlsGetValue( threadNumTls );
       else if( rd->fNtQueryInformationThread )
       {
         HANDLE thread = OpenThread(
             THREAD_QUERY_INFORMATION,FALSE,threadId );
         if( thread )
         {
-          void **tlsSlotAddress = getTlsSlotAddress( thread,threadNameTls );
+          void **tlsSlotAddress = getTlsSlotAddress( thread,threadNumTls );
           if( tlsSlotAddress )
           {
-            EnterCriticalSection( &rd->csThreadNameIdx );
+            EnterCriticalSection( &rd->csThreadNum );
 
-            threadNameIdx = (int)(uintptr_t)*tlsSlotAddress;
-            if( !threadNameIdx )
+            threadNum = (int)(uintptr_t)*tlsSlotAddress;
+            if( !threadNum )
             {
-              threadNameIdx = ++rd->threadNameIdx;
-              *tlsSlotAddress = (void*)(uintptr_t)threadNameIdx;
+              threadNum = ++rd->threadNum;
+              *tlsSlotAddress = (void*)(uintptr_t)threadNum;
             }
 
-            LeaveCriticalSection( &rd->csThreadNameIdx );
+            LeaveCriticalSection( &rd->csThreadNum );
           }
           CloseHandle( thread );
         }
       }
       // }}}
 
-      if( threadNameIdx )
+      if( threadNum )
       {
         EnterCriticalSection( &rd->csWrite );
 
         int type = WRITE_THREAD_NAME;
         DWORD written;
         WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-        WriteFile( rd->master,&threadNameIdx,sizeof(int),&written,NULL );
+        WriteFile( rd->master,&threadNum,sizeof(int),&written,NULL );
         int len = lstrlen( tni->szName );
         WriteFile( rd->master,&len,sizeof(int),&written,NULL );
         WriteFile( rd->master,tni->szName,len,&written,NULL );
@@ -2456,8 +2460,8 @@ static NOINLINE void protect_free_m( void *b,funcType ft )
         CAPTURE_STACK_TRACE( 3,PTRS,aa[1].frames,NULL,rd->maxStackFrames );
         aa[1].ptr = slackStart + i;
         aa[1].ft = ft;
-#ifndef NO_THREADNAMES
-        aa[1].threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
+#ifndef NO_THREADS
+        aa[1].threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
 #endif
 
         writeAllocs( aa,2,WRITE_SLACK );
@@ -3075,7 +3079,7 @@ static void replaceModFuncs( void )
   replaceData rep2[] = {
     REP_FUNC(ExitProcess),
     REP_FUNC(TerminateProcess),
-#ifndef NO_THREADNAMES
+#ifndef NO_THREADS
     REP_FUNC(RaiseException),
 #endif
     // only used with children hook
@@ -3299,8 +3303,8 @@ static allocation *heob_find_freed_a( uintptr_t addr,allocation *aa )
         RtlMoveMemory( &aa[0],&f->a,sizeof(allocation) );
         RtlMoveMemory( &aa[1].frames,&f->frames,PTRS*sizeof(void*) );
         aa[1].ft = f->a.ftFreed;
-#ifndef NO_THREADNAMES
-        aa[1].threadNameIdx = f->threadNameIdx;
+#ifndef NO_THREADS
+        aa[1].threadNum = f->threadNum;
 #endif
         LeaveCriticalSection( &sf->cs );
         return( aa );
@@ -3423,8 +3427,8 @@ static allocation *heob_find_nearest_freed_a( uintptr_t addr,allocation *aa )
     RtlMoveMemory( &aa[0],&nearestF->a,sizeof(allocation) );
     RtlMoveMemory( &aa[1].frames,&nearestF->frames,PTRS*sizeof(void*) );
     aa[1].ft = nearestF->a.ftFreed;
-#ifndef NO_THREADNAMES
-    aa[1].threadNameIdx = nearestF->threadNameIdx;
+#ifndef NO_THREADS
+    aa[1].threadNum = nearestF->threadNum;
 #endif
     LeaveCriticalSection( nearestCs );
     return( aa );
@@ -3683,8 +3687,8 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   }
   // }}}
 
-#ifndef NO_THREADNAMES
-  ei.aa[0].threadNameIdx = (int)(uintptr_t)TlsGetValue( rd->threadNameTls );
+#ifndef NO_THREADS
+  ei.aa[0].threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
 #endif
 
 #if USE_STACKWALK
@@ -3997,19 +4001,19 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
     // }}}
 
     // thread number {{{
-#ifndef NO_THREADNAMES
-    DWORD threadNameTls = rd->threadNameTls;
+#ifndef NO_THREADS
+    DWORD threadNumTls = rd->threadNumTls;
 
-    EnterCriticalSection( &rd->csThreadNameIdx );
+    EnterCriticalSection( &rd->csThreadNum );
 
-    int threadNameIdx = (int)(uintptr_t)TlsGetValue( threadNameTls );
-    if( !threadNameIdx )
+    int threadNum = (int)(uintptr_t)TlsGetValue( threadNumTls );
+    if( !threadNum )
     {
-      threadNameIdx = ++rd->threadNameIdx;
-      TlsSetValue( threadNameTls,(void*)(uintptr_t)threadNameIdx );
+      threadNum = ++rd->threadNum;
+      TlsSetValue( threadNumTls,(void*)(uintptr_t)threadNum );
     }
 
-    LeaveCriticalSection( &rd->csThreadNameIdx );
+    LeaveCriticalSection( &rd->csThreadNum );
 #endif
     // }}}
 
@@ -4021,8 +4025,8 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
       threadSamplingType tst;
       DuplicateHandle( GetCurrentProcess(),thread,
           rd->heobProcess,&tst.thread,0,FALSE,DUPLICATE_SAME_ACCESS );
-#ifndef NO_THREADNAMES
-      tst.threadNameIdx = threadNameIdx;
+#ifndef NO_THREADS
+      tst.threadNum = threadNum;
 #endif
       tst.threadId = GetCurrentThreadId();
       tst.cycleTime = 0;
@@ -4310,8 +4314,8 @@ VOID CALLBACK heob( ULONG_PTR arg )
               4000,CRITICAL_SECTION_NO_DEBUG_INFO );
       }
     }
-#ifndef NO_THREADNAMES
-    fInitCritSecEx( &ld->csThreadNameIdx,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
+#ifndef NO_THREADS
+    fInitCritSecEx( &ld->csThreadNum,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
 #endif
   }
   else
@@ -4330,8 +4334,8 @@ VOID CALLBACK heob( ULONG_PTR arg )
           InitializeCriticalSection( &ld->freeds[i].cs );
       }
     }
-#ifndef NO_THREADNAMES
-    InitializeCriticalSection( &ld->csThreadNameIdx );
+#ifndef NO_THREADS
+    InitializeCriticalSection( &ld->csThreadNum );
 #endif
   }
   // }}}
@@ -4366,8 +4370,8 @@ VOID CALLBACK heob( ULONG_PTR arg )
   if( ntdll )
     ld->fNtQueryInformationThread = rd->fGetProcAddress(
         ntdll,"NtQueryInformationThread" );
-#ifndef NO_THREADNAMES
-  ld->threadNameTls = TlsAlloc();
+#ifndef NO_THREADS
+  ld->threadNumTls = TlsAlloc();
 #endif
 
   ld->freeSizeTls = TlsAlloc();
