@@ -5702,7 +5702,9 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   int fakeAttached = 0;
   // permanent options {{{
   opt.groupLeaks = -1;
+#if USE_STACKWALK
   opt.handleException = -1;
+#endif
   while( args )
   {
     while( args[0]==' ' ) args++;
@@ -6054,6 +6056,14 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
 
   // application specific options {{{
   defopt = opt;
+  // enable extended stack grouping for svg by default
+  if( defopt.groupLeaks<0 )
+    defopt.groupLeaks = ( !ad->xmlName && ad->svgName ) ? 2 : 1;
+#if USE_STACKWALK
+  // disable heap monitoring for sampling profiler by default
+  if( defopt.handleException<0 )
+    defopt.handleException = opt.samplingInterval ? 2 : 1;
+#endif
   if( ad->specificOptions )
   {
     int nameLen = lstrlenW( exePath );
@@ -6096,14 +6106,12 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
       exitHeob( ad,HEOB_OK,0,exitCode );
     }
   }
-  // enable extended stack grouping for svg by default
-  if( !ad->xmlName && ad->svgName ) defopt.groupLeaks = 2;
   if( opt.groupLeaks<0 ) opt.groupLeaks = defopt.groupLeaks;
-  // disable heap monitoring for sampling profiler by default
 #if USE_STACKWALK
-  if( opt.samplingInterval ) defopt.handleException = 2;
+  // disable heap monitoring for sampling profiler by default
+  if( opt.handleException<0 )
+    opt.handleException = opt.samplingInterval ? 2 : 1;
 #endif
-  if( opt.handleException<0 ) opt.handleException = defopt.handleException;
   // disable depending options
   if( opt.protect<1 ) opt.protectFree = 0;
   if( opt.handleException>=2 )

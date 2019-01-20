@@ -2067,6 +2067,7 @@ int heobSubProcess(
       // heob command line {{{
       wchar_t num[32];
       wchar_t *numEnd = num + sizeof(num)/2;
+      int defVal;
       *(--numEnd) = 0;
       lstrcpyW( heobCmd,heobEnd );
 #define ADD_OPTION( option,val,defVal ) \
@@ -2079,17 +2080,20 @@ int heobSubProcess(
       }
       else
         ADD_OPTION( " -c",newConsole,0 );
-      if( subOutName && subOutName[0] )
+      if( subOutName && !subOutName[0] ) subOutName = NULL;
+      if( subOutName )
       {
         lstrcatW( heobCmd,L" -o" );
         lstrcatW( heobCmd,subOutName );
       }
-      if( subXmlName && subXmlName[0] )
+      if( subXmlName && !subXmlName[0] ) subXmlName = NULL;
+      if( subXmlName )
       {
         lstrcatW( heobCmd,L" -x" );
         lstrcatW( heobCmd,subXmlName );
       }
-      if( subSvgName && subSvgName[0] )
+      if( subSvgName && !subSvgName[0] ) subSvgName = NULL;
+      if( subSvgName )
       {
         lstrcatW( heobCmd,L" -v" );
         lstrcatW( heobCmd,subSvgName );
@@ -2105,7 +2109,12 @@ int heobSubProcess(
       }
       ADD_OPTION( " -s",slackInit,-1 );
       ADD_OPTION( " -f",protectFree,0 );
-      ADD_OPTION( " -h",handleException,1 );
+      defVal =
+#if USE_STACKWALK
+        opt->samplingInterval ? 2 :
+#endif
+        1;
+      ADD_OPTION( " -h",handleException,defVal );
       ADD_OPTION( " -F",fullPath,0 );
       ADD_OPTION( " -m",allocMethod,0 );
       ADD_OPTION( " -l",leakDetails,1 );
@@ -2118,7 +2127,8 @@ int heobSubProcess(
       ADD_OPTION( " -M",minProtectSize,1 );
       ADD_OPTION( " -n",findNearest,1 );
       ADD_OPTION( " -L",leakContents,0 );
-      ADD_OPTION( " -g",groupLeaks,1 );
+      defVal = ( !subXmlName && subSvgName ) ? 2 : 1;
+      ADD_OPTION( " -g",groupLeaks,defVal );
       ADD_OPTION( " -z",minLeakSize,0 );
       ADD_OPTION( " -k",leakRecording,0 );
       ADD_OPTION( " -D",exceptionDetails,0 );
