@@ -3737,15 +3737,15 @@ static void setHeobConsoleTitle( HANDLE heap,const wchar_t *prog )
 // }}}
 // xml {{{
 
-static textColor *writeXmlHeader( appData *ad,DWORD startTicks )
+static textColor *createExpandedXml( appData *ad,wchar_t **name )
 {
-  if( !ad->xmlName ) return( NULL );
+  if( !*name ) return( NULL );
 
-  wchar_t *fullName = expandFileNameVars( ad,ad->xmlName,NULL );
+  wchar_t *fullName = expandFileNameVars( ad,*name,NULL );
   if( !fullName )
   {
-    fullName = ad->xmlName;
-    ad->xmlName = NULL;
+    fullName = *name;
+    *name = NULL;
   }
 
   HANDLE xml = CreateFileW( fullName,GENERIC_WRITE,FILE_SHARE_READ,
@@ -3760,6 +3760,14 @@ static textColor *writeXmlHeader( appData *ad,DWORD startTicks )
   tc->fTextColor = NULL;
   tc->out = xml;
   tc->color = ATT_NORMAL;
+
+  return( tc );
+}
+
+static textColor *writeXmlHeader( appData *ad,DWORD startTicks )
+{
+  textColor *tc = createExpandedXml( ad,&ad->xmlName );
+  if( !tc ) return( NULL );
 
   const wchar_t *exePathW = ad->exePathW;
 
@@ -4203,27 +4211,8 @@ static void writeResource( textColor *tc,int resID )
 
 static textColor *writeSvgHeader( appData *ad )
 {
-  if( !ad->svgName ) return( NULL );
-
-  wchar_t *fullName = expandFileNameVars( ad,ad->svgName,NULL );
-  if( !fullName )
-  {
-    fullName = ad->svgName;
-    ad->svgName = NULL;
-  }
-
-  HANDLE svg = CreateFileW( fullName,GENERIC_WRITE,FILE_SHARE_READ,
-      NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
-  HeapFree( ad->heap,0,fullName );
-  if( svg==INVALID_HANDLE_VALUE ) return( NULL );
-
-  textColor *tc = HeapAlloc( ad->heap,HEAP_ZERO_MEMORY,sizeof(textColor) );
-  tc->fWriteText = &WriteText;
-  tc->fWriteSubText = &WriteTextHtml;
-  tc->fWriteSubTextW = &WriteTextHtmlW;
-  tc->fTextColor = NULL;
-  tc->out = svg;
-  tc->color = ATT_NORMAL;
+  textColor *tc = createExpandedXml( ad,&ad->svgName );
+  if( !tc ) return( NULL );
 
   printf( "<svg width=\"1280\" height=\"100\" onload=\"heobInit()\""
       " xmlns=\"http://www.w3.org/2000/svg\">\n" );
