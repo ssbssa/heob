@@ -2131,6 +2131,7 @@ int heobSubProcess(
       ADD_OPTION( " -g",groupLeaks,defVal );
       ADD_OPTION( " -z",minLeakSize,0 );
       ADD_OPTION( " -k",leakRecording,0 );
+      ADD_OPTION( " -E",leakErrorExitCode,0 );
       ADD_OPTION( " -D",exceptionDetails,0 );
 #if USE_STACKWALK
       ADD_OPTION( " -I",samplingInterval,0 );

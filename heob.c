@@ -899,6 +899,33 @@ static void checkOutputVariant( textColor *tc,HANDLE out,
   }
 }
 
+static void deleteFileOnClose( textColor *tc )
+{
+  if( !tc ) return;
+
+  HMODULE kernel32 = GetModuleHandle( "kernel32.dll" );
+
+  typedef struct _FILE_DISPOSITION_INFO {
+    BOOLEAN DeleteFile;
+  } FILE_DISPOSITION_INFO;
+
+  typedef enum _FILE_INFO_BY_HANDLE_CLASS {
+    FileDispositionInfo=4,
+  } FILE_INFO_BY_HANDLE_CLASS;
+
+  typedef BOOL WINAPI func_SetFileInformationByHandle(
+      HANDLE,FILE_INFO_BY_HANDLE_CLASS,LPVOID,DWORD );
+
+  func_SetFileInformationByHandle *fSetFileInformationByHandle =
+    (func_SetFileInformationByHandle*)GetProcAddress(
+        kernel32,"SetFileInformationByHandle" );
+  if( !fSetFileInformationByHandle ) return;
+
+  FILE_DISPOSITION_INFO fdi;
+  fdi.DeleteFile = TRUE;
+  fSetFileInformationByHandle( tc->out,FileDispositionInfo,&fdi,sizeof(fdi) );
+}
+
 // }}}
 // process bitness / name {{{
 
@@ -3748,7 +3775,7 @@ static textColor *createExpandedXml( appData *ad,wchar_t **name )
     *name = NULL;
   }
 
-  HANDLE xml = CreateFileW( fullName,GENERIC_WRITE,FILE_SHARE_READ,
+  HANDLE xml = CreateFileW( fullName,GENERIC_WRITE|DELETE,FILE_SHARE_READ,
       NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
   HeapFree( ad->heap,0,fullName );
   if( xml==INVALID_HANDLE_VALUE ) return( NULL );
@@ -5500,6 +5527,13 @@ static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
   }
 #endif
 
+  if( opt->leakErrorExitCode>1 && !*exitCode )
+  {
+    deleteFileOnClose( tc );
+    deleteFileOnClose( tcXml );
+    deleteFileOnClose( tcSvg );
+  }
+
   writeXmlFooter( tcXml,heap,startTicks );
   writeSvgFooter( tcSvg,ad,sample_times );
 }
@@ -6128,7 +6162,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
       wchar_t *fullName = expandFileNameVars( ad,ad->outName,exePath );
       wchar_t *usedName = fullName ? fullName : ad->outName;
 
-      out = CreateFileW( usedName,GENERIC_WRITE,FILE_SHARE_READ,
+      out = CreateFileW( usedName,GENERIC_WRITE|DELETE,FILE_SHARE_READ,
           NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
       if( out==INVALID_HANDLE_VALUE ) out = tc->out;
 
