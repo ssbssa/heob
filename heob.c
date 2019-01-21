@@ -1037,6 +1037,12 @@ enum
 
 struct dbgsym;
 
+typedef struct sharedAppCounter
+{
+  LONG count;
+}
+sharedAppCounter;
+
 typedef struct appData
 {
   HANDLE heap;
@@ -1075,6 +1081,9 @@ typedef struct appData
   unsigned *heobExitData;
   int *recordingRemote;
   size_t svgSum;
+  int appCounter;
+  DWORD appCounterID;
+  HANDLE appCounterMapping;
 
 #if USE_STACKWALK
   CRITICAL_SECTION csSampling;
@@ -1139,6 +1148,7 @@ static NORETURN void exitHeob( appData *ad,
 #endif
   if( ad->readPipe ) CloseHandle( ad->readPipe );
   if( ad->controlPipe ) CloseHandle( ad->controlPipe );
+  if( ad->appCounterMapping ) CloseHandle( ad->appCounterMapping );
   HeapFree( heap,0,ad );
 
   writeCloseErrorPipe( errorPipe,exitStatus,extraArg );
@@ -1328,6 +1338,8 @@ static CODE_SEG(".text$2") HANDLE inject(
     data->specificOptions = (wchar_t*)( fullDataRemote + soOffset );
     RtlMoveMemory( fullData+soOffset,ad->specificOptions,soSize );
   }
+
+  data->appCounterID = ad->appCounterID;
   // }}}
 
   // injection {{{
@@ -3590,6 +3602,13 @@ static wchar_t *expandFileNameVars( appData *ad,const wchar_t *origName,
     origName = name = replaced;
   }
 
+  replaced = strreplacenum( origName,L"%c",ad->appCounter,heap );
+  if( replaced )
+  {
+    if( name ) HeapFree( heap,0,name );
+    origName = name = replaced;
+  }
+
   wchar_t *lastPoint = NULL;
   if( !exePath )
   {
@@ -3616,6 +3635,38 @@ static wchar_t *expandFileNameVars( appData *ad,const wchar_t *origName,
   }
 
   return( name );
+}
+
+static void getAppCounter( appData *ad,
+    DWORD appCounterID,int create,int useCounter )
+{
+  if( !appCounterID ) return;
+
+  char counterName[32] = "heob.counter.";
+  char *end = num2hexstr( counterName+lstrlen(counterName),appCounterID,8 );
+  end[0] = 0;
+  HANDLE mapping;
+  if( create )
+    mapping = CreateFileMapping( INVALID_HANDLE_VALUE,
+        NULL,PAGE_READWRITE,0,sizeof(sharedAppCounter),counterName );
+  else
+    mapping = OpenFileMapping( FILE_MAP_ALL_ACCESS,FALSE,counterName );
+  if( !mapping ) return;
+
+  sharedAppCounter *sac = MapViewOfFile( mapping,
+      FILE_MAP_ALL_ACCESS,0,0,sizeof(sharedAppCounter) );
+  if( !sac )
+  {
+    CloseHandle( mapping );
+    return;
+  }
+
+  if( useCounter )
+    ad->appCounter = InterlockedIncrement( &sac->count );
+  ad->appCounterID = appCounterID;
+  ad->appCounterMapping = mapping;
+
+  UnmapViewOfFile( sac );
 }
 
 // }}}
@@ -5779,12 +5830,13 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
           wchar_t *start = args + 2;
           ad->pi.dwThreadId = (DWORD)wtop( start );
 
-          while( start[0] && start[0]!=' ' && start[0]!='/' && start[0]!='+' )
-            start++;
+          while( start[0] && start[0]!=' ' && start[0]!='/' && start[0]!='+' &&
+              start[0]!='*' ) start++;
           if( start[0]=='/' )
           {
             ad->ppid = (DWORD)wtop( start+1 );
-            while( start[0] && start[0]!=' ' && start[0]!='+' ) start++;
+            while( start[0] && start[0]!=' ' && start[0]!='+' &&
+                start[0]!='*' ) start++;
 
             if( ad->ppid )
             {
@@ -5798,7 +5850,12 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
             }
           }
           if( start[0]=='+' )
+          {
             keepSuspended = wtoi( start+1 );
+            while( start[0] && start[0]!=' ' && start[0]!='*' ) start++;
+          }
+          if( start[0]=='*' )
+            getAppCounter( ad,wtoi(start+1),0,1 );
 
           ad->pi.hThread = OpenThread(
               STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0x3ff,
@@ -6039,14 +6096,21 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
       exitHeob( ad,HEOB_PROCESS_FAIL,e,0x7fffffff );
     }
 
-    if( opt.newConsole>1 || isWrongArch(ad->pi.hProcess) )
+    int needNewHeob = ( opt.newConsole>1 || isWrongArch(ad->pi.hProcess) );
+
+    if( (ad->outName && strstrW(ad->outName,L"%c")) ||
+        (ad->xmlName && strstrW(ad->xmlName,L"%c")) ||
+        (ad->svgName && strstrW(ad->svgName,L"%c")) )
+      getAppCounter( ad,GetCurrentProcessId(),1,!needNewHeob );
+
+    if( needNewHeob )
     {
       HMODULE kernel32 = GetModuleHandle( "kernel32.dll" );
       func_CreateProcessW *fCreateProcessW =
         (func_CreateProcessW*)GetProcAddress( kernel32,"CreateProcessW" );
       DWORD exitCode = 0;
-      if( !heobSubProcess(0,&ad->pi,NULL,heap,&opt,fCreateProcessW,
-            ad->outName,ad->xmlName,ad->svgName,NULL,
+      if( !heobSubProcess(0,&ad->pi,NULL,heap,&opt,ad->appCounterID,
+            fCreateProcessW,ad->outName,ad->xmlName,ad->svgName,NULL,
             ad->raise_alloc_q,ad->raise_alloc_a,ad->specificOptions) )
       {
         printf( "$Wcan't create process for 'heob'\n" );
@@ -6153,7 +6217,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     }
     else
     {
-      if( strstrW(ad->outName,L"%p") )
+      if( strstrW(ad->outName,L"%p") || strstrW(ad->outName,L"%c") )
       {
         subOutName = ad->outName;
         opt.children = 1;
@@ -6190,13 +6254,15 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   // }}}
 
   const wchar_t *subXmlName = NULL;
-  if( ad->xmlName && strstrW(ad->xmlName,L"%p") )
+  if( ad->xmlName &&
+      (strstrW(ad->xmlName,L"%p") || strstrW(ad->xmlName,L"%c")) )
   {
     subXmlName = ad->xmlName;
     opt.children = 1;
   }
   const wchar_t *subSvgName = NULL;
-  if( ad->svgName && strstrW(ad->svgName,L"%p") )
+  if( ad->svgName &&
+      (strstrW(ad->svgName,L"%p") || strstrW(ad->svgName,L"%c")) )
   {
     subSvgName = ad->svgName;
     opt.children = 1;

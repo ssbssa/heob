@@ -154,6 +154,7 @@ typedef struct localData
   options opt;
   options globalopt;
   wchar_t *specificOptions;
+  DWORD appCounterID;
   uint64_t slackInit64;
 
   int recording;
@@ -2036,7 +2037,7 @@ static void addOption( wchar_t *cmdLine,const wchar_t *optionStr,
 
 int heobSubProcess(
     DWORD creationFlags,LPPROCESS_INFORMATION processInformation,
-    HMODULE heobMod,HANDLE heap,options *opt,
+    HMODULE heobMod,HANDLE heap,options *opt,DWORD appCounterID,
     func_CreateProcessW *fCreateProcessW,
     const wchar_t *subOutName,const wchar_t *subXmlName,
     const wchar_t *subSvgName,const wchar_t *subCurDir,
@@ -2078,7 +2079,8 @@ int heobSubProcess(
         addOption( heobCmd,L"/",GetCurrentProcessId(),0,numEnd );
         addOption( heobCmd,L"+",keepSuspended,0,numEnd );
       }
-      else
+      addOption( heobCmd,L"*",appCounterID,0,numEnd );
+      if( !heobMod )
         ADD_OPTION( " -c",newConsole,0 );
       if( subOutName && !subOutName[0] ) subOutName = NULL;
       if( subOutName )
@@ -2218,8 +2220,8 @@ BOOL WINAPI new_CreateProcessA(
   if( !suspend ) return( 1 );
 
   heobSubProcess( creationFlags,processInformation,
-      rd->heobMod,rd->heap,&rd->globalopt,rd->fCreateProcessW,
-      rd->subOutName,rd->subXmlName,rd->subSvgName,
+      rd->heobMod,rd->heap,&rd->globalopt,rd->appCounterID,
+      rd->fCreateProcessW,rd->subOutName,rd->subXmlName,rd->subSvgName,
       rd->subCurDir,0,NULL,rd->specificOptions );
 
   return( 1 );
@@ -2247,8 +2249,8 @@ BOOL WINAPI new_CreateProcessW(
   if( !suspend ) return( 1 );
 
   heobSubProcess( creationFlags,processInformation,
-      rd->heobMod,rd->heap,&rd->globalopt,rd->fCreateProcessW,
-      rd->subOutName,rd->subXmlName,rd->subSvgName,
+      rd->heobMod,rd->heap,&rd->globalopt,rd->appCounterID,
+      rd->fCreateProcessW,rd->subOutName,rd->subXmlName,rd->subSvgName,
       rd->subCurDir,0,NULL,rd->specificOptions );
 
   return( 1 );
@@ -4247,6 +4249,7 @@ VOID CALLBACK heob( ULONG_PTR arg )
         heap,0,2*lstrlenW(rd->specificOptions)+2 );
     lstrcpyW( ld->specificOptions,rd->specificOptions );
   }
+  ld->appCounterID = rd->appCounterID;
   ld->slackInit64 = rd->opt.slackInit;
   ld->slackInit64 |= ld->slackInit64<<8;
   ld->slackInit64 |= ld->slackInit64<<16;

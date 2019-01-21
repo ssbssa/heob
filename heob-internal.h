@@ -448,6 +448,7 @@ typedef struct remoteData
   options opt;
   options globalopt;
   wchar_t *specificOptions;
+  DWORD appCounterID;
 
   int recording;
   int *recordingRemote;
@@ -539,7 +540,7 @@ int strstart( const char *str,const char *start );
 int isWrongArch( HANDLE process );
 int heobSubProcess(
     DWORD creationFlags,LPPROCESS_INFORMATION processInformation,
-    HMODULE heobMod,HANDLE heap,options *opt,
+    HMODULE heobMod,HANDLE heap,options *opt,DWORD appCounterID,
     func_CreateProcessW *fCreateProcessW,
     const wchar_t *subOutName,const wchar_t *subXmlName,
     const wchar_t *subSvgName,const wchar_t *subCurDir,

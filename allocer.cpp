@@ -1,5 +1,5 @@
 
-//          Copyright Hannes Domani 2014 - 2018.
+//          Copyright Hannes Domani 2014 - 2019.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -914,6 +914,30 @@ void choose( int arg )
         WaitForMultipleObjects( T_COUNT,threads,TRUE,INFINITE );
         for( int i=0; i<T_COUNT; i++ )
           CloseHandle( threads[i] );
+      }
+      break;
+
+    case 51:
+    case 52:
+    case 53:
+      // test for %c counter in output filename
+      {
+        if( arg!=51 ) Sleep( 1000 );
+
+        STARTUPINFO si;
+        PROCESS_INFORMATION pi;
+        RtlZeroMemory( &si,sizeof(STARTUPINFO) );
+        RtlZeroMemory( &pi,sizeof(PROCESS_INFORMATION) );
+        si.cb = sizeof(STARTUPINFO);
+        char commandLine[20];
+        sprintf( commandLine,"allocer%d %d",
+            8*(int)sizeof(void*),arg==53?1:arg+1 );
+        BOOL result = CreateProcess( NULL,commandLine,NULL,NULL,FALSE,
+            CREATE_NEW_CONSOLE,NULL,NULL,&si,&pi );
+        if( !result ) break;
+
+        CloseHandle( pi.hThread );
+        CloseHandle( pi.hProcess );
       }
       break;
   }
