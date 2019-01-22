@@ -3826,7 +3826,8 @@ static textColor *createExpandedXml( appData *ad,wchar_t **name )
     *name = NULL;
   }
 
-  HANDLE xml = CreateFileW( fullName,GENERIC_WRITE|DELETE,FILE_SHARE_READ,
+  int access = GENERIC_WRITE | ( ad->opt->leakErrorExitCode>1 ? DELETE : 0 );
+  HANDLE xml = CreateFileW( fullName,access,FILE_SHARE_READ,
       NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
   HeapFree( ad->heap,0,fullName );
   if( xml==INVALID_HANDLE_VALUE ) return( NULL );
@@ -6226,7 +6227,8 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
       wchar_t *fullName = expandFileNameVars( ad,ad->outName,exePath );
       wchar_t *usedName = fullName ? fullName : ad->outName;
 
-      out = CreateFileW( usedName,GENERIC_WRITE|DELETE,FILE_SHARE_READ,
+      int access = GENERIC_WRITE | ( opt.leakErrorExitCode>1 ? DELETE : 0 );
+      out = CreateFileW( usedName,access,FILE_SHARE_READ,
           NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
       if( out==INVALID_HANDLE_VALUE ) out = tc->out;
 
