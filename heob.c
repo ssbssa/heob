@@ -6209,11 +6209,14 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   const wchar_t *subOutName = NULL;
   if( ad->outName )
   {
-    if( (ad->outName[0]>='0' && ad->outName[0]<='2') && !ad->outName[1] )
+    if( ad->outName[0]>='0' && ad->outName[0]<='2' && !ad->outName[1] )
     {
       out = ad->outName[0]=='0' ? NULL : GetStdHandle(
           ad->outName[0]=='1' ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE );
       checkOutputVariant( tc,out,NULL );
+
+      HeapFree( heap,0,ad->outName );
+      ad->outName = NULL;
     }
     else
     {
