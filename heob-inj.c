@@ -123,6 +123,9 @@ typedef struct localData
 #ifndef NO_DBGENG
   HANDLE exceptionWait;
 #endif
+#ifndef NO_DBGHELP
+  HANDLE miniDumpWait;
+#endif
   HANDLE heobProcess;
   HANDLE samplingStop;
   HMODULE heobMod;
@@ -2134,7 +2137,10 @@ int heobSubProcess(
       ADD_OPTION( " -z",minLeakSize,0 );
       ADD_OPTION( " -k",leakRecording,0 );
       ADD_OPTION( " -E",leakErrorExitCode,0 );
-      ADD_OPTION( " -D",exceptionDetails,0 );
+      if( opt->exceptionDetails<0 )
+        addOption( heobCmd,L" -D-",-opt->exceptionDetails,0,numEnd );
+      else
+        ADD_OPTION( " -D",exceptionDetails,0 );
 #if USE_STACKWALK
       if( opt->samplingInterval<0 )
         addOption( heobCmd,L" -I-",-opt->samplingInterval,0,numEnd );
@@ -3623,6 +3629,24 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 
   DWORD ec = ep->ExceptionRecord->ExceptionCode;
 
+#ifndef NO_DBGHELP
+  if( ec!=EXCEPTION_BREAKPOINT && rd->miniDumpWait )
+  {
+    EnterCriticalSection( &rd->csWrite );
+
+    int type = WRITE_CRASHDUMP;
+    DWORD written;
+    WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+    DWORD threadId = GetCurrentThreadId();
+    WriteFile( rd->master,&threadId,sizeof(threadId),&written,NULL );
+    WriteFile( rd->master,&ep,sizeof(ep),&written,NULL );
+
+    LeaveCriticalSection( &rd->csWrite );
+
+    WaitForSingleObject( rd->miniDumpWait,60000 );
+  }
+#endif
+
   if( ec!=EXCEPTION_BREAKPOINT && rd->samplingStop )
   {
     SetEvent( rd->samplingStop );
@@ -4270,6 +4294,9 @@ VOID CALLBACK heob( ULONG_PTR arg )
   ld->controlPipe = rd->controlPipe;
 #ifndef NO_DBGENG
   ld->exceptionWait = rd->exceptionWait;
+#endif
+#ifndef NO_DBGHELP
+  ld->miniDumpWait = rd->miniDumpWait;
 #endif
 #if USE_STACKWALK
   ld->heobProcess = rd->heobProcess;

@@ -1075,6 +1075,9 @@ typedef struct appData
 #ifndef NO_DBGENG
   HANDLE exceptionWait;
 #endif
+#ifndef NO_DBGHELP
+  HANDLE miniDumpWait;
+#endif
   HANDLE in;
   HANDLE err;
   HANDLE readPipe;
@@ -1147,6 +1150,9 @@ static NORETURN void exitHeob( appData *ad,
 
 #ifndef NO_DBGENG
   if( ad->exceptionWait ) CloseHandle( ad->exceptionWait );
+#endif
+#ifndef NO_DBGHELP
+  if( ad->miniDumpWait ) CloseHandle( ad->miniDumpWait );
 #endif
   if( ad->readPipe ) CloseHandle( ad->readPipe );
   if( ad->controlPipe ) CloseHandle( ad->controlPipe );
@@ -1302,11 +1308,21 @@ static CODE_SEG(".text$2") HANDLE inject(
       DUPLICATE_SAME_ACCESS );
 
 #ifndef NO_DBGENG
-  if( opt->exceptionDetails>1 && opt->handleException )
+  if( opt->exceptionDetails>1 )
   {
     ad->exceptionWait = CreateEvent( NULL,FALSE,FALSE,NULL );
     DuplicateHandle( GetCurrentProcess(),ad->exceptionWait,
         process,&data->exceptionWait,0,FALSE,
+        DUPLICATE_SAME_ACCESS );
+  }
+#endif
+
+#ifndef NO_DBGHELP
+  if( opt->exceptionDetails<0 )
+  {
+    ad->miniDumpWait = CreateEvent( NULL,FALSE,FALSE,NULL );
+    DuplicateHandle( GetCurrentProcess(),ad->miniDumpWait,
+        process,&data->miniDumpWait,0,FALSE,
         DUPLICATE_SAME_ACCESS );
   }
 #endif
@@ -1510,6 +1526,7 @@ typedef struct dbgsym
   func_SymLoadModule64 *fSymLoadModule64;
   func_SymLoadModuleExW *fSymLoadModuleExW;
   func_UnDecorateSymbolName *fUnDecorateSymbolName;
+  func_MiniDumpWriteDump *fMiniDumpWriteDump;
 #if USE_STACKWALK
   stackwalkFunctions swf;
 #endif
@@ -1654,6 +1671,8 @@ static void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
       (PGET_MODULE_BASE_ROUTINE64)GetProcAddress(
           ds->symMod,"SymGetModuleBase64" );
 #endif
+    ds->fMiniDumpWriteDump = (func_MiniDumpWriteDump*)GetProcAddress(
+        ds->symMod,"MiniDumpWriteDump" );
     ds->il = HeapAlloc( heap,0,sizeof(IMAGEHLP_LINE64) );
     ds->ilW = HeapAlloc( heap,0,sizeof(IMAGEHLP_LINEW64) );
     ds->si = HeapAlloc( heap,0,sizeof(SYMBOL_INFO)+MAX_SYM_NAME );
@@ -3552,7 +3571,7 @@ static wchar_t *readOption( wchar_t *args,appData *ad,HANDLE heap )
       break;
 
     case 'D':
-      opt->exceptionDetails = wtoi( args+2 );
+      opt->exceptionDetails = args[2]=='-' ? -wtoi( args+3 ) : wtoi( args+2 );
       break;
 
 #if USE_STACKWALK
@@ -4948,7 +4967,7 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
               ei.er.ExceptionCode,desc );
           // }}}
 
-          if( opt->exceptionDetails && tc->out )
+          if( opt->exceptionDetails>0 && tc->out )
           {
             // modules {{{
             if( opt->exceptionDetails>2 )
@@ -5546,6 +5565,50 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
             break;
           }
           if( tsqShow ) tsq = thread_samp_q;
+        }
+        break;
+#endif
+
+        // }}}
+        // crashdump {{{
+
+#ifndef NO_DBGHELP
+      case WRITE_CRASHDUMP:
+        {
+          DWORD threadId;
+          PEXCEPTION_POINTERS ep;
+
+          if( !readFile(readPipe,&threadId,sizeof(threadId),&ov) )
+            break;
+          if( !readFile(readPipe,&ep,sizeof(ep),&ov) )
+            break;
+
+          if( ds->fMiniDumpWriteDump )
+          {
+            wchar_t *dumpName =
+              expandFileNameVars( ad,L"crash-%p-%n.dmp",NULL );
+            HANDLE dumpFile = CreateFileW( dumpName,GENERIC_WRITE,
+                0,NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
+            if( dumpFile!=INVALID_HANDLE_VALUE )
+            {
+              MINIDUMP_EXCEPTION_INFORMATION mei;
+              mei.ThreadId = threadId;
+              mei.ExceptionPointers = ep;
+              mei.ClientPointers = TRUE;
+
+              MINIDUMP_TYPE dumpType = opt->exceptionDetails==-1 ?
+                MiniDumpWithFullMemory : MiniDumpNormal;
+              ds->fMiniDumpWriteDump( ad->pi.hProcess,ad->pi.dwProcessId,
+                  dumpFile,dumpType,&mei,NULL,NULL );
+
+              CloseHandle( dumpFile );
+
+              printf( "\n$Screated minidump file: $O%S\n",dumpName );
+            }
+            HeapFree( heap,0,dumpName );
+          }
+
+          SetEvent( ad->miniDumpWait );
         }
         break;
 #endif
@@ -6203,6 +6266,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   if( opt.protect<1 ) opt.protectFree = 0;
   if( opt.handleException>=2 )
     opt.protect = opt.protectFree = opt.leakDetails = 0;
+  if( !opt.handleException ) opt.exceptionDetails = 0;
   // }}}
 
   // output destination {{{
