@@ -2136,7 +2136,10 @@ int heobSubProcess(
       ADD_OPTION( " -E",leakErrorExitCode,0 );
       ADD_OPTION( " -D",exceptionDetails,0 );
 #if USE_STACKWALK
-      ADD_OPTION( " -I",samplingInterval,0 );
+      if( opt->samplingInterval<0 )
+        addOption( heobCmd,L" -I-",-opt->samplingInterval,0,numEnd );
+      else
+        ADD_OPTION( " -I",samplingInterval,0 );
 #endif
 #undef ADD_OPTION
       int i;
