@@ -3618,7 +3618,9 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 {
   GET_REMOTEDATA( rd );
 
-  if( rd->samplingStop )
+  DWORD ec = ep->ExceptionRecord->ExceptionCode;
+
+  if( ec!=EXCEPTION_BREAKPOINT && rd->samplingStop )
   {
     SetEvent( rd->samplingStop );
     CloseHandle( rd->samplingStop );
@@ -3630,7 +3632,6 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 
   ei.aq = 1;
   ei.nearest = 0;
-  DWORD ec = ep->ExceptionRecord->ExceptionCode;
 
   // access violation {{{
   if( ec==EXCEPTION_ACCESS_VIOLATION &&
