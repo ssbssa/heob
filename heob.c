@@ -4619,12 +4619,13 @@ static void writeSvgFooter( textColor *tc,appData *ad,int sample_times )
 // }}}
 // main loop {{{
 
-static void mainLoop( appData *ad,dbgsym *ds,DWORD startTicks,UINT *exitCode )
+static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
 {
   textColor *tcXml = writeXmlHeader( ad,startTicks );
   textColor *tcSvg = writeSvgHeader( ad );
 
   HANDLE heap = ad->heap;
+  dbgsym *ds = ad->ds;
   options *opt = ds->opt;
   textColor *tc = ds->tc;
   int type;
@@ -6401,7 +6402,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
       ad->attachEvent = NULL;
     }
 
-    mainLoop( ad,&ds,startTicks,&exitCode );
+    mainLoop( ad,startTicks,&exitCode );
 
 #if USE_STACKWALK
     if( sampler )
