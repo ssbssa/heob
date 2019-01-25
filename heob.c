@@ -396,6 +396,7 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
 }
 #define printf(...) mprintf(tc,__VA_ARGS__)
 
+#ifndef NO_DBGENG
 static NOINLINE char *mstrchr( const char *s,char c )
 {
   for( ; *s; s++ )
@@ -403,6 +404,7 @@ static NOINLINE char *mstrchr( const char *s,char c )
   return( NULL );
 }
 #define strchr mstrchr
+#endif
 
 static NOINLINE wchar_t *mstrchrW( const wchar_t *s,wchar_t c )
 {
