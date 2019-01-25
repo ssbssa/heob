@@ -3817,21 +3817,17 @@ static void setHeobConsoleTitle( HANDLE heap,const wchar_t *prog )
 // }}}
 // xml {{{
 
-static textColor *createExpandedXml( appData *ad,wchar_t **name )
+static textColor *createExpandedXml( appData *ad,const wchar_t *name )
 {
-  if( !*name ) return( NULL );
+  if( !name ) return( NULL );
 
-  wchar_t *fullName = expandFileNameVars( ad,*name,NULL );
-  if( !fullName )
-  {
-    fullName = *name;
-    *name = NULL;
-  }
+  wchar_t *fullName = expandFileNameVars( ad,name,NULL );
+  const wchar_t *usedName = fullName ? fullName : name;
 
   int access = GENERIC_WRITE | ( ad->opt->leakErrorExitCode>1 ? DELETE : 0 );
-  HANDLE xml = CreateFileW( fullName,access,FILE_SHARE_READ,
+  HANDLE xml = CreateFileW( usedName,access,FILE_SHARE_READ,
       NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
-  HeapFree( ad->heap,0,fullName );
+  if( fullName ) HeapFree( ad->heap,0,fullName );
   if( xml==INVALID_HANDLE_VALUE ) return( NULL );
 
   textColor *tc = HeapAlloc( ad->heap,HEAP_ZERO_MEMORY,sizeof(textColor) );
@@ -3847,7 +3843,7 @@ static textColor *createExpandedXml( appData *ad,wchar_t **name )
 
 static textColor *writeXmlHeader( appData *ad,DWORD startTicks )
 {
-  textColor *tc = createExpandedXml( ad,&ad->xmlName );
+  textColor *tc = createExpandedXml( ad,ad->xmlName );
   if( !tc ) return( NULL );
 
   const wchar_t *exePathW = ad->exePathW;
@@ -4292,7 +4288,7 @@ static void writeResource( textColor *tc,int resID )
 
 static textColor *writeSvgHeader( appData *ad )
 {
-  textColor *tc = createExpandedXml( ad,&ad->svgName );
+  textColor *tc = createExpandedXml( ad,ad->svgName );
   if( !tc ) return( NULL );
 
   printf( "<svg width=\"1280\" height=\"100\" onload=\"heobInit()\""
