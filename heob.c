@@ -5585,8 +5585,38 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
 
           if( ds->fMiniDumpWriteDump )
           {
-            wchar_t *dumpName =
-              expandFileNameVars( ad,L"crash-%p-%n.dmp",NULL );
+            // filename {{{
+            const wchar_t *dumpNameFrom;
+            if( ad->outName ) dumpNameFrom = ad->outName;
+            else if( ad->xmlName ) dumpNameFrom = ad->xmlName;
+            else if( ad->svgName ) dumpNameFrom = ad->svgName;
+            else dumpNameFrom = L"crash-%p-%n.dmp";
+
+            wchar_t *dumpName = expandFileNameVars( ad,dumpNameFrom,NULL );
+            if( !dumpName )
+            {
+              dumpName = HeapAlloc( heap,0,(lstrlenW(dumpNameFrom)+1)*2 );
+              lstrcpyW( dumpName,dumpNameFrom );
+            }
+
+            wchar_t *lastDelim = strrchrW( dumpName,'\\' );
+            wchar_t *lastDelim2 = strrchrW( dumpName,'/' );
+            if( lastDelim2>lastDelim ) lastDelim = lastDelim2;
+            if( !lastDelim ) lastDelim = dumpName;
+            else lastDelim++;
+            wchar_t *lastPoint = strrchrW( lastDelim,'.' );
+            if( !lastPoint || lastPoint==lastDelim )
+              lastPoint = &lastDelim[lstrlenW(lastDelim)];
+            if( lstrcmpiW(lastPoint,L".dmp") )
+            {
+              wchar_t *dumpNameOld = dumpName;
+              dumpName = HeapAlloc( heap,0,(lstrlenW(dumpNameOld)+5)*2 );
+              lstrcpyW( dumpName,dumpNameOld );
+              lstrcpyW( &dumpName[lastPoint-dumpNameOld],L".dmp" );
+              HeapFree( heap,0,dumpNameOld );
+            }
+            // }}}
+
             HANDLE dumpFile = CreateFileW( dumpName,GENERIC_WRITE,
                 0,NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
             if( dumpFile!=INVALID_HANDLE_VALUE )
@@ -5605,6 +5635,7 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
 
               printf( "\n$Screated minidump file: $O%S\n",dumpName );
             }
+
             HeapFree( heap,0,dumpName );
           }
 
