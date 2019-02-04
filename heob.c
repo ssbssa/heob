@@ -1089,6 +1089,7 @@ typedef struct appData
   int appCounter;
   DWORD appCounterID;
   HANDLE appCounterMapping;
+  size_t kernel32offset;
 
 #if USE_STACKWALK
   CRITICAL_SECTION csSampling;
@@ -1187,6 +1188,26 @@ static CODE_SEG(".text$1") VOID NTAPI remoteCall(
     delay.HighPart = 0x7fffffff;
     rd->fNtDelayExecution( FALSE,&delay );
     return;
+  }
+
+  if( UNLIKELY(kernel32!=rd->kernel32) )
+  {
+    // kernel32.dll address changed -> rebase function pointers
+    size_t modDiff = (size_t)kernel32 - (size_t)rd->kernel32;
+    void *funcs[] = {
+      &rd->fQueueUserAPC,
+      &rd->fGetCurrentThread,
+      &rd->fVirtualProtect,
+      &rd->fGetCurrentProcess,
+      &rd->fFlushInstructionCache,
+      &rd->fLoadLibraryW,
+      &rd->fGetProcAddress,
+    };
+    unsigned funcCount = sizeof(funcs)/sizeof(funcs[0]);
+    unsigned f;
+    for( f=0; f<funcCount; f++ )
+      *(size_t*)funcs[f] += modDiff;
+    rd->kernel32 = kernel32;
   }
 
   HMODULE app = rd->fLoadLibraryW( rd->exePath );
@@ -1465,6 +1486,8 @@ static CODE_SEG(".text$2") HANDLE inject(
   }
 
   ad->recordingRemote = data->recordingRemote;
+
+  ad->kernel32offset = (size_t)data->kernel32 - (size_t)kernel32;
   // }}}
 
   HeapFree( heap,0,fullData );
@@ -6406,6 +6429,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     dbgsym ds;
     dbgsym_init( &ds,ad->pi.hProcess,tc,&opt,funcnames,heap,exePath,TRUE,
         RETURN_ADDRESS() );
+    ds.threadInitAddr += ad->kernel32offset;
     ad->ds = &ds;
     if( delim ) delim[0] = '\\';
 
