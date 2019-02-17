@@ -41,9 +41,9 @@ endif
 CFLAGS=-Wall -Wextra -Wshadow -Wwrite-strings -Werror \
        -Wno-cast-function-type \
        -fno-omit-frame-pointer -fno-optimize-sibling-calls
-CFLAGS_HEOB=$(CPPFLAGS) $(CFLAGS) -O3 -DHEOB_VER="\"$(HEOB_VERSION)\"" \
+CFLAGS_HEOB=$(CPPFLAGS) $(CFLAGS) -O3 -g -DHEOB_VER="\"$(HEOB_VERSION)\"" \
 	    -ffreestanding
-LDFLAGS_HEOB=-s -nostdlib -lkernel32 -Wl,-dynamicbase
+LDFLAGS_HEOB=-nostdlib -lkernel32 -Wl,-dynamicbase,--build-id
 CFLAGS_TEST=$(CFLAGS) -O3 -g -D_GLIBCXX_INCLUDE_NEXT_C_HEADERS
 
 
@@ -54,6 +54,9 @@ heob$(BITS).exe: heob.c heob-inj.c heob-internal.h heob.h heob-ver$(BITS).o
 
 heob-ver$(BITS).o: heob-ver.rc heob.manifest heob.ico svg.js Makefile
 	$(WINDRES) -DHEOB_VER_STR=\\\"$(HEOB_VERSION)\\\" -DHEOB_VER_NUM=$(HEOB_VER_NUM) -DHEOB_PRERELEASE=$(HEOB_PRERELEASE) -DHEOB_COPYRIGHT_YEARS=\\\"$(HEOB_COPYRIGHT_YEARS)\\\" $< $@
+
+strip-heob$(BITS): heob$(BITS).exe
+	$(PREF)strip -s $<
 
 allocer$(BITS).exe: allocer.cpp libheobcpp$(BITS).a dll-alloc$(BITS).dll dll-alloc-shared$(BITS).dll
 	$(CXX) $(CFLAGS_TEST) -o$@ $^ -nostdlib -lmsvcrt -lkernel32
@@ -68,23 +71,30 @@ libheobcpp$(BITS).a: crt$(BITS).def
 	$(PREF)dlltool -k -d $< -l $@
 
 
+package-dbg: heob-$(HEOB_VERSION)-dbg.7z
+
 package: heob-$(HEOB_VERSION).7z
 
 package-src:
 	git archive "HEAD^{tree}" |xz >heob-$(HEOB_VERSION).tar.xz
 
-heob-$(HEOB_VERSION).7z: heob32.exe heob64.exe
+packages: package-src package-dbg package
+
+heob-$(HEOB_VERSION)-dbg.7z: heob32.exe heob64.exe
 	7z a -mx=9 $@ $^
+
+heob-$(HEOB_VERSION).7z: strip-heob32 strip-heob64
+	7z a -mx=9 $@ heob32.exe heob64.exe
 
 
 .PHONY: force
 
 ifneq ($(BITS),32)
-heob32.exe allocer32.exe: force
+heob32.exe allocer32.exe strip-heob32: force
 	$(MAKE) BITS=32 $@
 endif
 ifneq ($(BITS),64)
-heob64.exe allocer64.exe: force
+heob64.exe allocer64.exe strip-heob64: force
 	$(MAKE) BITS=64 $@
 endif
 
