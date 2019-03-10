@@ -4959,6 +4959,7 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
           switch( ei.er.ExceptionCode )
           {
 #define EXCEPTION_FATAL_APP_EXIT STATUS_FATAL_APP_EXIT
+#define EXCEPTION_ASSERTION_FAILURE STATUS_ASSERTION_FAILURE
 #define EX_DESC( name ) \
             case EXCEPTION_##name: \
               desc = " (" #name ")"; break
@@ -4984,6 +4985,7 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
             EX_DESC( SINGLE_STEP );
             EX_DESC( STACK_OVERFLOW );
             EX_DESC( FATAL_APP_EXIT );
+            EX_DESC( ASSERTION_FAILURE );
             EX_DESC( VC_CPP_EXCEPTION );
           }
           printf( "\n$Wunhandled exception code: %x%s\n",

@@ -940,6 +940,11 @@ void choose( int arg )
         CloseHandle( pi.hProcess );
       }
       break;
+
+    case 54:
+      // STATUS_ASSERTION_FAILURE exception
+      DbgRaiseAssertionFailure();
+      break;
   }
 
   mem = (char*)realloc( mem,30 );
