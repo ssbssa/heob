@@ -7,9 +7,9 @@ else
 DATE:=$(strip $(subst .,,$(shell date /t)))
 endif
 
-HEOB_VERSION:=2.2-dev-$(DATE)
-HEOB_VER_NUM:=2,2,0,99
-HEOB_PRERELEASE:=1
+HEOB_VERSION:=3.0
+HEOB_VER_NUM:=3,0,0,0
+HEOB_PRERELEASE:=0
 HEOB_COPYRIGHT_YEARS:=2014-2019
 
 ifeq ($(MINGW32_MAKE),)
