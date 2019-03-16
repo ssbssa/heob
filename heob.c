@@ -6268,7 +6268,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
 #if USE_STACKWALK
   // disable heap monitoring for sampling profiler by default
   if( defopt.handleException<0 )
-    defopt.handleException = opt.samplingInterval ? 2 : 1;
+    defopt.handleException = defopt.samplingInterval ? 2 : 1;
 #endif
   if( ad->specificOptions )
   {
