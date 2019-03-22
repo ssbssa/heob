@@ -125,8 +125,13 @@ function heobInit()
     if (stack <= 1)
       color = createBaseColor();
     else if (svg.attributes['heobSource'] != undefined)
+    {
       color = getColorOfMap(svg,
           colorMapSource, 'heobFunc', createSourceColor);
+      if (svg.attributes['heobAddr'] == undefined)
+        color = '#' +
+          (parseInt(color.substring(1), 16) + 0x004000).toString(16);
+    }
     else if (svg.attributes['heobFunc'] != undefined)
       color = getColorOfMap(svg,
           colorMapFunc, 'heobFunc', createFuncColor);
