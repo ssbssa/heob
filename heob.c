@@ -3796,7 +3796,7 @@ static char *disassemble( DWORD pid,void *addr,HANDLE heap )
 // }}}
 // console functions {{{
 
-static void waitForKey( textColor *tc,HANDLE in )
+static WORD waitForKey( textColor *tc,HANDLE in )
 {
   printf( "press any key to continue..." );
 
@@ -3818,6 +3818,8 @@ static void waitForKey( textColor *tc,HANDLE in )
 
   if( hasConMode )
     SetConsoleMode( in,flags );
+
+  return( ir.Event.KeyEvent.wVirtualKeyCode );
 }
 
 static int isConsoleOwner( void )
@@ -3826,12 +3828,12 @@ static int isConsoleOwner( void )
   return( GetConsoleProcessList(&conPid,1)==1 );
 }
 
-static void waitForKeyIfConsoleOwner( textColor *tc,HANDLE in )
+static WORD waitForKeyIfConsoleOwner( textColor *tc,HANDLE in )
 {
-  if( !in || !isConsoleOwner() ) return;
+  if( !in || !isConsoleOwner() ) return( 0 );
 
   printf( "\n" );
-  waitForKey( tc,in );
+  return( waitForKey(tc,in) );
 }
 
 static void showConsole( void )
@@ -5807,9 +5809,30 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
     printf( "    $I-\"$BM$I\"$BB$N  trace mode:"
         " load $Im$Nodule on $Ib$Nase address\n" );
   }
-  printf( "    $I-H$N     show full help\n" );
+
+  int helpKey = tc->fTextColor==&TextColorConsole &&
+    !fullhelp && ad->in && isConsoleOwner();
+  printf( "    $I-H$N     show full " );
+  printf( helpKey ? "$Wh$N" : "h" );
+  printf( "elp\n" );
+
   printf( "\n$Ohe$Nap-$Oob$Nserver " HEOB_VER " ($O" BITS "$Nbit)\n" );
-  waitForKeyIfConsoleOwner( tc,ad->in );
+
+  if( waitForKeyIfConsoleOwner(tc,ad->in)=='H' && helpKey )
+  {
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    GetConsoleScreenBufferInfo( tc->out,&csbi );
+    COORD coord = { 0,0 };
+    DWORD w;
+    FillConsoleOutputCharacter( tc->out,' ',
+        csbi.dwSize.X*csbi.dwSize.Y,coord,&w );
+    FillConsoleOutputAttribute( tc->out,tc->colors[ATT_NORMAL],
+        csbi.dwSize.X*csbi.dwSize.Y,coord,&w );
+    SetConsoleCursorPosition( tc->out,coord );
+
+    showHelpText( ad,defopt,1 );
+  }
+
   exitHeob( ad,HEOB_HELP,0,0x7fffffff );
 }
 
