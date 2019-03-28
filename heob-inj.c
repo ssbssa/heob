@@ -2832,6 +2832,12 @@ static size_t protect_msize( void *b )
 // }}}
 // function replacement {{{
 
+#ifdef _WIN64
+#define MACH_TYPE IMAGE_FILE_MACHINE_AMD64
+#else
+#define MACH_TYPE IMAGE_FILE_MACHINE_I386
+#endif
+
 typedef struct
 {
   const char *funcName;
@@ -2845,6 +2851,13 @@ static void addModule( HMODULE mod )
   GET_REMOTEDATA( rd );
 
   if( mod==rd->kernel32 ) return;
+
+  PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)mod;
+  if( idh->e_magic!=IMAGE_DOS_SIGNATURE ) return;
+  PIMAGE_NT_HEADERS inh = (PIMAGE_NT_HEADERS)REL_PTR( idh,idh->e_lfanew );
+  if( inh->Signature!=IMAGE_NT_SIGNATURE ||
+      inh->FileHeader.Machine!=MACH_TYPE )
+    return;
 
   int m;
   for( m=0; m<rd->mod_q && rd->mod_a[m]!=mod; m++ );
@@ -2872,47 +2885,42 @@ static void addModule( HMODULE mod )
   // modules of forwarded functions {{{
   if( rd->opt.dlls )
   {
-    PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)mod;
-    PIMAGE_NT_HEADERS inh = (PIMAGE_NT_HEADERS)REL_PTR( idh,idh->e_lfanew );
-    if( IMAGE_NT_SIGNATURE==inh->Signature )
+    PIMAGE_DATA_DIRECTORY idd =
+      &inh->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+    if( idd->Size )
     {
-      PIMAGE_DATA_DIRECTORY idd =
-        &inh->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
-      if( idd->Size )
+      char forwardName[128];
+      forwardName[0] = 0;
+      int forwardLen = 0;
+      DWORD iedStart = idd->VirtualAddress;
+      DWORD iedEnd = iedStart + idd->Size;
+      PIMAGE_EXPORT_DIRECTORY ied =
+        (PIMAGE_EXPORT_DIRECTORY)REL_PTR( idh,iedStart );
+      DWORD number = ied->NumberOfFunctions;
+      DWORD *functions = (DWORD*)REL_PTR( idh,ied->AddressOfFunctions );
+      DWORD i;
+      for( i=0; i<number; i++ )
       {
-        char forwardName[128];
-        forwardName[0] = 0;
-        int forwardLen = 0;
-        DWORD iedStart = idd->VirtualAddress;
-        DWORD iedEnd = iedStart + idd->Size;
-        PIMAGE_EXPORT_DIRECTORY ied =
-          (PIMAGE_EXPORT_DIRECTORY)REL_PTR( idh,iedStart );
-        DWORD number = ied->NumberOfFunctions;
-        DWORD *functions = (DWORD*)REL_PTR( idh,ied->AddressOfFunctions );
-        DWORD i;
-        for( i=0; i<number; i++ )
-        {
-          DWORD f = functions[i];
-          if( f<=iedStart || f>=iedEnd ) continue;
+        DWORD f = functions[i];
+        if( f<=iedStart || f>=iedEnd ) continue;
 
-          const char *funcName = (const char*)REL_PTR( idh,f );
-          const char *point;
-          for( point=funcName; *point && *point!='.'; point++ );
-          if( *point!='.' || point==funcName ) continue;
+        const char *funcName = (const char*)REL_PTR( idh,f );
+        const char *point;
+        for( point=funcName; *point && *point!='.'; point++ );
+        if( *point!='.' || point==funcName ) continue;
 
-          uintptr_t pointPos = point - funcName;
-          if( pointPos>=sizeof(forwardName) ) continue;
-          if( forwardLen==(int)pointPos && strstart(funcName,forwardName) )
-            continue;
+        uintptr_t pointPos = point - funcName;
+        if( pointPos>=sizeof(forwardName) ) continue;
+        if( forwardLen==(int)pointPos && strstart(funcName,forwardName) )
+          continue;
 
-          forwardLen = (int)pointPos;
-          RtlMoveMemory( forwardName,funcName,forwardLen );
-          forwardName[forwardLen] = 0;
+        forwardLen = (int)pointPos;
+        RtlMoveMemory( forwardName,funcName,forwardLen );
+        forwardName[forwardLen] = 0;
 
-          HMODULE forwardMod = GetModuleHandle( forwardName );
-          if( forwardMod )
-            addModule( forwardMod );
-        }
+        HMODULE forwardMod = GetModuleHandle( forwardName );
+        if( forwardMod )
+          addModule( forwardMod );
       }
     }
   }
@@ -2927,8 +2935,6 @@ static HMODULE replaceFuncs( HMODULE app,
 
   PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)app;
   PIMAGE_NT_HEADERS inh = (PIMAGE_NT_HEADERS)REL_PTR( idh,idh->e_lfanew );
-  if( IMAGE_NT_SIGNATURE!=inh->Signature )
-    return( NULL );
 
   PIMAGE_DATA_DIRECTORY idd =
     &inh->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
@@ -3522,12 +3528,10 @@ static void freeDbghelp( void )
 #define csp Rsp
 #define cip Rip
 #define cfp Rbp
-#define MACH_TYPE IMAGE_FILE_MACHINE_AMD64
 #else
 #define csp Esp
 #define cip Eip
 #define cfp Ebp
-#define MACH_TYPE IMAGE_FILE_MACHINE_I386
 #endif
 
 #if USE_STACKWALK
