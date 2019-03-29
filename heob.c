@@ -5732,30 +5732,64 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
   wchar_t *point = strrchrW( delim,'.' );
   if( point ) point[0] = 0;
 
-  printf( "Usage: $O%S $I[OPTION]... $SAPP [APP-OPTION]...\n",
+  printf( "Usage: $O%S $I[OPTION]... $SAPP [APP-OPTION]...\n\n",
       delim );
   if( fullhelp )
     printf( "    $I-A$BX$N    attach to thread\n" );
-  printf( "    $I-o$BX$N    heob output"
-      " ($I0$N = none, $I1$N = stdout, $I2$N = stderr, $I...$N = file)"
-      " [$I%d$N]\n",
-      1 );
+  printf( "    $I-o$BX$N    heob output [$I%d$N]",1 );
+  if( fullhelp>1 )
+  {
+    printf( "%i file format specifiers\n",1 );
+    printf( "              $I0$N = none    %i   "
+        "$I%%p$N = PID (enables child process injection)\n",1 );
+    printf( "              $I1$N = stdout  %i   $I%%n$N = name\n",1 );
+    printf( "              $I2$N = stderr  %i   $I%%P$N = parent PID\n",1 );
+    printf( "              $I...$N = file  %i   $I%%N$N = parent name\n",1 );
+  }
+  else
+    printf( "\n" );
   if( fullhelp )
   {
-    printf( "    $I-x$BX$N    xml output\n" );
-    printf( "    $I-v$BX$N    svg output\n" );
+    printf( "    $I-x$BX$N    xml output" );
+    if( fullhelp>1 )
+      printf( "     %i   "
+          "$I%%c$N = counter (enables child process injection)",1 );
+    printf( "\n" );
+    printf( "    $I-v$BX$N    svg output" );
+    if( fullhelp>1 )
+      printf( "     %i",1 );
+    printf( "\n" );
   }
   printf( "    $I-P$BX$N    show process ID and wait [$I%d$N]\n",
       defopt->pid );
   printf( "    $I-c$BX$N    create new console [$I%d$N]\n",
       defopt->newConsole );
-  printf( "    $I-p$BX$N    page protection"
-      " ($I0$N = off, $I1$N = after, $I2$N = before) [$I%d$N]\n",
+  if( fullhelp>1 )
+  {
+    printf( "              $I0$N = none\n" );
+    printf( "              $I1$N = target application\n" );
+    printf( "              $I2$N = heob\n" );
+    printf( "              $I3$N = target application and heob\n" );
+  }
+  printf( "    $I-p$BX$N    page protection [$I%d$N]\n",
       defopt->protect );
+  if( fullhelp>1 )
+  {
+    printf( "              $I0$N = off\n" );
+    printf( "              $I1$N = after\n" );
+    printf( "              $I2$N = before\n" );
+  }
   printf( "    $I-f$BX$N    freed memory protection [$I%d$N]\n",
       defopt->protectFree );
   printf( "    $I-d$BX$N    monitor dlls [$I%d$N]\n",
       defopt->dlls );
+  if( fullhelp>1 )
+  {
+    printf( "              $I0$N = off\n" );
+    printf( "              $I1$N = static\n" );
+    printf( "              $I2$N = static and dynamic (never free)\n" );
+    printf( "              $I3$N = static and dynamic (free on end)\n" );
+  }
   if( fullhelp )
   {
     printf( "    $I-a$BX$N    alignment [$I%d$N]\n",
@@ -5770,32 +5804,88 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
   }
   printf( "    $I-h$BX$N    handle exceptions [$I%d$N]\n",
       defopt->handleException );
+  if( fullhelp>1 )
+  {
+    printf( "              $I0$N = off\n" );
+    printf( "              $I1$N = on\n" );
+    printf( "              $I2$N = only\n" );
+  }
   printf( "    $I-R$BX$N    "
       "raise breakpoint exception on allocation # [$I%d$N]\n",
       0 );
   printf( "    $I-r$BX$N    raise breakpoint exception on error [$I%d$N]\n",
       defopt->raiseException );
-  if( fullhelp )
+  if( fullhelp>1 )
   {
+    printf( "              $I0$N = off\n" );
+    printf( "              $I1$N = on\n" );
+    printf( "              $I2$N = on,"
+        " mismatching allocation/release method\n" );
+  }
+  if( fullhelp )
     printf( "    $I-D$BX$N    show exception details [$I%d$N]\n",
         defopt->exceptionDetails );
+  if( fullhelp>1 )
+  {
+    printf( "             $I-2$N = write minidump\n" );
+    printf( "             $I-1$N = write minidump with full memory\n" );
+    printf( "              $I0$N = none\n" );
+    printf( "              $I1$N = registers\n" );
+    printf( "              $I2$N = registers / assembly instruction\n" );
+    printf( "              $I3$N ="
+        " registers / assembly instruction / modules\n" );
+  }
+  if( fullhelp )
+  {
     printf( "    $I-S$BX$N    use stack pointer in exception [$I%d$N]\n",
         defopt->useSp );
     printf( "    $I-m$BX$N    compare allocation/release method [$I%d$N]\n",
         defopt->allocMethod );
+  }
+  if( fullhelp>1 )
+  {
+    printf( "              $I0$N = off\n" );
+    printf( "              $I1$N = on\n" );
+    printf( "              $I2$N = on, compare delete/delete[]\n" );
+  }
+  if( fullhelp )
+  {
     printf( "    $I-n$BX$N    find nearest allocation [$I%d$N]\n",
         defopt->findNearest );
     printf( "    $I-g$BX$N    group identical leaks [$I%d$N]\n",
         defopt->groupLeaks );
   }
+  if( fullhelp>1 )
+  {
+    printf( "              $I0$N = off\n" );
+    printf( "              $I1$N = on\n" );
+    printf( "              $I2$N = on, merge common stack frames\n" );
+    printf( "              $I3$N = sort by thread and time\n" );
+  }
   printf( "    $I-F$BX$N    show full path [$I%d$N]\n",
       defopt->fullPath );
   printf( "    $I-l$BX$N    show leak details [$I%d$N]\n",
       defopt->leakDetails );
+  if( fullhelp>1 )
+  {
+    printf( "              $I0$N = none\n" );
+    printf( "              $I1$N = simple\n" );
+    printf( "              $I2$N = detect leak types\n" );
+    printf( "              $I3$N = detect leak types (show reachable)\n" );
+    printf( "              $I4$N = fuzzy detect leak types\n" );
+    printf( "              $I5$N ="
+        " fuzzy detect leak types (show reachable)\n" );
+  }
   printf( "    $I-z$BX$N    minimum leak size [$I%U$N]\n",
       defopt->minLeakSize );
   printf( "    $I-k$BX$N    control leak recording [$I%d$N]\n",
       defopt->leakRecording );
+  if( fullhelp>1 )
+  {
+    printf( "              $I0$N = off\n" );
+    printf( "              $I1$N = on (start disabled)\n" );
+    printf( "              $I2$N = on (start enabled)\n" );
+  }
   printf( "    $I-L$BX$N    show leak contents [$I%d$N]\n",
       defopt->leakContents );
   if( fullhelp )
@@ -5807,10 +5897,27 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
     printf( "    $I-E$BX$N    "
         "use leak and error count for exit code [$I%d$N]\n",
         defopt->leakErrorExitCode );
+  }
+  if( fullhelp>1 )
+  {
+    printf( "              $I0$N = off\n" );
+    printf( "              $I1$N = on\n" );
+    printf( "              $I2$N = on,"
+        " only keep output files with leaks or errors\n" );
+  }
 #if USE_STACKWALK
+  if( fullhelp )
     printf( "    $I-I$BX$N    sampling profiler interval [$I%d$N]\n",
         defopt->samplingInterval );
+  if( fullhelp>1 )
+  {
+    printf( "             <$I0$N = only main thread\n" );
+    printf( "              $I0$N = off\n" );
+    printf( "             >$I0$N = all threads\n" );
+  }
 #endif
+  if( fullhelp )
+  {
     printf( "    $I-O$BA$I:$BO$I; a$Npplication specific $Io$Nptions\n" );
     printf( "    $I-X$N     "
         "disable heob via application specific options\n" );
@@ -5819,8 +5926,8 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
   }
 
   int helpKey = tc->fTextColor==&TextColorConsole &&
-    !fullhelp && ad->in && isConsoleOwner();
-  printf( "    $I-H$N     show full " );
+    fullhelp<2 && ad->in && isConsoleOwner();
+  printf( "    $I-H$N[$IH$N]  show full " );
   printf( helpKey ? "$Wh$N" : "h" );
   printf( "elp\n" );
 
@@ -5838,7 +5945,7 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
         csbi.dwSize.X*csbi.dwSize.Y,coord,&w );
     SetConsoleCursorPosition( tc->out,coord );
 
-    showHelpText( ad,defopt,1 );
+    showHelpText( ad,defopt,fullhelp+1 );
   }
 
   exitHeob( ad,HEOB_HELP,0,0x7fffffff );
@@ -6107,6 +6214,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
 
       case 'H':
         fullhelp = 1;
+        while( args[1+fullhelp]=='H' ) fullhelp++;
         args = NULL;
         break;
 
