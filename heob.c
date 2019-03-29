@@ -343,6 +343,14 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
           break;
 
           // }}}
+          // percent (%) character {{{
+
+        case '%':
+          format = ptr + 1;
+          ptr += 2;
+          continue;
+
+          // }}}
       }
       ptr += 2;
       format = ptr;
