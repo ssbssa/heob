@@ -21,6 +21,7 @@ var threadTextReset = '';
 var lastZoomers;
 var mapType;
 var suppressStacks = 0;
+var searchRe;
 
 var addrCountMap = new Map();
 var sourceCountMap = new Map();
@@ -396,6 +397,49 @@ function heobInit()
     zoom(e, zoomSvg);
   }
   infoClear();
+
+  window.addEventListener("keydown",
+      function(e)
+      {
+        if (e.keyCode == 114 || (e.ctrlKey && e.keyCode == 70))
+        {
+          e.preventDefault();
+          searchFunction();
+        }
+      });
+}
+
+function searchFunction()
+{
+  if (searchRe != undefined)
+    searchRe = undefined;
+  else
+  {
+    let str = prompt("Search string", "");
+    if (str != null)
+      searchRe = new RegExp(str, 'i');
+  }
+
+  let svgs = document.getElementsByTagName('svg');
+  let found = false;
+  for (let i = 0; i < svgs.length; i++)
+  {
+    let svg = svgs[i];
+    if (svg.attributes['heobFunc'] == undefined) continue;
+    let rect = svg.getElementsByTagName('rect')[1];
+    if (searchRe == undefined ||
+        svg.attributes['heobFunc'].value.search(searchRe) < 0)
+    {
+      rect.setAttribute('fill', svg.attributes['heobColor'].value);
+      continue;
+    }
+    rect.setAttribute('fill', '#ffffff');
+    found = true;
+  }
+
+  if (!found) searchRe = undefined;
+
+  showTypeData();
 }
 
 function createGradient(svg, svgNs, name, grad1, grad2)
@@ -1357,6 +1401,10 @@ function showTypeData()
     let rect = rects[1];
     let text = svg.getElementsByTagName('text')[0];
 
+    let textContent = refSvg.getElementsByTagName('text')[0].textContent;
+    if (searchRe != undefined && textContent.search(searchRe) >= 0)
+      color = '#ffffff';
+
     let t = withNL(funcAttribute(refSvg));
     if (value[5]) t += withNL(sourceAttribute(refSvg, true));
     if (value[6]) t += withNL(addrModAttribute(refSvg, true));
@@ -1372,7 +1420,7 @@ function showTypeData()
     rect.setAttribute('fill', color);
     rect.setAttribute('width', width);
 
-    text.textContent = refSvg.getElementsByTagName('text')[0].textContent;
+    text.textContent = textContent;
   }
 }
 
