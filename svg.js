@@ -1363,9 +1363,8 @@ function zoomArr(zoomers)
   infoTextReset = sumText(zoomSamples - sumBytes, sumBytes, sumAllocs);
 }
 
-function showTypeData()
+function showTypeData(maxShowSamples)
 {
-  let maxShowSamples = 0;
   for (let i = 0; i < maxCount; i++)
   {
     let svg = document.getElementById('show' + i);
@@ -1387,12 +1386,13 @@ function showTypeData()
       continue;
     }
 
-    if (maxShowSamples == 0)
+    if (maxShowSamples == undefined)
       maxShowSamples = sum;
 
     let refSvg = value[4];
 
     let width = Math.max(sum * halfWidth / maxShowSamples, 2);
+    if (width > halfWidth) width = halfWidth;
     let color = refSvg.attributes['heobColor'].value;
 
     let title = svg.getElementsByTagName('title')[0];
@@ -1504,6 +1504,15 @@ function addrZoom(e, svg)
   if (e.button != 0) return;
 
   let key = svg.attributes['heobKey'].value;
+
+  if (e.ctrlKey)
+  {
+    let value = showMap.get(key);
+    let sum = value[2];
+    showTypeData(sum);
+    return;
+  }
+
   let zoomersRet = getAddrZoomers(key);
   let zoomers = zoomersRet[0];
   let foundSvg = zoomersRet[1];
