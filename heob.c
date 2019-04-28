@@ -1501,6 +1501,10 @@ static CODE_SEG(".text$2") HANDLE inject(
   HeapFree( heap,0,fullData );
 
   SuspendThread( thread );
+  CONTEXT context;
+  RtlZeroMemory( &context,sizeof(CONTEXT) );
+  context.ContextFlags = CONTEXT_FULL;
+  GetThreadContext( thread,&context );
   SetEvent( startMain );
   CloseHandle( startMain );
 
