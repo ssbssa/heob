@@ -1057,6 +1057,7 @@ typedef struct appData
 {
   HANDLE heap;
   options *opt;
+  int globalHotkeys;
   struct dbgsym *ds;
   HANDLE errorPipe;
   int writeProcessPid;
@@ -1316,7 +1317,7 @@ static CODE_SEG(".text$2") HANDLE inject(
       process,&data->master,0,FALSE,
       DUPLICATE_CLOSE_SOURCE|DUPLICATE_SAME_ACCESS );
 
-  if( opt->leakRecording )
+  if( opt->leakRecording || ad->globalHotkeys )
   {
     HANDLE controlReadPipe;
     CreatePipe( &controlReadPipe,&ad->controlPipe,NULL,0 );
@@ -4708,6 +4709,43 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
   DWORD flashStart = 0;
   int sample_times = 0;
   int tsq = 0;
+
+  // global hotkeys {{{
+  typedef BOOL WINAPI func_RegisterHotkey( HWND,int,UINT,UINT );
+  typedef BOOL WINAPI func_UnregisterHotkey( HWND,int );
+  typedef DWORD WINAPI func_MsgWaitForMultipleObjects(
+      DWORD,const HANDLE*,BOOL,DWORD,DWORD );
+  typedef BOOL WINAPI func_PeekMessageA( LPMSG,HWND,UINT,UINT,UINT );
+
+  HMODULE user32 = NULL;
+  func_RegisterHotkey *fRegisterHotKey = NULL;
+  func_MsgWaitForMultipleObjects *fMsgWaitForMultipleObjects = NULL;
+  func_PeekMessageA *fPeekMessageA = NULL;
+  func_UnregisterHotkey *fUnregisterHotkey = NULL;
+
+  if( ad->globalHotkeys ) user32 = LoadLibrary( "user32.dll" );
+  if( user32 )
+  {
+    fRegisterHotKey = (func_RegisterHotkey*)GetProcAddress(
+        user32,"RegisterHotKey" );
+    fMsgWaitForMultipleObjects =
+      (func_MsgWaitForMultipleObjects*)GetProcAddress(
+          user32,"MsgWaitForMultipleObjects" );
+    fPeekMessageA = (func_PeekMessageA*)GetProcAddress(
+        user32,"PeekMessageA" );
+    fUnregisterHotkey = (func_UnregisterHotkey*)GetProcAddress(
+        user32,"UnregisterHotKey" );
+  }
+
+  if( fRegisterHotKey )
+  {
+    fRegisterHotKey( NULL,HEOB_LEAK_RECORDING_STOP,MOD_CONTROL|MOD_ALT,'F' );
+    fRegisterHotKey( NULL,HEOB_LEAK_RECORDING_START,MOD_CONTROL|MOD_ALT,'N' );
+    fRegisterHotKey( NULL,HEOB_LEAK_RECORDING_CLEAR,MOD_CONTROL|MOD_ALT,'C' );
+    fRegisterHotKey( NULL,HEOB_LEAK_RECORDING_SHOW,MOD_CONTROL|MOD_ALT,'S' );
+  }
+  // }}}
+
   if( in ) showConsole();
   const char *title = opt->handleException>=2 ?
     "profiling sample recording: " : "leak recording: ";
@@ -4745,52 +4783,68 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
     }
     // }}}
     DWORD didread;
-    DWORD waitRet = WaitForMultipleObjects(
-        waitCount,handles,FALSE,waitTime );
+    DWORD waitRet;
+    if( !fMsgWaitForMultipleObjects )
+      waitRet = WaitForMultipleObjects(
+          waitCount,handles,FALSE,waitTime );
+    else
+      waitRet = fMsgWaitForMultipleObjects(
+          waitCount,handles,FALSE,waitTime,QS_ALLEVENTS );
     if( waitRet==WAIT_TIMEOUT )
     {
       flashStart = GetTickCount() - 2*FLASH_TIMEOUT;
       continue;
     }
-    else if( waitRet==WAIT_OBJECT_0+1 )
+    else if( waitRet==WAIT_OBJECT_0+1 || waitRet==WAIT_OBJECT_0+2 )
     {
       // control leak recording {{{
+      int cmd = -1;
       INPUT_RECORD ir;
-      if( ReadConsoleInput(in,&ir,1,&didread) &&
+      if( in && waitRet==WAIT_OBJECT_0+1 &&
+          ReadConsoleInput(in,&ir,1,&didread) &&
           ir.EventType==KEY_EVENT &&
           ir.Event.KeyEvent.bKeyDown )
       {
-        int cmd = -1;
-
         switch( ir.Event.KeyEvent.wVirtualKeyCode )
         {
           case 'N':
-            if( recording>0 ) break;
             cmd = HEOB_LEAK_RECORDING_START;
             break;
 
           case 'F':
-            if( recording<=0 ) break;
             cmd = HEOB_LEAK_RECORDING_STOP;
             break;
 
           case 'C':
-            if( recording<0 ) break;
             cmd = HEOB_LEAK_RECORDING_CLEAR;
             break;
 
           case 'S':
-            if( recording<0 ) break;
             cmd = HEOB_LEAK_RECORDING_SHOW;
             break;
         }
+      }
+      else if( fPeekMessageA && waitRet==WAIT_OBJECT_0+waitCount )
+      {
+        MSG msg;
+        while( fPeekMessageA(&msg,NULL,0,0,PM_REMOVE) )
+          if( msg.message==WM_HOTKEY &&
+              msg.wParam<=HEOB_LEAK_RECORDING_SHOW )
+            cmd = (int)msg.wParam;
+      }
+      if( (recording>0 && cmd==HEOB_LEAK_RECORDING_START) ||
+          (recording<0 && cmd!=HEOB_LEAK_RECORDING_START) ||
+          (recording==0 && cmd==HEOB_LEAK_RECORDING_STOP) )
+        cmd = -1;
 
+      if( cmd>=HEOB_LEAK_RECORDING_STOP )
+      {
         if( cmd>=HEOB_LEAK_RECORDING_CLEAR )
         {
           WriteFile( ad->controlPipe,&cmd,sizeof(int),&didread,NULL );
 
           // start flash of text to visualize clear/show was done {{{
-          if( recording>0 )
+          if( recording>0 && in )
           {
             flashStart = GetTickCount();
             recording = cmd;
@@ -4799,7 +4853,7 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
           }
           // }}}
         }
-        else if( cmd>=HEOB_LEAK_RECORDING_STOP )
+        else
         {
           // start & stop only set the recording flag, and by doing this
           // directly, it also works if the target process is
@@ -4810,7 +4864,7 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
           int prevRecording = recording;
           if( cmd==HEOB_LEAK_RECORDING_START || recording>0 )
             recording = cmd;
-          if( prevRecording!=recording )
+          if( prevRecording!=recording && in )
           {
             clearRecording( title,err,consoleCoord,errColor );
             showRecording( title,err,recording,&consoleCoord,&errColor,tsq );
@@ -5691,6 +5745,14 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
 #endif
   }
 
+  if( fUnregisterHotkey )
+  {
+    int i;
+    for( i=HEOB_LEAK_RECORDING_STOP; i<=HEOB_LEAK_RECORDING_SHOW; i++ )
+      fUnregisterHotkey( NULL,i );
+  }
+  if( user32 ) FreeLibrary( user32 );
+
   if( terminated==-2 )
   {
     printf( "\n$Wunexpected end of application\n" );
@@ -5889,6 +5951,16 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
     printf( "              $I0$N = off\n" );
     printf( "              $I1$N = on (start disabled)\n" );
     printf( "              $I2$N = on (start enabled)\n" );
+  }
+  if( fullhelp )
+    printf( "    $I-G$BX$N    "
+        "use global hotkeys to control leak recording [$I%d$N]\n",0 );
+  if( fullhelp>1 )
+  {
+    printf( "              $ICtrl$N+$IAlt$N+$IF$N = off\n" );
+    printf( "              $ICtrl$N+$IAlt$N+$IN$N = on\n" );
+    printf( "              $ICtrl$N+$IAlt$N+$IC$N = clear\n" );
+    printf( "              $ICtrl$N+$IAlt$N+$IS$N = show\n" );
   }
   printf( "    $I-L$BX$N    show leak contents [$I%d$N]\n",
       defopt->leakContents );
@@ -6158,6 +6230,10 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
         opt.leakErrorExitCode = wtoi( args+2 );
         break;
 
+      case 'G':
+        ad->globalHotkeys = wtoi( args+2 );
+        break;
+
       case 'O':
         {
           wchar_t *optionStart = args + 2;
@@ -6235,6 +6311,10 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     opt.init = 0;
     opt.slackInit = -1;
   }
+  int outNameNum = -1;
+  if( ad->outName && ad->outName[0]>='0' &&
+      ad->outName[0]<='2' && !ad->outName[1] )
+    outNameNum = ad->outName[0] - '0';
   HANDLE out = GetStdHandle( STD_OUTPUT_HANDLE );
   ad->tcOut = HeapAlloc( heap,0,sizeof(textColor) );
   textColor *tc = ad->tcOut;
@@ -6336,7 +6416,12 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   if( !ad->in && (opt.attached || opt.newConsole<=1) )
     opt.pid = opt.leakRecording = 0;
 
-  if( opt.leakRecording && !opt.newConsole )
+  if( !opt.newConsole && (opt.leakRecording ||
+        // check if console output is possible with global hotkey Ctrl+Alt+S
+        (ad->globalHotkeys &&
+         (outNameNum>0 ||
+          (!ad->outName && !ad->xmlName && !ad->svgName &&
+           tc->fTextColor==&TextColorConsole)))) )
     opt.newConsole = 1;
 
   // create target application {{{
@@ -6464,7 +6549,13 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   // disable depending options
   if( opt.protect<1 ) opt.protectFree = 0;
   if( opt.handleException>=2 )
+  {
     opt.protect = opt.protectFree = opt.leakDetails = 0;
+#if USE_STACKWALK
+    if( !opt.samplingInterval )
+#endif
+      opt.leakRecording = ad->globalHotkeys = 0;
+  }
   if( !opt.handleException ) opt.exceptionDetails = 0;
   // }}}
 
@@ -6472,10 +6563,10 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   const wchar_t *subOutName = NULL;
   if( ad->outName )
   {
-    if( ad->outName[0]>='0' && ad->outName[0]<='2' && !ad->outName[1] )
+    if( outNameNum>=0 )
     {
-      out = ad->outName[0]=='0' ? NULL : GetStdHandle(
-          ad->outName[0]=='1' ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE );
+      out = outNameNum==0 ? NULL : GetStdHandle(
+          outNameNum==1 ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE );
       checkOutputVariant( tc,out,NULL );
 
       HeapFree( heap,0,ad->outName );
@@ -6632,13 +6723,6 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
       printf( " done\n\n" );
       tc->out = out;
     }
-
-    if( opt.handleException>=2
-#if USE_STACKWALK
-        && !opt.samplingInterval
-#endif
-      )
-      opt.leakRecording = 0;
 
     if( ad->in && !opt.leakRecording && tc->fTextColor!=&TextColorConsole &&
         isConsoleOwner() )
