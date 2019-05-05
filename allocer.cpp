@@ -384,7 +384,7 @@ void choose( int arg )
 
         char *indirectly_lost = (char*)malloc( 32 );
         char *indirectly_lost2 = (char*)malloc( 0 );
-        char **lost = (char**)malloc( sizeof(char*) );
+        char *volatile *lost = (char**)malloc( sizeof(char*) );
         *(char**)indirectly_lost = indirectly_lost2;
         *lost = indirectly_lost;
         mem[2] = lost[0][0];
@@ -430,7 +430,7 @@ void choose( int arg )
       {
         char *copy = strdup( "this is a memory leak" );
         wchar_t *wcopy = wcsdup( L"this is a bigger memory leak" );
-        char *emptyness = (char*)malloc( 33 );
+        volatile char *emptyness = (char*)malloc( 33 );
         emptyness[3] = '.';
         mem[1] = copy[0];
         mem[2] = wcopy[0];
