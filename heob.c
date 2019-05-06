@@ -4740,7 +4740,7 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
   if( fRegisterHotKey )
   {
     fRegisterHotKey( NULL,HEOB_LEAK_RECORDING_STOP,MOD_CONTROL|MOD_ALT,'F' );
-    fRegisterHotKey( NULL,HEOB_LEAK_RECORDING_START,MOD_CONTROL|MOD_ALT,'N' );
+    fRegisterHotKey( NULL,HEOB_LEAK_RECORDING_START,MOD_CONTROL|MOD_ALT,'D' );
     fRegisterHotKey( NULL,HEOB_LEAK_RECORDING_CLEAR,MOD_CONTROL|MOD_ALT,'C' );
     fRegisterHotKey( NULL,HEOB_LEAK_RECORDING_SHOW,MOD_CONTROL|MOD_ALT,'S' );
   }
@@ -5958,7 +5958,7 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
   if( fullhelp>1 )
   {
     printf( "              $ICtrl$N+$IAlt$N+$IF$N = off\n" );
-    printf( "              $ICtrl$N+$IAlt$N+$IN$N = on\n" );
+    printf( "              $ICtrl$N+$IAlt$N+$ID$N = on\n" );
     printf( "              $ICtrl$N+$IAlt$N+$IC$N = clear\n" );
     printf( "              $ICtrl$N+$IAlt$N+$IS$N = show\n" );
   }
