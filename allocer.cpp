@@ -945,6 +945,24 @@ void choose( int arg )
       // STATUS_ASSERTION_FAILURE exception
       DbgRaiseAssertionFailure();
       break;
+
+    case 55:
+      // allocation initialization
+      {
+        unsigned char *b1 = (unsigned char*)malloc( 1 );
+        printf( "malloc(1)[0] = %02x\n",b1[0] );
+        unsigned char *b2 = (unsigned char*)calloc( 1,1 );
+        printf( "calloc(1, 1)[0] = %02x\n",b2[0] );
+        void *volatile ptr = NULL;
+        unsigned char *b3 = (unsigned char*)realloc( ptr,1 );
+        printf( "realloc(NULL, 1)[0] = %02x\n",b3[0] );
+        unsigned char *b4 = (unsigned char*)realloc( b2,17 );
+        printf( "realloc(ptr, 17)[16] = %02x\n",b4[16] );
+        free( b1 );
+        free( b3 );
+        free( b4 );
+      }
+      break;
   }
 
   mem = (char*)realloc( mem,30 );

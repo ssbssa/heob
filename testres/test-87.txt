@@ -1,0 +1,8 @@
+allocer: main()
+malloc(1)[0] = ff
+calloc(1, 1)[0] = 00
+realloc(NULL, 1)[0] = ff
+realloc(ptr, 17)[16] = ff
+
+no leaks found
+exit code: 55 (0xPTR)

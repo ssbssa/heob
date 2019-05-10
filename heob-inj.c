@@ -2510,6 +2510,18 @@ static NOINLINE void protect_free_m( void *b,funcType ft )
 // }}}
 // replacements for page protection {{{
 
+static inline void alloc_initialize( void *b,size_t s,
+    uint64_t init,uintptr_t align )
+{
+  s += ( align - (s%align) )%align;
+  size_t count = s>>3;
+  ASSUME( count>0 );
+  uint64_t *u64 = ASSUME_ALIGNED( b,MEMORY_ALLOCATION_ALIGNMENT );
+  size_t i;
+  for( i=0; i<count; i++ )
+    u64[i] = init;
+}
+
 static void *protect_malloc( size_t s )
 {
   GET_REMOTEDATA( rd );
@@ -2521,16 +2533,7 @@ static void *protect_malloc( size_t s )
   {
     uint64_t init = rd->opt.init;
     if( init )
-    {
-      uintptr_t align = rd->opt.align;
-      s += ( align - (s%align) )%align;
-      size_t count = s>>3;
-      ASSUME( count>0 );
-      uint64_t *u64 = ASSUME_ALIGNED( b,MEMORY_ALLOCATION_ALIGNMENT );
-      size_t i;
-      for( i=0; i<count; i++ )
-        u64[i] = init;
-    }
+      alloc_initialize( b,s,init,rd->opt.align );
   }
 
   return( b );
@@ -2561,7 +2564,14 @@ static void *protect_realloc( void *b,size_t s )
   }
 
   if( !b )
-    return( protect_alloc_m(s) );
+  {
+    void *nb = protect_alloc_m( s );
+    if( UNLIKELY(!nb) ) return( NULL );
+    uint64_t init = rd->opt.init;
+    if( init )
+      alloc_initialize( nb,s,init,rd->opt.align );
+    return( nb );
+  }
 
   size_t os = (size_t)TlsGetValue( rd->freeSizeTls );
   int extern_alloc = os==(size_t)-1;
@@ -2583,17 +2593,7 @@ static void *protect_realloc( void *b,size_t s )
   {
     uint64_t init = rd->opt.init;
     if( init )
-    {
-      uintptr_t align = rd->opt.align;
-      s += ( align - (s%align) )%align;
-      size_t count = ( s-os )>>3;
-      ASSUME( count>0 );
-      uint64_t *u64 = (uint64_t*)ASSUME_ALIGNED(
-          (char*)nb+os,MEMORY_ALLOCATION_ALIGNMENT );
-      size_t i;
-      for( i=0; i<count; i++ )
-        u64[i] = init;
-    }
+      alloc_initialize( (char*)nb+os,s-os,init,rd->opt.align );
   }
 
   if( !extern_alloc )
