@@ -192,7 +192,7 @@ static DWORD WINAPI freeThread( LPVOID arg )
 }
 
 
-void choose( int arg )
+int choose( int arg )
 {
   printf( "allocer: main()\n" );
   fflush( stdout );
@@ -470,7 +470,9 @@ void choose( int arg )
 #else
 #define HALF_OVERFLOW 0x8000000000000005
 #endif
+        errno = 0;
         char *m = (char*)calloc( HALF_OVERFLOW,2 );
+        arg = errno;
         if( m ) mem[1] = m[0];
       }
       break;
@@ -671,7 +673,9 @@ void choose( int arg )
       {
         char *small = (char*)malloc( 16 );
         mem[1] = small[0];
+        errno = 0;
         char *big = (char*)realloc( small,BIGNUM );
+        arg = errno;
         if( big ) small = big;
         mem[2] = small[0];
       }
@@ -982,6 +986,8 @@ void choose( int arg )
   free( mem );
 
   fflush( stdout );
+
+  return( arg );
 }
 
 
@@ -1013,7 +1019,7 @@ extern "C" void mainCRTStartup( void )
     int arg = atoi( cmdLine );
     while( *cmdLine && *cmdLine!=' ' ) cmdLine++;
     while( *cmdLine==' ' ) cmdLine++;
-    choose( arg );
+    arg = choose( arg );
     if( ret<0 ) ret = arg;
   }
 

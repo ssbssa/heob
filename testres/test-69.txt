@@ -6,4 +6,4 @@ allocation failed of NUM bytes
 
 leaks:
   sum: 16 B / 1
-exit code: 33 (0xPTR)
+exit code: 12 (0xPTR)

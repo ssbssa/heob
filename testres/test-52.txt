@@ -5,4 +5,4 @@ multiplication overflow in allocation of NUM * 2 bytes
     [calloc]
 
 no leaks found
-exit code: 20 (0xPTR)
+exit code: 12 (0xPTR)

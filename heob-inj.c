@@ -27,6 +27,9 @@
         frames_+ptrs_,(capture-ptrs_)*sizeof(void*) ); \
   } while( 0 )
 
+#define ERRNO_NOMEM 12
+#define ERRNO_INVAL 22
+
 // }}}
 // local data {{{
 
@@ -116,6 +119,7 @@ typedef struct localData
   func_wfullpath *owfullpath;
   func_tempnam *otempnam;
   func_wtempnam *owtempnam;
+  func_errno *oerrno;
 
   int is_cygwin;
 
@@ -339,6 +343,12 @@ static void *add_realloc( void *ptr,int *count_p,int add,size_t blockSize,
   }
   *count_p = count_n;
   return( ptr_n );
+}
+
+static inline void set_errno( int e )
+{
+  GET_REMOTEDATA( rd );
+  *rd->oerrno() = e;
 }
 
 // }}}
@@ -2651,7 +2661,11 @@ static void *protect_malloc( size_t s )
   GET_REMOTEDATA( rd );
 
   void *b = protect_alloc_m( s );
-  if( UNLIKELY(!b) ) return( NULL );
+  if( UNLIKELY(!b) )
+  {
+    set_errno( ERRNO_NOMEM );
+    return( NULL );
+  }
 
   if( s )
   {
@@ -2667,9 +2681,19 @@ static void *protect_calloc( size_t n,size_t s )
 {
   size_t res;
   if( UNLIKELY(mul_overflow(n,s,&res)) )
+  {
+    set_errno( ERRNO_NOMEM );
     return( NULL );
+  }
 
-  return( protect_alloc_m(res) );
+  void *b = protect_alloc_m( res );
+  if( UNLIKELY(!b) )
+  {
+    set_errno( ERRNO_NOMEM );
+    return( NULL );
+  }
+
+  return( b );
 }
 
 static void protect_free( void *b )
@@ -2684,13 +2708,23 @@ static void *protect_realloc( void *b,size_t s )
   if( !s )
   {
     protect_free_m( b,FT_REALLOC );
-    return( protect_alloc_m(s) );
+    void *nb = protect_alloc_m( s );
+    if( UNLIKELY(!nb) )
+    {
+      set_errno( ERRNO_NOMEM );
+      return( NULL );
+    }
+    return( nb );
   }
 
   if( !b )
   {
     void *nb = protect_alloc_m( s );
-    if( UNLIKELY(!nb) ) return( NULL );
+    if( UNLIKELY(!nb) )
+    {
+      set_errno( ERRNO_NOMEM );
+      return( NULL );
+    }
     uint64_t init = rd->opt.init;
     if( init )
       alloc_initialize( nb,s,init,rd->opt.align );
@@ -2703,11 +2737,18 @@ static void *protect_realloc( void *b,size_t s )
   {
     os = heap_block_size( rd->crtHeap,b );
     if( os==(size_t)-1 )
+    {
+      set_errno( ERRNO_INVAL );
       return( NULL );
+    }
   }
 
   void *nb = protect_alloc_m( s );
-  if( UNLIKELY(!nb) ) return( NULL );
+  if( UNLIKELY(!nb) )
+  {
+    set_errno( ERRNO_NOMEM );
+    return( NULL );
+  }
 
   size_t cs = os<s ? os : s;
   if( cs )
@@ -2731,7 +2772,11 @@ static char *protect_strdup( const char *s )
   size_t l = lstrlen( s ) + 1;
 
   char *b = protect_alloc_m( l );
-  if( UNLIKELY(!b) ) return( NULL );
+  if( UNLIKELY(!b) )
+  {
+    set_errno( ERRNO_NOMEM );
+    return( NULL );
+  }
 
   RtlMoveMemory( b,s,l );
 
@@ -2744,7 +2789,11 @@ static wchar_t *protect_wcsdup( const wchar_t *s )
   l *= 2;
 
   wchar_t *b = protect_alloc_m( l );
-  if( UNLIKELY(!b) ) return( NULL );
+  if( UNLIKELY(!b) )
+  {
+    set_errno( ERRNO_NOMEM );
+    return( NULL );
+  }
 
   RtlMoveMemory( b,s,l );
 
@@ -2763,6 +2812,8 @@ static char *protect_getcwd( char *buffer,int maxlen )
   char *cwd_copy = protect_alloc_m( l );
   if( LIKELY(cwd_copy) )
     RtlMoveMemory( cwd_copy,cwd,l );
+  else
+    set_errno( ERRNO_NOMEM );
 
   rd->ofree( cwd );
 
@@ -2782,6 +2833,8 @@ static wchar_t *protect_wgetcwd( wchar_t *buffer,int maxlen )
   wchar_t *cwd_copy = protect_alloc_m( l );
   if( LIKELY(cwd_copy) )
     RtlMoveMemory( cwd_copy,cwd,l );
+  else
+    set_errno( ERRNO_NOMEM );
 
   rd->ofree( cwd );
 
@@ -2800,6 +2853,8 @@ static char *protect_getdcwd( int drive,char *buffer,int maxlen )
   char *cwd_copy = protect_alloc_m( l );
   if( LIKELY(cwd_copy) )
     RtlMoveMemory( cwd_copy,cwd,l );
+  else
+    set_errno( ERRNO_NOMEM );
 
   rd->ofree( cwd );
 
@@ -2819,6 +2874,8 @@ static wchar_t *protect_wgetdcwd( int drive,wchar_t *buffer,int maxlen )
   wchar_t *cwd_copy = protect_alloc_m( l );
   if( LIKELY(cwd_copy) )
     RtlMoveMemory( cwd_copy,cwd,l );
+  else
+    set_errno( ERRNO_NOMEM );
 
   rd->ofree( cwd );
 
@@ -2837,6 +2894,8 @@ static char *protect_fullpath( char *absPath,const char *relPath,
   char *fp_copy = protect_alloc_m( l );
   if( LIKELY(fp_copy) )
     RtlMoveMemory( fp_copy,fp,l );
+  else
+    set_errno( ERRNO_NOMEM );
 
   rd->ofree( fp );
 
@@ -2856,6 +2915,8 @@ static wchar_t *protect_wfullpath( wchar_t *absPath,const wchar_t *relPath,
   wchar_t *fp_copy = protect_alloc_m( l );
   if( LIKELY(fp_copy) )
     RtlMoveMemory( fp_copy,fp,l );
+  else
+    set_errno( ERRNO_NOMEM );
 
   rd->ofree( fp );
 
@@ -2873,6 +2934,8 @@ static char *protect_tempnam( char *dir,char *prefix )
   char *tn_copy = protect_alloc_m( l );
   if( LIKELY(tn_copy) )
     RtlMoveMemory( tn_copy,tn,l );
+  else
+    set_errno( ERRNO_NOMEM );
 
   rd->ofree( tn );
 
@@ -2891,6 +2954,8 @@ static wchar_t *protect_wtempnam( wchar_t *dir,wchar_t *prefix )
   wchar_t *tn_copy = protect_alloc_m( l );
   if( LIKELY(tn_copy) )
     RtlMoveMemory( tn_copy,tn,l );
+  else
+    set_errno( ERRNO_NOMEM );
 
   rd->ofree( tn );
 
@@ -2907,7 +2972,10 @@ static void *protect_recalloc( void *b,size_t n,size_t s )
 {
   size_t res;
   if( UNLIKELY(mul_overflow(n,s,&res)) )
+  {
+    set_errno( ERRNO_NOMEM );
     return( NULL );
+  }
 
   GET_REMOTEDATA( rd );
 
@@ -2918,7 +2986,15 @@ static void *protect_recalloc( void *b,size_t n,size_t s )
   }
 
   if( !b )
-    return( protect_alloc_m(res) );
+  {
+    void *nb = protect_alloc_m( res );
+    if( UNLIKELY(!nb) )
+    {
+      set_errno( ERRNO_NOMEM );
+      return( NULL );
+    }
+    return( nb );
+  }
 
   size_t os = (size_t)TlsGetValue( rd->freeSizeTls );
   int extern_alloc = os==(size_t)-1;
@@ -2926,11 +3002,18 @@ static void *protect_recalloc( void *b,size_t n,size_t s )
   {
     os = heap_block_size( rd->crtHeap,b );
     if( os==(size_t)-1 )
+    {
+      set_errno( ERRNO_INVAL );
       return( NULL );
+    }
   }
 
   void *nb = protect_alloc_m( res );
-  if( UNLIKELY(!nb) ) return( NULL );
+  if( UNLIKELY(!nb) )
+  {
+    set_errno( ERRNO_NOMEM );
+    return( NULL );
+  }
 
   size_t cs = os<res ? os : res;
   if( cs )
@@ -2947,9 +3030,13 @@ static size_t protect_msize( void *b )
   GET_REMOTEDATA( rd );
   size_t s = -1;
   if( b )
+  {
     allocSizeAndState( b,&s,1 );
+    if( s==(size_t)-1 )
+      s = heap_block_size( rd->crtHeap,b );
+  }
   if( s==(size_t)-1 )
-    s = heap_block_size( rd->crtHeap,b );
+    set_errno( ERRNO_INVAL );
   return( s );
 }
 
@@ -3277,6 +3364,7 @@ static void replaceModFuncs( void )
         rd->ofree = rd->fGetProcAddress( dll_msvcrt,"free" );
         rd->oop_delete = rd->fGetProcAddress( dll_msvcrt,fname_op_delete );
         rd->oop_delete_a = rd->fGetProcAddress( dll_msvcrt,fname_op_delete_a );
+        rd->oerrno = rd->fGetProcAddress( dll_msvcrt,"_errno" );
 
         HANDLE (*fget_heap_handle)( void ) =
           rd->fGetProcAddress( dll_msvcrt,"_get_heap_handle" );
