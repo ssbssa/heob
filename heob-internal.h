@@ -59,10 +59,14 @@
 #define IL_INT LONG
 #define IL_INC(var) InterlockedIncrement(var)
 #define GET_PEB() ((PEB*)__readfsdword(0x30))
+#define GET_LAST_ERROR() __readfsdword(0x34)
+#define SET_LAST_ERROR(e) __writefsdword(0x34,e)
 #else
 #define IL_INT LONGLONG
 #define IL_INC(var) InterlockedIncrement64(var)
 #define GET_PEB() ((PEB*)__readgsqword(0x60))
+#define GET_LAST_ERROR() __readgsdword(0x68)
+#define SET_LAST_ERROR(e) __writegsdword(0x68,e)
 #endif
 
 #define EXCEPTION_VC_CPP_EXCEPTION 0xe06d7363

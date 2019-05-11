@@ -1,0 +1,5 @@
+allocer: main()
+last-error code: same
+
+no leaks found
+exit code: 56 (0xPTR)

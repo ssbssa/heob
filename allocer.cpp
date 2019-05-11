@@ -963,6 +963,18 @@ void choose( int arg )
         free( b4 );
       }
       break;
+
+    case 56:
+      // last-error code
+      {
+        volatile char *buf = (char*)malloc( 1 );
+        unsigned c = buf[0];
+        SetLastError( c );
+        free( (char*)buf );
+        printf( "last-error code: %s\n",
+            GetLastError()==c?"same":"different" );
+      }
+      break;
   }
 
   mem = (char*)realloc( mem,30 );

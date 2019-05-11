@@ -1117,35 +1117,52 @@ static NOINLINE void trackAllocFailure(
 
 static void *new_malloc( size_t s )
 {
+  DWORD lastError = GET_LAST_ERROR();
+
   GET_REMOTEDATA( rd );
   void *b = rd->fmalloc( s );
 
   trackAlloc( b,s,AT_MALLOC,FT_MALLOC );
+
+  SET_LAST_ERROR( lastError );
 
   return( b );
 }
 
 static void *new_calloc( size_t n,size_t s )
 {
+  DWORD lastError = GET_LAST_ERROR();
+
   GET_REMOTEDATA( rd );
   void *b = rd->fcalloc( n,s );
 
   trackCalloc( b,n,s,AT_MALLOC,FT_CALLOC );
+
+  SET_LAST_ERROR( lastError );
 
   return( b );
 }
 
 static void new_free( void *b )
 {
+  DWORD lastError = GET_LAST_ERROR();
+
   if( UNLIKELY(!trackFree(b,AT_MALLOC,FT_FREE,0,0)) )
+  {
+    SET_LAST_ERROR( lastError );
     return;
+  }
 
   GET_REMOTEDATA( rd );
   rd->ffree( b );
+
+  SET_LAST_ERROR( lastError );
 }
 
 static void *new_realloc( void *b,size_t s )
 {
+  DWORD lastError = GET_LAST_ERROR();
+
   GET_REMOTEDATA( rd );
 
   int enable = 0;
@@ -1168,116 +1185,180 @@ static void *new_realloc( void *b,size_t s )
     trackFree( b,AT_MALLOC,FT_REALLOC,!nb && s,enable );
   trackAlloc( nb,s,AT_MALLOC,FT_REALLOC );
 
+  SET_LAST_ERROR( lastError );
+
   return( nb );
 }
 
 static char *new_strdup( const char *s )
 {
+  DWORD lastError = GET_LAST_ERROR();
+
   GET_REMOTEDATA( rd );
   char *b = rd->fstrdup( s );
 
   trackAlloc( b,lstrlen(s)+1,AT_MALLOC,FT_STRDUP );
+
+  SET_LAST_ERROR( lastError );
 
   return( b );
 }
 
 static wchar_t *new_wcsdup( const wchar_t *s )
 {
+  DWORD lastError = GET_LAST_ERROR();
+
   GET_REMOTEDATA( rd );
   wchar_t *b = rd->fwcsdup( s );
 
   trackAlloc( b,(lstrlenW(s)+1)*2,AT_MALLOC,FT_WCSDUP );
+
+  SET_LAST_ERROR( lastError );
 
   return( b );
 }
 
 static void *new_op_new( size_t s )
 {
+  DWORD lastError = GET_LAST_ERROR();
+
   GET_REMOTEDATA( rd );
   void *b = rd->fop_new( s );
 
   trackAlloc( b,s,AT_NEW,FT_OP_NEW );
+
+  SET_LAST_ERROR( lastError );
 
   return( b );
 }
 
 static void new_op_delete( void *b )
 {
+  DWORD lastError = GET_LAST_ERROR();
+
   if( UNLIKELY(!trackFree(b,AT_NEW,FT_OP_DELETE,0,0)) )
+  {
+    SET_LAST_ERROR( lastError );
     return;
+  }
 
   GET_REMOTEDATA( rd );
   rd->fop_delete( b );
+
+  SET_LAST_ERROR( lastError );
 }
 
 static void *new_op_new_a( size_t s )
 {
+  DWORD lastError = GET_LAST_ERROR();
+
   GET_REMOTEDATA( rd );
   void *b = rd->fop_new_a( s );
 
   trackAlloc( b,s,rd->newArrAllocMethod,FT_OP_NEW_A );
+
+  SET_LAST_ERROR( lastError );
 
   return( b );
 }
 
 static void new_op_delete_a( void *b )
 {
+  DWORD lastError = GET_LAST_ERROR();
+
   GET_REMOTEDATA( rd );
 
   if( UNLIKELY(!trackFree(b,rd->newArrAllocMethod,FT_OP_DELETE_A,0,0)) )
+  {
+    SET_LAST_ERROR( lastError );
     return;
+  }
 
   rd->fop_delete_a( b );
+
+  SET_LAST_ERROR( lastError );
 }
 
 static char *new_getcwd( char *buffer,int maxlen )
 {
+  DWORD lastError = GET_LAST_ERROR();
+
   GET_REMOTEDATA( rd );
   char *cwd = rd->fgetcwd( buffer,maxlen );
-  if( !cwd || buffer ) return( cwd );
+  if( !cwd || buffer )
+  {
+    SET_LAST_ERROR( lastError );
+    return( cwd );
+  }
 
   size_t l = lstrlen( cwd ) + 1;
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
   trackAlloc( cwd,l,AT_MALLOC,FT_GETCWD );
+
+  SET_LAST_ERROR( lastError );
 
   return( cwd );
 }
 
 static wchar_t *new_wgetcwd( wchar_t *buffer,int maxlen )
 {
+  DWORD lastError = GET_LAST_ERROR();
+
   GET_REMOTEDATA( rd );
   wchar_t *cwd = rd->fwgetcwd( buffer,maxlen );
-  if( !cwd || buffer ) return( cwd );
+  if( !cwd || buffer )
+  {
+    SET_LAST_ERROR( lastError );
+    return( cwd );
+  }
 
   size_t l = lstrlenW( cwd ) + 1;
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
   trackAlloc( cwd,l*2,AT_MALLOC,FT_WGETCWD );
+
+  SET_LAST_ERROR( lastError );
 
   return( cwd );
 }
 
 static char *new_getdcwd( int drive,char *buffer,int maxlen )
 {
+  DWORD lastError = GET_LAST_ERROR();
+
   GET_REMOTEDATA( rd );
   char *cwd = rd->fgetdcwd( drive,buffer,maxlen );
-  if( !cwd || buffer ) return( cwd );
+  if( !cwd || buffer )
+  {
+    SET_LAST_ERROR( lastError );
+    return( cwd );
+  }
 
   size_t l = lstrlen( cwd ) + 1;
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
   trackAlloc( cwd,l,AT_MALLOC,FT_GETDCWD );
+
+  SET_LAST_ERROR( lastError );
 
   return( cwd );
 }
 
 static wchar_t *new_wgetdcwd( int drive,wchar_t *buffer,int maxlen )
 {
+  DWORD lastError = GET_LAST_ERROR();
+
   GET_REMOTEDATA( rd );
   wchar_t *cwd = rd->fwgetdcwd( drive,buffer,maxlen );
-  if( !cwd || buffer ) return( cwd );
+  if( !cwd || buffer )
+  {
+    SET_LAST_ERROR( lastError );
+    return( cwd );
+  }
 
   size_t l = lstrlenW( cwd ) + 1;
   if( maxlen>0 && (unsigned)maxlen>l ) l = maxlen;
   trackAlloc( cwd,l*2,AT_MALLOC,FT_WGETDCWD );
+
+  SET_LAST_ERROR( lastError );
 
   return( cwd );
 }
@@ -1285,12 +1366,20 @@ static wchar_t *new_wgetdcwd( int drive,wchar_t *buffer,int maxlen )
 static char *new_fullpath( char *absPath,const char *relPath,
     size_t maxLength )
 {
+  DWORD lastError = GET_LAST_ERROR();
+
   GET_REMOTEDATA( rd );
   char *fp = rd->ffullpath( absPath,relPath,maxLength );
-  if( !fp || absPath ) return( fp );
+  if( !fp || absPath )
+  {
+    SET_LAST_ERROR( lastError );
+    return( fp );
+  }
 
   size_t l = lstrlen( fp ) + 1;
   trackAlloc( fp,l,AT_MALLOC,FT_FULLPATH );
+
+  SET_LAST_ERROR( lastError );
 
   return( fp );
 }
@@ -1298,51 +1387,84 @@ static char *new_fullpath( char *absPath,const char *relPath,
 static wchar_t *new_wfullpath( wchar_t *absPath,const wchar_t *relPath,
     size_t maxLength )
 {
+  DWORD lastError = GET_LAST_ERROR();
+
   GET_REMOTEDATA( rd );
   wchar_t *fp = rd->fwfullpath( absPath,relPath,maxLength );
-  if( !fp || absPath ) return( fp );
+  if( !fp || absPath )
+  {
+    SET_LAST_ERROR( lastError );
+    return( fp );
+  }
 
   size_t l = lstrlenW( fp ) + 1;
   trackAlloc( fp,l*2,AT_MALLOC,FT_WFULLPATH );
+
+  SET_LAST_ERROR( lastError );
 
   return( fp );
 }
 
 static char *new_tempnam( char *dir,char *prefix )
 {
+  DWORD lastError = GET_LAST_ERROR();
+
   GET_REMOTEDATA( rd );
   char *tn = rd->ftempnam( dir,prefix );
-  if( !tn ) return( tn );
+  if( !tn )
+  {
+    SET_LAST_ERROR( lastError );
+    return( tn );
+  }
 
   size_t l = lstrlen( tn ) + 1;
   trackAlloc( tn,l,AT_MALLOC,FT_TEMPNAM );
+
+  SET_LAST_ERROR( lastError );
 
   return( tn );
 }
 
 static wchar_t *new_wtempnam( wchar_t *dir,wchar_t *prefix )
 {
+  DWORD lastError = GET_LAST_ERROR();
+
   GET_REMOTEDATA( rd );
   wchar_t *tn = rd->fwtempnam( dir,prefix );
-  if( !tn ) return( tn );
+  if( !tn )
+  {
+    SET_LAST_ERROR( lastError );
+    return( tn );
+  }
 
   size_t l = lstrlenW( tn ) + 1;
   trackAlloc( tn,l*2,AT_MALLOC,FT_WTEMPNAM );
+
+  SET_LAST_ERROR( lastError );
 
   return( tn );
 }
 
 static void new_free_dbg( void *b,int blockType )
 {
+  DWORD lastError = GET_LAST_ERROR();
+
   if( UNLIKELY(!trackFree(b,AT_MALLOC,FT_FREE_DBG,0,0)) )
+  {
+    SET_LAST_ERROR( lastError );
     return;
+  }
 
   GET_REMOTEDATA( rd );
   rd->ffree_dbg( b,blockType );
+
+  SET_LAST_ERROR( lastError );
 }
 
 static void *new_recalloc( void *b,size_t n,size_t s )
 {
+  DWORD lastError = GET_LAST_ERROR();
+
   GET_REMOTEDATA( rd );
 
   int enable = 0;
@@ -1364,6 +1486,8 @@ static void *new_recalloc( void *b,size_t n,size_t s )
   if( doTrackFree )
     trackFree( b,AT_MALLOC,FT_RECALLOC,!nb && n && s,enable );
   trackCalloc( nb,n,s,AT_MALLOC,FT_RECALLOC );
+
+  SET_LAST_ERROR( lastError );
 
   return( nb );
 }

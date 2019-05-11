@@ -273,8 +273,10 @@ T_H86=-p0 -a16 -l0
 T_A86=50
 T_H87=-p1 -a16 -l0
 T_A87=55
+T_H88=-p1 -a16 -l1
+T_A88=56
 ifeq ($(MINGW32_MAKE),)
-TESTS:=$(shell seq -w 01 87)
+TESTS:=$(shell seq -w 01 88)
 else
 TESTS:=01
 endif
