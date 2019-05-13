@@ -455,7 +455,7 @@ static void writeAllocs( allocation *alloc_a,int alloc_q,int type )
 // }}}
 // memory allocation tracking {{{
 
-static NOINLINE int allocSizeAndState( void *p,size_t *s,int enable )
+static NOINLINE int allocSizeAndState( void *p,size_t *s,funcType ft )
 {
   GET_REMOTEDATA( rd );
 
@@ -471,14 +471,14 @@ static NOINLINE int allocSizeAndState( void *p,size_t *s,int enable )
   {
     allocation *a = sa->alloc_a + i;
     if( a->ptr!=p ) continue;
-    if( !a->frameCount )
+    if( a->ftFreed!=FT_COUNT )
     {
       prevEnable = 0;
       break;
     }
 
     prevEnable = 1;
-    a->frameCount = enable;
+    a->ftFreed = ft;
     freeSize = a->size;
     break;
   }
@@ -542,7 +542,7 @@ static NOINLINE int trackFree(
     int i;
     for( i=sa->alloc_q-1; i>=0 && sa->alloc_a[i].ptr!=free_ptr; i-- );
     // successful free {{{
-    if( LIKELY(i>=0 && (sa->alloc_a[i].frameCount || enable)) )
+    if( LIKELY(i>=0 && (sa->alloc_a[i].ftFreed==FT_COUNT || enable)) )
     {
       RtlMoveMemory( &fa,&sa->alloc_a[i],sizeof(allocation) );
 
@@ -553,7 +553,7 @@ static NOINLINE int trackFree(
             &sa->alloc_a[i],&sa->alloc_a[sa->alloc_q],sizeof(allocation) );
       }
       else
-        sa->alloc_a[i].frameCount = enable;
+        sa->alloc_a[i].ftFreed = FT_COUNT;
 
       LeaveCriticalSection( &sa->cs );
 
@@ -647,7 +647,7 @@ static NOINLINE int trackFree(
 
         RtlMoveMemory( &aa[1],&fa,sizeof(allocation) );
 
-        aa[2].ft = FT_COUNT;
+        aa[2].ft = fa.ftFreed;
 
         writeAllocs( aa,3,WRITE_DOUBLE_FREE );
 
@@ -767,7 +767,7 @@ static NOINLINE int trackFree(
               }
             }
 
-            if( !foundRef && a->frameCount )
+            if( !foundRef && a->ftFreed==FT_COUNT )
             {
               uintptr_t *refP = a->ptr;
               size_t refS = s/sizeof(void*);
@@ -989,7 +989,7 @@ static NOINLINE void trackAllocSuccess(
     a.recording = rd->recording;
     a.lt = LT_LOST;
     a.ft = ft;
-    a.frameCount = 1; // is 0 while realloc() is called (state unknown)
+    a.ftFreed = FT_COUNT; // is < FT_COUNT while realloc() is called
     a.id = IL_INC( (IL_INT*)&rd->cur_id );
 #ifndef NO_THREADS
     a.threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
@@ -1180,7 +1180,7 @@ static void *new_realloc( void *b,size_t s )
   if( b )
   {
     size_t os = -1;
-    int allocState = allocSizeAndState( b,&os,0 );
+    int allocState = allocSizeAndState( b,&os,FT_REALLOC );
     enable = allocState>0;
     TlsSetValue( rd->freeSizeTls,(void*)os );
 
@@ -1482,7 +1482,7 @@ static void *new_recalloc( void *b,size_t n,size_t s )
   if( b )
   {
     size_t os = -1;
-    int allocState = allocSizeAndState( b,&os,0 );
+    int allocState = allocSizeAndState( b,&os,FT_RECALLOC );
     enable = allocState>0;
     TlsSetValue( rd->freeSizeTls,(void*)os );
 
@@ -1550,7 +1550,7 @@ static void writeLeakData( void )
     for( j=0; j<part_q; j++ )
     {
       allocation *a = sa->alloc_a + j;
-      if( a->recording && a->frameCount )
+      if( a->recording && a->ftFreed==FT_COUNT )
       {
         if( a->lt<lDetails )
           alloc_q++;
@@ -1592,7 +1592,7 @@ static void writeLeakData( void )
     for( j=0; j<alloc_q; j++ )
     {
       allocation *a = sa->alloc_a + j;
-      if( a->recording && a->frameCount && a->lt<lDetails )
+      if( a->recording && a->ftFreed==FT_COUNT && a->lt<lDetails )
       {
         if( a_send!=a )
         {
@@ -1615,7 +1615,8 @@ static void writeLeakData( void )
       for( j=0; j<alloc_q; j++ )
       {
         allocation *a = sa->alloc_a + j;
-        if( !a->recording || !a->frameCount || a->lt>=lDetails ) continue;
+        if( !a->recording || a->ftFreed!=FT_COUNT || a->lt>=lDetails )
+          continue;
         size_t s = a->size;
         alloc_mem_sum += s<leakContents ? s : leakContents;
       }
@@ -1635,7 +1636,8 @@ static void writeLeakData( void )
       for( j=0; j<alloc_q; j++ )
       {
         allocation *a = sa->alloc_a + j;
-        if( !a->recording || !a->frameCount || a->lt>=lDetails ) continue;
+        if( !a->recording || a->ftFreed!=FT_COUNT || a->lt>=lDetails )
+          continue;
         size_t s = a->size;
         if( leakContents<s ) s = leakContents;
         if( s )
@@ -1709,7 +1711,7 @@ static void findLeakTypeWork( leakTypeInfo *lti )
     for( j=0; j<alloc_q; j++ )
     {
       allocation *a = alloc_a + j;
-      if( a->lt!=ltUse || !a->frameCount ) continue;
+      if( a->lt!=ltUse || a->ftFreed!=FT_COUNT ) continue;
       int k;
       uintptr_t ptr = (uintptr_t)a->ptr;
       size_t size = a->size;
@@ -1893,7 +1895,7 @@ static void findLeakTypes( void )
       for( j=0; j<alloc_q; j++ )
       {
         allocation *a = alloc_a + j;
-        if( a->lt!=LT_LOST || !a->frameCount ) continue;
+        if( a->lt!=LT_LOST || a->ftFreed!=FT_COUNT ) continue;
         PBYTE memStart = a->ptr;
         EnterCriticalSection( &rd->csMod );
         addModMem( memStart,memStart+a->size );
@@ -3031,7 +3033,7 @@ static size_t protect_msize( void *b )
   size_t s = -1;
   if( b )
   {
-    allocSizeAndState( b,&s,1 );
+    allocSizeAndState( b,&s,FT_COUNT );
     if( s==(size_t)-1 )
       s = heap_block_size( rd->crtHeap,b );
   }
