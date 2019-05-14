@@ -2447,13 +2447,12 @@ static char *undecorateVCsymbol( dbgsym *ds,char *decorName )
   return( decorName );
 }
 
-// }}}
-// thread name {{{
-
 #ifndef NO_THREADS
 static void printThreadName( int threadNum,
     textColor *tc,int threadName_q,char **threadName_a )
 {
+  ASSUME( threadName_a || !threadName_q );
+
   if( threadNum>0 && threadNum<=threadName_q && threadName_a[threadNum-1] )
     printf( " $S'%d: %s'\n",threadNum,threadName_a[threadNum-1] );
   else if( threadNum>1 )
@@ -2464,6 +2463,30 @@ static void printThreadName( int threadNum,
 #define printThreadName(tni) printThreadName(tni,tc,threadName_q,threadName_a)
 #else
 #define printThreadName(tni) printf("\n")
+#endif
+
+static void printAllocatedFreed( allocation *aa,int withFreed,
+#ifndef NO_THREADS
+    char **threadName_a,int threadName_q,
+#endif
+    modInfo *mi_a,int mi_q,dbgsym *ds )
+{
+  textColor *tc = ds->tc;
+
+  printf( "$S  allocated on: $N(#%U)",aa[0].id );
+  printThreadName( aa[0].threadNum );
+  printStackCount( aa[0].frames,aa[0].frameCount,mi_a,mi_q,ds,aa[0].ft,0 );
+
+  if( withFreed )
+  {
+    printf( "$S  freed on:" );
+    printThreadName( aa[1].threadNum );
+    printStackCount( aa[1].frames,aa[1].frameCount,mi_a,mi_q,ds,aa[1].ft,0 );
+  }
+}
+#ifndef NO_THREADS
+#define printAllocatedFreed(aa,wf,mia,miq,ds) \
+  printAllocatedFreed(aa,wf,threadName_a,threadName_q,mia,miq,ds)
 #endif
 
 // }}}
@@ -4045,6 +4068,23 @@ static void writeXmlFooter( textColor *tc,HANDLE heap,DWORD startTicks )
   HeapFree( heap,0,tc );
 }
 
+static void writeXmlAllocatedFreed( textColor *tc,dbgsym *ds,
+    allocation *aa,int withFreed,modInfo *mi_a,int mi_q )
+{
+  printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",aa[0].id );
+  printf( "  <stack>\n" );
+  printStackCount( aa[0].frames,aa[0].frameCount,mi_a,mi_q,ds,aa[0].ft,-1 );
+  printf( "  </stack>\n" );
+
+  if( withFreed )
+  {
+    printf( "  <auxwhat>freed on</auxwhat>\n" );
+    printf( "  <stack>\n" );
+    printStackCount( aa[1].frames,aa[1].frameCount,mi_a,mi_q,ds,aa[1].ft,-1 );
+    printf( "  </stack>\n" );
+  }
+}
+
 static void writeXmlException( textColor *tc,dbgsym *ds,
     exceptionInfo *ei,const char *desc,char *addr,const char *violationType,
     const char *nearBlock,const char *blockType,modInfo *mi_a,int mi_q )
@@ -4081,21 +4121,7 @@ static void writeXmlException( textColor *tc,dbgsym *ds,
         ptr,size,addr>ptr?"+":"",addr-ptr );
     printf( "  <stack>\n" );
     printf( "  </stack>\n" );
-    printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",
-        ei->aa[1].id );
-    printf( "  <stack>\n" );
-    printStackCount( ei->aa[1].frames,ei->aa[1].frameCount,
-        mi_a,mi_q,ds,ei->aa[1].ft,-1 );
-    printf( "  </stack>\n" );
-
-    if( ei->aq>2 )
-    {
-      printf( "  <auxwhat>freed on</auxwhat>\n" );
-      printf( "  <stack>\n" );
-      printStackCount( ei->aa[2].frames,ei->aa[2].frameCount,
-          mi_a,mi_q,ds,ei->aa[2].ft,-1 );
-      printf( "  </stack>\n" );
-    }
+    writeXmlAllocatedFreed( tc,ds,&ei->aa[1],ei->aq>2,mi_a,mi_q );
   }
   else if( ei->throwName[0] )
   {
@@ -4164,21 +4190,7 @@ static void writeXmlFreeFail( textColor *tc,dbgsym *ds,
         block,addr,size,ptr>addr?"+":"",ptr-addr );
     printf( "  <stack>\n" );
     printf( "  </stack>\n" );
-    printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",
-        aa[1].id );
-    printf( "  <stack>\n" );
-    printStackCount( aa[1].frames,aa[1].frameCount,
-        mi_a,mi_q,ds,aa[1].ft,-1 );
-    printf( "  </stack>\n" );
-
-    if( aa[2].ptr )
-    {
-      printf( "  <auxwhat>freed on</auxwhat>\n" );
-      printf( "  <stack>\n" );
-      printStackCount( aa[2].frames,aa[2].frameCount,
-          mi_a,mi_q,ds,aa[2].ft,-1 );
-      printf( "  </stack>\n" );
-    }
+    writeXmlAllocatedFreed( tc,ds,aa+1,aa[2].ptr!=NULL,mi_a,mi_q );
   }
   else if( aa[1].id==1 )
   {
@@ -4221,12 +4233,7 @@ static void writeXmlFreeFail( textColor *tc,dbgsym *ds,
         aa[3].ptr,aa[3].size,aa[2].size );
     printf( "  <stack>\n" );
     printf( "  </stack>\n" );
-    printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",
-        aa[3].id );
-    printf( "  <stack>\n" );
-    printStackCount( aa[3].frames,aa[3].frameCount,
-        mi_a,mi_q,ds,aa[3].ft,-1 );
-    printf( "  </stack>\n" );
+    writeXmlAllocatedFreed( tc,ds,aa+3,0,mi_a,mi_q );
   }
   printf( "</error>\n\n" );
 
@@ -4250,17 +4257,7 @@ static void writeXmlDoubleFree( textColor *tc,dbgsym *ds,
   printStackCount( aa[0].frames,aa[0].frameCount,
       mi_a,mi_q,ds,aa[0].ft,-1 );
   printf( "  </stack>\n" );
-  printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",
-      aa[1].id );
-  printf( "  <stack>\n" );
-  printStackCount( aa[1].frames,aa[1].frameCount,
-      mi_a,mi_q,ds,aa[1].ft,-1 );
-  printf( "  </stack>\n" );
-  printf( "  <auxwhat>freed on</auxwhat>\n" );
-  printf( "  <stack>\n" );
-  printStackCount( aa[2].frames,aa[2].frameCount,
-      mi_a,mi_q,ds,aa[2].ft,-1 );
-  printf( "  </stack>\n" );
+  writeXmlAllocatedFreed( tc,ds,aa+1,1,mi_a,mi_q );
   printf( "</error>\n\n" );
 
   ds->tc = tcOrig;
@@ -4285,17 +4282,7 @@ static void writeXmlSlack( textColor *tc,dbgsym *ds,
       (char*)aa[1].ptr-(char*)aa[0].ptr );
   printf( "  <stack>\n" );
   printf( "  </stack>\n" );
-  printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",
-      aa[0].id );
-  printf( "  <stack>\n" );
-  printStackCount( aa[0].frames,aa[0].frameCount,
-      mi_a,mi_q,ds,aa[0].ft,-1 );
-  printf( "  </stack>\n" );
-  printf( "  <auxwhat>freed on</auxwhat>\n" );
-  printf( "  <stack>\n" );
-  printStackCount( aa[1].frames,aa[1].frameCount,
-      mi_a,mi_q,ds,aa[1].ft,-1 );
-  printf( "  </stack>\n" );
+  writeXmlAllocatedFreed( tc,ds,aa,1,mi_a,mi_q );
   printf( "</error>\n\n" );
 
   ds->tc = tcOrig;
@@ -4311,19 +4298,8 @@ static void writeXmlWrongDealloc( textColor *tc,dbgsym *ds,
 
   printf( "<error>\n" );
   printf( "  <kind>MismatchedFree</kind>\n" );
-  printf(
-      "  <what>mismatching allocation/release method</what>\n" );
-  printf( "  <auxwhat>allocated on (#%U)</auxwhat>\n",
-      aa[0].id );
-  printf( "  <stack>\n" );
-  printStackCount( aa[0].frames,aa[0].frameCount,
-      mi_a,mi_q,ds,aa[0].ft,-1 );
-  printf( "  </stack>\n" );
-  printf( "  <auxwhat>freed on</auxwhat>\n" );
-  printf( "  <stack>\n" );
-  printStackCount( aa[1].frames,aa[1].frameCount,
-      mi_a,mi_q,ds,aa[1].ft,-1 );
-  printf( "  </stack>\n" );
+  printf( "  <what>mismatching allocation/release method</what>\n" );
+  writeXmlAllocatedFreed( tc,ds,aa,1,mi_a,mi_q );
   printf( "</error>\n\n" );
 
   ds->tc = tcOrig;
@@ -5198,18 +5174,7 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
               printf( "$I  %s%s %p (size %U, offset %s%D)\n",
                   nearBlock,blockType,
                   ptr,size,accessPos>0?"+":"",accessPos );
-              printf( "$S  allocated on: $N(#%U)",ei.aa[1].id );
-              printThreadName( ei.aa[1].threadNum );
-              printStackCount( ei.aa[1].frames,ei.aa[1].frameCount,
-                  mi_a,mi_q,ds,ei.aa[1].ft,0 );
-
-              if( ei.aq>2 )
-              {
-                printf( "$S  freed on:" );
-                printThreadName( ei.aa[2].threadNum );
-                printStackCount( ei.aa[2].frames,ei.aa[2].frameCount,
-                    mi_a,mi_q,ds,ei.aa[2].ft,0 );
-              }
+              printAllocatedFreed( &ei.aa[1],ei.aq>2,mi_a,mi_q,ds );
             }
           }
           // }}}
@@ -5303,18 +5268,7 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
             const char *block = aa[2].ptr ? "freed " : "";
             printf( "$I  pointing to %sblock %p (size %U, offset %s%D)\n",
                 block,addr,size,ptr>addr?"+":"",ptr-addr );
-            printf( "$S  allocated on: $N(#%U)",aa[1].id );
-            printThreadName( aa[1].threadNum );
-            printStackCount( aa[1].frames,aa[1].frameCount,
-                mi_a,mi_q,ds,aa[1].ft,0 );
-
-            if( aa[2].ptr )
-            {
-              printf( "$S  freed on:" );
-              printThreadName( aa[2].threadNum );
-              printStackCount( aa[2].frames,aa[2].frameCount,
-                  mi_a,mi_q,ds,aa[2].ft,0 );
-            }
+            printAllocatedFreed( &aa[1],aa[2].ptr!=NULL,mi_a,mi_q,ds );
           }
           else if( aa[1].id==1 )
           {
@@ -5344,10 +5298,7 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
           {
             printf( "$I  referenced by block %p (size %U, offset +%U)\n",
                 aa[3].ptr,aa[3].size,aa[2].size );
-            printf( "$S  allocated on: $N(#%U)",aa[3].id );
-            printThreadName( aa[3].threadNum );
-            printStackCount( aa[3].frames,aa[3].frameCount,
-                mi_a,mi_q,ds,aa[3].ft,0 );
+            printAllocatedFreed( &aa[3],0,mi_a,mi_q,ds );
           }
 
           writeXmlFreeFail( tcXml,ds,allocMi,aa,mi_a,mi_q );
@@ -5372,15 +5323,7 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
           printStackCount( aa[0].frames,aa[0].frameCount,
               mi_a,mi_q,ds,aa[0].ft,0 );
 
-          printf( "$S  allocated on: $N(#%U)",aa[1].id );
-          printThreadName( aa[1].threadNum );
-          printStackCount( aa[1].frames,aa[1].frameCount,
-              mi_a,mi_q,ds,aa[1].ft,0 );
-
-          printf( "$S  freed on:" );
-          printThreadName( aa[2].threadNum );
-          printStackCount( aa[2].frames,aa[2].frameCount,
-              mi_a,mi_q,ds,aa[2].ft,0 );
+          printAllocatedFreed( &aa[1],1,mi_a,mi_q,ds );
 
           writeXmlDoubleFree( tcXml,ds,aa,mi_a,mi_q );
 
@@ -5402,14 +5345,7 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
           printf( "$I  slack area of %p (size %U, offset %s%D)\n",
               aa[0].ptr,aa[0].size,
               aa[1].ptr>aa[0].ptr?"+":"",(char*)aa[1].ptr-(char*)aa[0].ptr );
-          printf( "$S  allocated on: $N(#%U)",aa[0].id );
-          printThreadName( aa[0].threadNum );
-          printStackCount( aa[0].frames,aa[0].frameCount,
-              mi_a,mi_q,ds,aa[0].ft,0 );
-          printf( "$S  freed on:" );
-          printThreadName( aa[1].threadNum );
-          printStackCount( aa[1].frames,aa[1].frameCount,
-              mi_a,mi_q,ds,aa[1].ft,0 );
+          printAllocatedFreed( aa,1,mi_a,mi_q,ds );
 
           writeXmlSlack( tcXml,ds,aa,mi_a,mi_q );
 
@@ -5438,14 +5374,7 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
 
           printf( "\n$Wmismatching allocation/release method"
               " of %p (size %U)\n",aa[0].ptr,aa[0].size );
-          printf( "$S  allocated on: $N(#%U)",aa[0].id );
-          printThreadName( aa[0].threadNum );
-          printStackCount( aa[0].frames,aa[0].frameCount,
-              mi_a,mi_q,ds,aa[0].ft,0 );
-          printf( "$S  freed on:" );
-          printThreadName( aa[1].threadNum );
-          printStackCount( aa[1].frames,aa[1].frameCount,
-              mi_a,mi_q,ds,aa[1].ft,0 );
+          printAllocatedFreed( aa,1,mi_a,mi_q,ds );
 
           writeXmlWrongDealloc( tcXml,ds,aa,mi_a,mi_q );
 
