@@ -559,6 +559,31 @@ static NOINLINE int trackFree(
 
       freeSize = fa.size;
 
+      if( UNLIKELY(fa.ftFreed==FT_BLOCKED) )
+      {
+        allocation *aa = HeapAlloc( rd->heap,0,2*sizeof(allocation) );
+        if( UNLIKELY(!aa) )
+          exitOutOfMemory( 1 );
+
+        RtlMoveMemory( aa,&fa,sizeof(allocation) );
+        CAPTURE_STACK_TRACE( 2,PTRS,aa[1].frames,caller,rd->maxStackFrames );
+        aa[1].ptr = free_ptr;
+        aa[1].size = 0;
+        aa[1].at = at;
+        aa[1].lt = LT_LOST;
+        aa[1].ft = ft;
+#ifndef NO_THREADS
+        aa[1].threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
+#endif
+
+        writeAllocs( aa,2,WRITE_FREE_WHILE_REALLOC );
+
+        HeapFree( rd->heap,0,aa );
+
+        if( rd->opt.raiseException )
+          DebugBreak();
+      }
+
       // freed memory information {{{
       if( rd->opt.protectFree && !failed_realloc )
       {
@@ -621,7 +646,10 @@ static NOINLINE int trackFree(
     else
     {
       if( i>=0 )
+      {
         RtlMoveMemory( &fa,&sa->alloc_a[i],sizeof(allocation) );
+        sa->alloc_a[i].ftFreed = FT_BLOCKED;
+      }
 
       LeaveCriticalSection( &sa->cs );
       EnterCriticalSection( &rd->csFreedMod );

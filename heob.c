@@ -4288,6 +4288,23 @@ static void writeXmlSlack( textColor *tc,dbgsym *ds,
   ds->tc = tcOrig;
 }
 
+static void writeXmlFreeWhileRealloc( textColor *tc,dbgsym *ds,
+    allocation *aa,modInfo *mi_a,int mi_q )
+{
+  if( !tc ) return;
+
+  textColor *tcOrig = ds->tc;
+  ds->tc = tc;
+
+  printf( "<error>\n" );
+  printf( "  <kind>InvalidFree</kind>\n" );
+  printf( "  <what>free while realloc</what>\n" );
+  writeXmlAllocatedFreed( tc,ds,aa,1,mi_a,mi_q );
+  printf( "</error>\n\n" );
+
+  ds->tc = tcOrig;
+}
+
 static void writeXmlWrongDealloc( textColor *tc,dbgsym *ds,
     allocation *aa,modInfo *mi_a,int mi_q )
 {
@@ -5360,6 +5377,26 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
         printf( "\n$Wnot enough memory to keep track of allocations\n" );
         terminated = -1;
         *ad->heobExit = HEOB_OUT_OF_MEMORY;
+        break;
+
+        // }}}
+        // free while realloc {{{
+
+      case WRITE_FREE_WHILE_REALLOC:
+        {
+          if( !readFile(readPipe,aa,2*sizeof(allocation),&ov) )
+            break;
+
+          cacheSymbolData( aa,NULL,2,mi_a,mi_q,ds,1 );
+
+          printf( "\n$Wfree while realloc"
+              " of %p (size %U)\n",aa[0].ptr,aa[0].size );
+          printAllocatedFreed( aa,1,mi_a,mi_q,ds );
+
+          writeXmlFreeWhileRealloc( tcXml,ds,aa,mi_a,mi_q );
+
+          error_q++;
+        }
         break;
 
         // }}}
