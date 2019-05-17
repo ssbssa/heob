@@ -20,6 +20,8 @@
 #include <dbgeng.h>
 #endif
 
+#include <shobjidl.h>
+
 // }}}
 // output variant declarations {{{
 
@@ -4739,6 +4741,55 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
   }
   // }}}
 
+  // recording status in taskbar {{{
+  typedef HRESULT WINAPI func_CoInitialize( LPVOID );
+  typedef void WINAPI func_CoUninitialize( VOID );
+  typedef HRESULT WINAPI func_CoCreateInstance(
+      REFCLSID,LPUNKNOWN,DWORD,REFIID,LPVOID* );
+
+  HWND conHwnd = GetConsoleWindow();
+  HMODULE ole32 = NULL;
+  ITaskbarList3 *tl3 = NULL;
+  func_CoUninitialize *fCoUninitialize = NULL;
+  int taskbarRecording = recording + 1;
+
+  if( conHwnd && (in || fRegisterHotKey) &&
+      (opt->newConsole || isConsoleOwner()) )
+  {
+    ole32 = LoadLibrary( "ole32.dll" );
+    func_CoInitialize *fCoInitialize = NULL;
+    func_CoCreateInstance *fCoCreateInstance = NULL;
+    if( ole32 )
+    {
+      fCoInitialize =
+        (func_CoInitialize*)GetProcAddress( ole32,"CoInitialize" );
+      fCoUninitialize =
+        (func_CoUninitialize*)GetProcAddress( ole32,"CoUninitialize" );
+      fCoCreateInstance =
+        (func_CoCreateInstance*)GetProcAddress( ole32,"CoCreateInstance" );
+    }
+    if( fCoInitialize && fCoUninitialize && fCoCreateInstance )
+    {
+      fCoInitialize( NULL );
+
+      const GUID CLSID_TaskbarList =
+      { 0x56fdf344,0xfd6d,0x11d0,{0x95,0x8a,0x00,0x60,0x97,0xc9,0xa0,0x90} };
+      const GUID IID_ITaskbarList3 =
+      { 0xea1afb91,0x9e28,0x4b86,{0x90,0xe9,0x9e,0x9f,0x8a,0x5e,0xef,0xaf} };
+
+      fCoCreateInstance( &CLSID_TaskbarList,NULL,CLSCTX_INPROC_SERVER,
+          &IID_ITaskbarList3,(void**)&tl3 );
+      if( !tl3 ) fCoUninitialize();
+    }
+    if( ole32 && !tl3 )
+    {
+      FreeLibrary( ole32 );
+      ole32 = NULL;
+      fCoUninitialize = NULL;
+    }
+  }
+  // }}}
+
   if( in ) showConsole();
   const char *title = opt->handleException>=2 ?
     "profiling sample recording: " : "leak recording: ";
@@ -4756,6 +4807,16 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
 
       if( in )
         showRecording( title,err,recording,&consoleCoord,&errColor,tsq );
+    }
+
+    if( tl3 && recording!=taskbarRecording )
+    {
+      int tbpf = recording<0 ? TBPF_NOPROGRESS :
+        ( recording>0 ? TBPF_NORMAL : TBPF_PAUSED );
+      tl3->lpVtbl->SetProgressState( tl3,conHwnd,tbpf );
+      if( recording>=0 )
+        tl3->lpVtbl->SetProgressValue( tl3,conHwnd,1,1 );
+      taskbarRecording = recording;
     }
 
     DWORD waitTime = INFINITE;
@@ -5718,6 +5779,14 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
       fUnregisterHotkey( NULL,i );
   }
   if( user32 ) FreeLibrary( user32 );
+
+  if( tl3 )
+  {
+    tl3->lpVtbl->SetProgressState( tl3,conHwnd,TBPF_NOPROGRESS );
+    tl3->lpVtbl->Release( tl3 );
+  }
+  if( fCoUninitialize ) fCoUninitialize();
+  if( ole32 ) FreeLibrary( ole32 );
 
   if( terminated==-2 )
   {
