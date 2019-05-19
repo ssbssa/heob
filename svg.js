@@ -229,7 +229,7 @@ function heobInit()
 
     let t = withNL(funcAttribute(svg)) + withNL(sourceAttribute(svg, true)) +
       withNL(addrModAttribute(svg, true)) + withNL(sumAttribute(svg)) +
-      withNL(threadAttribute(svg));
+      withNL(threadAttribute(svg)) + withNL(idAttribute(svg));
     svg.getElementsByTagName('title')[0].textContent = t;
   }
 
@@ -783,6 +783,11 @@ function sumAttribute(svg)
 function threadAttribute(svg)
 {
   return attributeToText(svg, 'heobThread');
+}
+
+function idAttribute(svg)
+{
+  return attributeToText(svg, 'heobId');
 }
 
 function withNL(t)

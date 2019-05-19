@@ -4381,7 +4381,7 @@ static void locSvg( textColor *tc,uintptr_t addr,int useAddr,
     char **threadName_a,int threadName_q,int threadNum,
 #endif
     const wchar_t *filename,int lineno,const char *funcname,
-    const wchar_t *modname,int blocked )
+    const wchar_t *modname,int blocked,size_t id )
 {
   if( stack<=1 ) printf( "\n" );
 
@@ -4406,6 +4406,8 @@ static void locSvg( textColor *tc,uintptr_t addr,int useAddr,
 #endif
   if( blocked )
     printf( " heobBlocked=\"%d\"",blocked );
+  if( id )
+    printf( " heobId=\"#%U\"",id );
   printf( "/>\n" );
 }
 
@@ -4414,7 +4416,7 @@ static int printStackCountSvg( void **framesV,int fc,
     char **threadName_a,int threadName_q,int threadNum,
 #endif
     textColor *tc,modInfo *mi_a,int mi_q,dbgsym *ds,funcType ft,
-    size_t samples,size_t ofs,int stack,int allocs,int sampling )
+    size_t samples,size_t ofs,int stack,int allocs,int sampling,size_t id )
 {
   uintptr_t *frames = (uintptr_t*)framesV;
   stackSourceLocation *ssl = ds->ssl;
@@ -4433,7 +4435,7 @@ static int printStackCountSvg( void **framesV,int fc,
 #ifndef NO_THREADS
           threadName_a,threadName_q,threadNum,
 #endif
-          NULL,0,NULL,NULL,ft==FT_BLOCKED );
+          NULL,0,NULL,NULL,ft==FT_BLOCKED,0 );
       j--;
       stackCount++;
       continue;
@@ -4454,7 +4456,7 @@ static int printStackCountSvg( void **framesV,int fc,
 #ifndef NO_THREADS
             threadName_a,threadName_q,threadNum,
 #endif
-            NULL,0,NULL,mi->path,ft==FT_BLOCKED );
+            NULL,0,NULL,mi->path,ft==FT_BLOCKED,0 );
         stackCount++;
         continue;
       }
@@ -4468,13 +4470,23 @@ static int printStackCountSvg( void **framesV,int fc,
         if( !nextSl ) break;
         sl = nextSl;
       }
+      size_t bottomId = 0;
+      size_t inlineId = 0;
+      if( !j && id && ft>=FT_COUNT )
+      {
+        if( inlineCount>1 )
+          inlineId = id;
+        else
+          bottomId = id;
+      }
       int stackPos = stack + stackCount;
       // output first the bottom stack
       locSvg( tc,frame,1,samples,ofs,stackPos,sampling?0:allocs,
 #ifndef NO_THREADS
           threadName_a,threadName_q,threadNum,
 #endif
-          sl->filename,sl->lineno,sl->funcname,mi->path,ft==FT_BLOCKED );
+          sl->filename,sl->lineno,sl->funcname,mi->path,ft==FT_BLOCKED,
+          bottomId );
       // then the rest from top to bottom+1
       sl = &s->sl;
       int inlinePos = inlineCount - 1;
@@ -4484,7 +4496,9 @@ static int printStackCountSvg( void **framesV,int fc,
 #ifndef NO_THREADS
             threadName_a,threadName_q,threadNum,
 #endif
-            sl->filename,sl->lineno,sl->funcname,mi->path,ft==FT_BLOCKED );
+            sl->filename,sl->lineno,sl->funcname,mi->path,ft==FT_BLOCKED,
+            inlineId );
+        inlineId = 0;
 
         inlinePos--;
         sl = sl->inlineLocation;
@@ -4498,7 +4512,7 @@ static int printStackCountSvg( void **framesV,int fc,
 #ifndef NO_THREADS
         threadName_a,threadName_q,threadNum,
 #endif
-        NULL,0,ds->funcnames[ft],NULL,0 );
+        NULL,0,ds->funcnames[ft],NULL,0,id );
     stackCount++;
   }
   return( stackCount );
@@ -4558,7 +4572,7 @@ static void printStackGroupSvg( stackGroup *sg,textColor *tc,
         threadName_a,threadName_q,threadNum,
 #endif
         tc,mi_a,mi_q,ds,blocked,
-        sg->allocSumSize,ofs,stack,sg->allocSum,sampling );
+        sg->allocSumSize,ofs,stack,sg->allocSum,sampling,0 );
   }
 
   size_t minLeakSize = ds->opt->minLeakSize;
@@ -4576,7 +4590,7 @@ static void printStackGroupSvg( stackGroup *sg,textColor *tc,
         if( sampling )
           locSvg( tc,0,0,combSize,ofs,stack,0,
               threadName_a,threadName_q,a->threadNum,
-              NULL,0,NULL,NULL,a->ft==FT_BLOCKED );
+              NULL,0,NULL,NULL,a->ft==FT_BLOCKED,a->id );
         else
 #endif
           printStackCountSvg( NULL,0,
@@ -4584,7 +4598,7 @@ static void printStackGroupSvg( stackGroup *sg,textColor *tc,
               threadName_a,threadName_q,a->threadNum,
 #endif
               tc,NULL,0,ds,a->ft,
-              combSize,ofs,stack,a->count,sampling );
+              combSize,ofs,stack,a->count,sampling,a->id );
       }
       else
         stack += printStackCountSvg(
@@ -4594,7 +4608,7 @@ static void printStackGroupSvg( stackGroup *sg,textColor *tc,
             threadName_a,threadName_q,a->threadNum,
 #endif
             tc,mi_a,mi_q,ds,a->ft,
-            combSize,ofs,stack,a->count,sampling );
+            combSize,ofs,stack,a->count,sampling,a->id );
       ofs += combSize;
     }
   }
@@ -4641,7 +4655,7 @@ static void printFullStackGroupSvg( appData *ad,stackGroup *sg,textColor *tc,
 #ifndef NO_THREADS
       NULL,0,0,
 #endif
-      NULL,0,fullName,NULL,0 );
+      NULL,0,fullName,NULL,0,0 );
   if( fullTypeName ) HeapFree( ad->heap,0,fullTypeName );
 
   printStackGroupSvg( sg,tc,alloc_a,alloc_idxs,
