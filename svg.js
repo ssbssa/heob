@@ -755,7 +755,7 @@ function sumText(samples, bytes, allocs)
 {
   let t = '';
   if (samples > 0.1)
-    t += samples + ' samples (' +
+    t += samples + ' sample' + (samples > 1.1 ? 's' : '') + ' (' +
         (100 * samples / sampleTimes).toFixed(2) + '%)';
   if (samples > 0.1 && bytes > 0.1)
     t += '  &  ';

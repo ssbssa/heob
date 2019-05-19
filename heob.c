@@ -2980,7 +2980,8 @@ static void printStackGroup( stackGroup *sg,
     if( !sampling )
       printf( "%i$Wsum: %U B / %d\n",indent,sg->allocSumSize,sg->allocSum );
     else
-      printf( "%i$Wsum: %d samples\n",indent,sg->allocSum );
+      printf( "%i$Wsum: %d sample%s\n",
+          indent,sg->allocSum,sg->allocSum>1?"s":NULL );
   }
   if( !stackIsPrinted && sg->stackCount )
   {
@@ -3317,7 +3318,8 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
       if( !sampling )
         printf( "  $Wsum: %U B / %d\n",sg->allocSumSize,sg->allocSum );
       else
-        printf( "  $Wsum: %d samples\n",sg->allocSum );
+        printf( "  $Wsum: %d sample%s\n",
+            sg->allocSum,sg->allocSum>1?"s":NULL );
     }
     if( sg->allocSum && tcXml && l<lDetails )
     {
