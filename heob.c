@@ -862,37 +862,6 @@ static void checkOutputVariant( textColor *tc,HANDLE out,
           !memcmp(oni->Name.Buffer+(oni->Name.Length/2-hl),html,hl*2) )
       {
         // html file {{{
-        const char *styleInit =
-          "<head>\n"
-          "<style type=\"text/css\">\n"
-          "body { color:lightgrey; background-color:black; }\n"
-          ".ok { color:lime; }\n"
-          ".section { color:turquoise; }\n"
-          ".info { color:violet; }\n"
-          ".warn { color:red; }\n"
-          ".base { color:black; background-color:grey; }\n"
-          "</style>\n"
-          "<title>";
-        const char *styleInit1 =
-          "heob " HEOB_VER "</title>\n"
-          "</head><body>\n"
-          "<h3>";
-        const char *styleInit2 =
-          "</h3>\n"
-          "<pre>\n";
-        DWORD written;
-        WriteFile( tc->out,styleInit,lstrlen(styleInit),&written,NULL );
-        if( exeName )
-        {
-          WriteTextHtmlW( tc,exeName,lstrlenW(exeName) );
-          WriteFile( tc->out," - ",3,&written,NULL );
-        }
-        WriteFile( tc->out,styleInit1,lstrlen(styleInit1),&written,NULL );
-        const wchar_t *cmdLineW = GetCommandLineW();
-        WriteTextHtmlW( tc,cmdLineW,lstrlenW(cmdLineW) );
-        WriteFile( tc->out,styleInit2,lstrlen(styleInit2),&written,NULL );
-
-        tc->fWriteText = &WriteTextHtml;
         tc->fWriteSubText = &WriteTextHtml;
         tc->fWriteSubTextW = &WriteTextHtmlW;
         tc->fTextColor = &TextColorHtml;
@@ -904,6 +873,22 @@ static void checkOutputVariant( textColor *tc,HANDLE out,
         tc->styles[ATT_INFO]    = "info";
         tc->styles[ATT_WARN]    = "warn";
         tc->styles[ATT_BASE]    = "base";
+
+        printf(
+            "<head>\n"
+            "<style type=\"text/css\">\n"
+            "body { color:lightgrey; background-color:black; }\n"
+            ".ok { color:lime; }\n"
+            ".section { color:turquoise; }\n"
+            ".info { color:violet; }\n"
+            ".warn { color:red; }\n"
+            ".base { color:black; background-color:grey; }\n"
+            "</style>\n"
+            "<title>%S%sheob %s</title>\n"
+            "</head><body>\n"
+            "<h3>%S</h3>\n"
+            "<pre>\n",
+            exeName,exeName?" - ":NULL,HEOB_VER,GetCommandLineW() );
         // }}}
       }
     }
@@ -3933,11 +3918,12 @@ static textColor *writeXmlHeader( appData *ad,DWORD startTicks )
   const wchar_t *exePathW = ad->exePathW;
 
   printf( "<?xml version=\"1.0\"?>\n\n" );
-  printf( "<valgrindoutput>\n\n" );
-  printf( "<protocolversion>4</protocolversion>\n" );
-  printf( "<protocoltool>memcheck</protocoltool>\n\n" );
-  printf( "<preamble>\n" );
-  printf( "  <line>heap-observer " HEOB_VER " (" BITS "bit)</line>\n" );
+  printf(
+      "<valgrindoutput>\n\n"
+      "<protocolversion>4</protocolversion>\n"
+      "<protocoltool>memcheck</protocoltool>\n\n"
+      "<preamble>\n"
+      "  <line>heap-observer %s (" BITS "bit)</line>\n",HEOB_VER );
   attachedProcessInfo *api = ad->api;
   if( api )
   {
@@ -3972,8 +3958,11 @@ static textColor *writeXmlHeader( appData *ad,DWORD startTicks )
   }
   if( ad->dbgPid )
     printf( "  <line>debugger PID: %u</line>\n",ad->dbgPid );
-  printf( "</preamble>\n\n" );
-  printf( "<pid>%u</pid>\n<ppid>%u</ppid>\n<tool>heob</tool>\n\n",
+  printf(
+      "</preamble>\n\n"
+      "<pid>%u</pid>\n"
+      "<ppid>%u</ppid>\n"
+      "<tool>heob</tool>\n\n",
       ad->pi.dwProcessId,ad->ppid );
 
   const wchar_t *cmdLineW = ad->cmdLineW;
@@ -4345,19 +4334,22 @@ static textColor *writeSvgHeader( appData *ad )
   textColor *tc = createExpandedXml( ad,ad->svgName );
   if( !tc ) return( NULL );
 
-  printf( "<svg width=\"1280\" height=\"100\" onload=\"heobInit()\""
-      " xmlns=\"http://www.w3.org/2000/svg\">\n" );
-  printf( "  <style type=\"text/css\">\n" );
-  printf( "    .sample:hover { stroke:black; stroke-width:0.5;"
-      " cursor:pointer; }\n" );
-  printf( "  </style>\n" );
-  printf( "  <script type=\"text/ecmascript\">\n" );
-  printf( "    <![CDATA[\n" );
+  printf( "<?xml version=\"1.0\"?>\n\n" );
+  printf(
+      "<svg width=\"1280\" height=\"100\" onload=\"heobInit()\""
+      " xmlns=\"http://www.w3.org/2000/svg\">\n"
+      "  <style type=\"text/css\">\n"
+      "    .sample:hover { stroke:black; stroke-width:0.5;"
+      " cursor:pointer; }\n"
+      "  </style>\n"
+      "  <script type=\"text/ecmascript\">\n"
+      "    <![CDATA[\n" );
 
   writeResource( tc,100 );
 
-  printf( "    ]]>\n" );
-  printf( "  </script>\n" );
+  printf(
+      "    ]]>\n"
+      "  </script>\n" );
 
   wchar_t *exePath = ad->exePathW;
   wchar_t *delim = strrchrW( exePath,'\\' );
@@ -4366,7 +4358,7 @@ static textColor *writeSvgHeader( appData *ad )
   wchar_t *lastPoint = strrchrW( delim,'.' );
   if( lastPoint ) lastPoint[0] = 0;
 
-  printf( "  <title>%S - heob " HEOB_VER "</title>\n",delim );
+  printf( "  <title>%S - heob %s</title>\n",delim,HEOB_VER );
   printf( "  <text id=\"cmd\" heobCmd=\"%S\">%S</text>\n",
       ad->cmdLineW,delim );
 
@@ -6058,7 +6050,7 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
   printf( helpKey ? "$Wh$N" : "h" );
   printf( "elp\n" );
 
-  printf( "\n$Ohe$Nap-$Oob$Nserver " HEOB_VER " ($O" BITS "$Nbit)\n" );
+  printf( "\n$Ohe$Nap-$Oob$Nserver %s ($O" BITS "$Nbit)\n",HEOB_VER );
 
   if( waitForKeyIfConsoleOwner(tc,ad->in)=='H' && helpKey )
   {
