@@ -2443,6 +2443,19 @@ static void addLoadedModule( HMODULE mod )
   addModule( mod );
   replaceModFuncs();
   LeaveCriticalSection( &rd->csMod );
+
+  if( rd->opt.samplingInterval )
+  {
+    int mi_q = 0;
+    modInfo *mi_a = NULL;
+    writeModsFind( &mi_a,&mi_q );
+
+    EnterCriticalSection( &rd->csWrite );
+
+    writeModsSend( mi_a,mi_q );
+
+    LeaveCriticalSection( &rd->csWrite );
+  }
 }
 
 static HMODULE WINAPI new_LoadLibraryA( LPCSTR name )
