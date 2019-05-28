@@ -3893,6 +3893,15 @@ static void setHeobConsoleTitle( HANDLE heap,const wchar_t *prog )
   HeapFree( heap,0,title );
 }
 
+static int setTaskbarStatus( ITaskbarList3 *tl3,HWND conHwnd )
+{
+  if( !tl3 ) return( 0 );
+
+  tl3->lpVtbl->SetProgressState( tl3,conHwnd,TBPF_ERROR );
+  tl3->lpVtbl->SetProgressValue( tl3,conHwnd,1,1 );
+  return( -2 );
+}
+
 // }}}
 // xml {{{
 
@@ -4976,6 +4985,8 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
 
       case WRITE_LEAKS:
         {
+          taskbarRecording = setTaskbarStatus( tl3,conHwnd );
+
           allocation *alloc_a = NULL;
           int alloc_q = 0;
           unsigned char *contents = NULL;
@@ -5089,6 +5100,8 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
 
       case WRITE_EXCEPTION:
         {
+          taskbarRecording = setTaskbarStatus( tl3,conHwnd );
+
 #define ei (*eiPtr)
           if( !readFile(readPipe,&ei,sizeof(exceptionInfo),&ov) )
             break;
@@ -5641,6 +5654,8 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
 #if USE_STACKWALK
       case WRITE_SAMPLING:
         {
+          taskbarRecording = setTaskbarStatus( tl3,conHwnd );
+
           sample_times += ad->sample_times;
 
           printLeaks( ad->samp_a,ad->samp_q,0,0,0,0,NULL,mi_a,mi_q,
@@ -5715,6 +5730,8 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
 #ifndef NO_DBGHELP
       case WRITE_CRASHDUMP:
         {
+          taskbarRecording = setTaskbarStatus( tl3,conHwnd );
+
           DWORD threadId;
           PEXCEPTION_POINTERS ep;
 
