@@ -5936,6 +5936,14 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
         defopt->minProtectSize );
     printf( "    $I-i$BX$N    initial value [$I%d$N]\n",
         (int)(defopt->init&0xff) );
+    if( fullhelp>1 )
+    {
+      printf( "              $I1$N   = 0x0101010101010101\n" );
+      printf( "    $I-i$BV$I:$BS$N  initial $Iv$Nalue with $Is$Ntride\n" );
+      printf( "              $I1$N:$I2$N = 0x0001000100010001\n" );
+      printf( "              $I1$N:$I4$N = 0x0000000100000001\n" );
+      printf( "              $I1$N:$I8$N = 0x0000000000000001\n" );
+    }
     printf( "    $I-s$BX$N    initial value for slack"
         " ($I-1$N = off) [$I%d$N]\n",
         defopt->slackInit );
