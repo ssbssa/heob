@@ -455,7 +455,8 @@ static void writeAllocs( allocation *alloc_a,int alloc_q,int type )
 // }}}
 // memory allocation tracking {{{
 
-static NOINLINE int allocSizeAndState( void *p,size_t *s,funcType ft )
+static NOINLINE int allocSizeAndState(
+    void *p,funcType ft,size_t *s,size_t *id )
 {
   GET_REMOTEDATA( rd );
 
@@ -463,6 +464,7 @@ static NOINLINE int allocSizeAndState( void *p,size_t *s,funcType ft )
   splitAllocation *sa = rd->splits + splitIdx;
   int prevEnable = -1;
   size_t freeSize = -1;
+  size_t freeId = 0;
 
   EnterCriticalSection( &sa->cs );
 
@@ -471,21 +473,34 @@ static NOINLINE int allocSizeAndState( void *p,size_t *s,funcType ft )
   {
     allocation *a = sa->alloc_a + i;
     if( a->ptr!=p ) continue;
-    if( a->ftFreed!=FT_COUNT )
+
+    if( UNLIKELY(a->ftFreed!=FT_COUNT) )
     {
-      prevEnable = 0;
-      break;
+      int j;
+      for( j=i-1; j>=0; j-- )
+      {
+        allocation *aj = sa->alloc_a + j;
+        if( aj->ptr==p && aj->ftFreed==FT_COUNT ) break;
+      }
+      if( j>=0 ) a = sa->alloc_a + j;
+      else
+      {
+        prevEnable = 0;
+        break;
+      }
     }
 
     prevEnable = 1;
     a->ftFreed = ft;
     freeSize = a->size;
+    freeId = a->id;
     break;
   }
 
   LeaveCriticalSection( &sa->cs );
 
   *s = freeSize;
+  if( id ) *id = freeId;
 
   return( prevEnable );
 }
@@ -524,7 +539,7 @@ static NOINLINE size_t heap_block_size( HANDLE heap,void *ptr )
 }
 
 static NOINLINE int trackFree(
-    void *free_ptr,allocType at,funcType ft,int failed_realloc,int enable,
+    void *free_ptr,allocType at,funcType ft,int failed_realloc,size_t id,
     void *caller )
 {
   int ret = 1;
@@ -541,8 +556,27 @@ static NOINLINE int trackFree(
 
     int i;
     for( i=sa->alloc_q-1; i>=0 && sa->alloc_a[i].ptr!=free_ptr; i-- );
+    int successfulFree = 1;
+    if( UNLIKELY(i<0) ) successfulFree = 0;
+    else if( UNLIKELY(
+          // realloc()
+          (id && sa->alloc_a[i].id!=id) ||
+          // free()
+          (!id && sa->alloc_a[i].ftFreed!=FT_COUNT)) )
+    {
+      // check for multiple entries of the same pointer,
+      // which is possible if there is a malloc() call
+      // between realloc() and trackFree() inside new_realloc(),
+      // and malloc() returns the pointer that realloc() just freed
+      int j;
+      for( j=i-1; j>=0 && (sa->alloc_a[j].ptr!=free_ptr ||
+            (id && sa->alloc_a[j].id!=id) ||
+            (!id && sa->alloc_a[j].ftFreed!=FT_COUNT)); j-- );
+      if( j>=0 ) i = j;
+      else successfulFree = 0;
+    }
     // successful free {{{
-    if( LIKELY(i>=0 && (sa->alloc_a[i].ftFreed==FT_COUNT || enable)) )
+    if( LIKELY(successfulFree) )
     {
       RtlMoveMemory( &fa,&sa->alloc_a[i],sizeof(allocation) );
 
@@ -1203,13 +1237,12 @@ static void *new_realloc( void *b,size_t s )
 
   GET_REMOTEDATA( rd );
 
-  int enable = 0;
   int doTrackFree = 1;
+  size_t id = 0;
   if( b )
   {
     size_t os = -1;
-    int allocState = allocSizeAndState( b,&os,FT_REALLOC );
-    enable = allocState>0;
+    int allocState = allocSizeAndState( b,FT_REALLOC,&os,&id );
     TlsSetValue( rd->freeSizeTls,(void*)os );
 
     if( UNLIKELY(allocState<0) && !rd->opt.protect &&
@@ -1220,7 +1253,7 @@ static void *new_realloc( void *b,size_t s )
   void *nb = rd->frealloc( b,s );
 
   if( doTrackFree )
-    trackFree( b,AT_MALLOC,FT_REALLOC,!nb && s,enable );
+    trackFree( b,AT_MALLOC,FT_REALLOC,!nb && s,id );
   trackAlloc( nb,s,AT_MALLOC,FT_REALLOC );
 
   SET_LAST_ERROR( lastError );
@@ -1505,13 +1538,12 @@ static void *new_recalloc( void *b,size_t n,size_t s )
 
   GET_REMOTEDATA( rd );
 
-  int enable = 0;
   int doTrackFree = 1;
+  size_t id = 0;
   if( b )
   {
     size_t os = -1;
-    int allocState = allocSizeAndState( b,&os,FT_RECALLOC );
-    enable = allocState>0;
+    int allocState = allocSizeAndState( b,FT_RECALLOC,&os,&id );
     TlsSetValue( rd->freeSizeTls,(void*)os );
 
     if( UNLIKELY(allocState<0) && !rd->opt.protect &&
@@ -1522,7 +1554,7 @@ static void *new_recalloc( void *b,size_t n,size_t s )
   void *nb = rd->frecalloc( b,n,s );
 
   if( doTrackFree )
-    trackFree( b,AT_MALLOC,FT_RECALLOC,!nb && n && s,enable );
+    trackFree( b,AT_MALLOC,FT_RECALLOC,!nb && n && s,id );
   trackCalloc( nb,n,s,AT_MALLOC,FT_RECALLOC );
 
   SET_LAST_ERROR( lastError );
@@ -3074,7 +3106,7 @@ static size_t protect_msize( void *b )
   size_t s = -1;
   if( b )
   {
-    allocSizeAndState( b,&s,FT_COUNT );
+    allocSizeAndState( b,FT_COUNT,&s,NULL );
     if( s==(size_t)-1 )
       s = heap_block_size( rd->crtHeap,b );
   }
