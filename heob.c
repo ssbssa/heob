@@ -944,6 +944,33 @@ int isWrongArch( HANDLE process )
   return( remoteWow64!=meWow64 );
 }
 
+static int convertDeviceName( const wchar_t *in,wchar_t *out,int outlen )
+{
+  wchar_t drives[128];
+  if( !GetLogicalDriveStringsW(127,drives) ) return( 0 );
+
+  wchar_t name[MAX_PATH];
+  wchar_t drive[3] = L" :";
+  wchar_t *p = drives;
+  do
+  {
+    drive[0] = *p;
+
+    if( QueryDosDeviceW(drive,name,MAX_PATH) && strstartW(in,name) )
+    {
+      if( lstrlenW(in+lstrlenW(name))+2>=outlen ) return( 0 );
+      lstrcpyW( out,drive );
+      lstrcatW( out,in+lstrlenW(name) );
+      return( 1 );
+    }
+
+    while( *p++ );
+  }
+  while( *p );
+
+  return( 0 );
+}
+
 static void nameOfProcess( HMODULE ntdll,HANDLE heap,
     HANDLE process,wchar_t *name,int noExt )
 {
@@ -964,15 +991,18 @@ static void nameOfProcess( HMODULE ntdll,HANDLE heap,
         oni,sizeof(OBJECT_NAME_INFORMATION),&len) )
   {
     oni->Name.Buffer[oni->Name.Length/2] = 0;
-    wchar_t *lastDelim = strrchrW( oni->Name.Buffer,'\\' );
-    if( lastDelim ) lastDelim++;
-    else lastDelim = oni->Name.Buffer;
-    if( noExt )
+    if( noExt>=0 || !convertDeviceName(oni->Name.Buffer,name,MAX_PATH) )
     {
-      wchar_t *lastPoint = strrchrW( lastDelim,'.' );
-      if( lastPoint ) lastPoint[0] = 0;
+      wchar_t *lastDelim = strrchrW( oni->Name.Buffer,'\\' );
+      if( lastDelim ) lastDelim++;
+      else lastDelim = oni->Name.Buffer;
+      if( noExt>0 )
+      {
+        wchar_t *lastPoint = strrchrW( lastDelim,'.' );
+        if( lastPoint ) lastPoint[0] = 0;
+      }
+      lstrcpynW( name,lastDelim,MAX_PATH );
     }
-    lstrcpynW( name,lastDelim,MAX_PATH );
   }
   HeapFree( heap,0,oni );
 }
@@ -1168,6 +1198,143 @@ static NORETURN void exitHeob( appData *ad,
 
   writeCloseErrorPipe( errorPipe,exitStatus,extraArg );
   ExitProcess( exitCode );
+}
+
+// }}}
+// process startup failure {{{
+
+static int checkModule( appData *ad,textColor *tc,int level,
+    HMODULE mod,DWORD errCode )
+{
+  PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)mod;
+  PIMAGE_NT_HEADERS inh = (PIMAGE_NT_HEADERS)REL_PTR( idh,idh->e_lfanew );
+
+  PIMAGE_DATA_DIRECTORY idd =
+    &inh->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+  if( !idd->Size ) return( 1 );
+
+  PIMAGE_IMPORT_DESCRIPTOR iid =
+    (PIMAGE_IMPORT_DESCRIPTOR)REL_PTR( idh,idd->VirtualAddress );
+
+  wchar_t *exePath = ad->exePathW;
+  GetModuleFileNameW( mod,exePath,MAX_PATH );
+  printf( "%i%S\n",level,exePath );
+
+  UINT i;
+  for( i=0; iid[i].Characteristics; i++ )
+  {
+    if( !iid[i].FirstThunk || !iid[i].OriginalFirstThunk )
+      break;
+
+    PSTR curModName = (PSTR)REL_PTR( idh,iid[i].Name );
+    if( !curModName[0] ) continue;
+
+    HMODULE subMod = LoadLibrary( curModName );
+    if( subMod )
+    {
+      exePath[0] = 0;
+
+      PIMAGE_THUNK_DATA originalThunk =
+        (PIMAGE_THUNK_DATA)REL_PTR( idh,iid[i].OriginalFirstThunk );
+
+      for( ; originalThunk->u1.Function; originalThunk++ )
+      {
+        if( !(originalThunk->u1.Ordinal&IMAGE_ORDINAL_FLAG) )
+        {
+          PIMAGE_IMPORT_BY_NAME import = (PIMAGE_IMPORT_BY_NAME)REL_PTR(
+              idh,originalThunk->u1.AddressOfData );
+          if( !GetProcAddress(subMod,(LPCSTR)import->Name) )
+          {
+            if( !exePath[0] )
+            {
+              GetModuleFileNameW( subMod,exePath,MAX_PATH );
+              printf( "%i%S\n",level+1,exePath );
+            }
+            printf( "%i$Wcan't find symbol $I%s\n",level+2,import->Name );
+          }
+        }
+        else
+        {
+          WORD ordinal = (WORD)originalThunk->u1.Ordinal;
+          if( !GetProcAddress(subMod,(LPCSTR)(UINT_PTR)ordinal) )
+          {
+            if( !exePath[0] )
+            {
+              GetModuleFileNameW( subMod,exePath,MAX_PATH );
+              printf( "%i%S\n",level+1,exePath );
+            }
+            printf( "%i$Wcan't find ordinal $I%d\n",level+2,ordinal );
+          }
+        }
+      }
+
+      FreeLibrary( subMod );
+      if( exePath[0] ) return( 0 );
+      continue;
+    }
+
+    DWORD e = GetLastError();
+    subMod = LoadLibraryEx( curModName,NULL,DONT_RESOLVE_DLL_REFERENCES );
+    if( subMod )
+    {
+      checkModule( ad,tc,level+1,subMod,e );
+      FreeLibrary( subMod );
+    }
+    else printf( "%i$Wcan't load $O%s\n",level+1,curModName );
+
+    return( 0 );
+  }
+
+  if( errCode==ERROR_DLL_INIT_FAILED )
+    printf( "%i$Wdll initialization routine failed\n",level+1 );
+  else
+    printf( "%i$Werror: %x (%e)\n",level+1,errCode,errCode );
+
+  return( 1 );
+}
+
+static DWORD unexpectedEnd( appData *ad )
+{
+  DWORD ec;
+  if( !GetExitCodeProcess(ad->pi.hProcess,&ec) ) ec = 0;
+
+  if( ec!=STATUS_DLL_NOT_FOUND && ec!=STATUS_ORDINAL_NOT_FOUND &&
+      ec!=STATUS_ENTRYPOINT_NOT_FOUND && ec!=STATUS_DLL_INIT_FAILED )
+    return( ec );
+
+  HANDLE heap = ad->heap;
+  wchar_t *exePath = ad->exePathW;
+  textColor *tc = ad->tcOut;
+
+  nameOfProcess( GetModuleHandle("ntdll.dll"),
+      heap,ad->pi.hProcess,exePath,-1 );
+  HMODULE exeMod =
+    LoadLibraryExW( exePath,NULL,DONT_RESOLVE_DLL_REFERENCES );
+  if( !exeMod )
+  {
+    printf( "\n$Wcan't load %S\n",exePath );
+    return( ec );
+  }
+
+  const char *ecStr =
+    ec==STATUS_DLL_NOT_FOUND ? "DLL_NOT_FOUND" :
+    ec==STATUS_ORDINAL_NOT_FOUND ? "ORDINAL_NOT_FOUND" :
+    ec==STATUS_ENTRYPOINT_NOT_FOUND ? "ENTRYPOINT_NOT_FOUND" :
+    "DLL_INIT_FAILED";
+  printf( "\n$Sdll loading failure on process startup (%s):\n",ecStr );
+
+  wchar_t *lastDelim = strrchrW( exePath,'\\' );
+  if( lastDelim && lastDelim>exePath )
+  {
+    *lastDelim = 0;
+    SetDllDirectoryW( exePath );
+  }
+
+  checkModule( ad,tc,0,exeMod,0 );
+
+  FreeLibrary( exeMod );
+
+  return( ec );
 }
 
 // }}}
@@ -1418,12 +1585,21 @@ static CODE_SEG(".text$2") HANDLE inject(
     WriteFile( err,killText+2,4,&didwrite,NULL );
   }
 
-  HANDLE h[2] = { initFinished,in };
-  int waitCount = in ? 2 : 1;
+  HANDLE h[3] = { initFinished,process,in };
+  int waitCount = in ? 3 : 2;
   while( 1 )
   {
-    if( WaitForMultipleObjects(waitCount,h,FALSE,INFINITE)==WAIT_OBJECT_0 )
+    DWORD w = WaitForMultipleObjects( waitCount,h,FALSE,INFINITE );
+    if( w==WAIT_OBJECT_0 )
       break;
+
+    if( w==WAIT_OBJECT_0+1 )
+    {
+      CloseHandle( readPipe );
+      readPipe = NULL;
+      *ad->heobExit = HEOB_PROCESS_FAIL;
+      break;
+    }
 
     INPUT_RECORD ir;
     DWORD didread;
@@ -1453,6 +1629,16 @@ static CODE_SEG(".text$2") HANDLE inject(
   {
     CloseHandle( startMain );
     HeapFree( heap,0,fullData );
+
+    if( *ad->heobExit==HEOB_PROCESS_FAIL )
+    {
+      DWORD ec = unexpectedEnd( ad );
+      printf( "\n$Wprocess initialization failed" );
+      if( ec ) printf( " (%x)",ec );
+      printf( "\n" );
+      return( NULL );
+    }
+
     printf( "$Wprocess killed\n" );
     *ad->heobExit = HEOB_PROCESS_KILLED;
     return( NULL );
@@ -5825,9 +6011,14 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
   if( fCoUninitialize ) fCoUninitialize();
   if( ole32 ) FreeLibrary( ole32 );
 
+  dbgsym_close( ds );
+
   if( terminated==-2 )
   {
-    printf( "\n$Wunexpected end of application\n" );
+    DWORD ec = unexpectedEnd( ad );
+    printf( "\n$Wunexpected end of application" );
+    if( ec ) printf( " (%x)",ec );
+    printf( "\n" );
     *ad->heobExit = HEOB_UNEXPECTED_END;
   }
 
@@ -6510,6 +6701,8 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
 
   if( !opt.attached )
   {
+    SetErrorMode( SEM_FAILCRITICALERRORS );
+
     STARTUPINFOW si;
     RtlZeroMemory( &si,sizeof(STARTUPINFO) );
     si.cb = sizeof(STARTUPINFO);
@@ -6839,8 +7032,6 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
       CloseHandle( sampler );
     }
 #endif
-
-    dbgsym_close( &ds );
   }
 
   exitHeob( ad,heobExit,heobExitData,exitCode );

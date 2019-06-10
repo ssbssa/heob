@@ -71,6 +71,8 @@
 
 #define EXCEPTION_VC_CPP_EXCEPTION 0xe06d7363
 
+#define REL_PTR( base,ofs ) ( ((PBYTE)base)+ofs )
+
 // }}}
 // function definitions {{{
 

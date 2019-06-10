@@ -15,8 +15,6 @@
 
 #define SPLIT_MASK 0x3fff
 
-#define REL_PTR( base,ofs ) ( ((PBYTE)base)+ofs )
-
 #define CAPTURE_STACK_TRACE( skip,capture,frames,caller,maxFrames ) \
   do { \
     void **frames_ = frames; \
