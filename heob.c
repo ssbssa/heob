@@ -944,7 +944,7 @@ int isWrongArch( HANDLE process )
   return( remoteWow64!=meWow64 );
 }
 
-static int convertDeviceName( const wchar_t *in,wchar_t *out,int outlen )
+int convertDeviceName( const wchar_t *in,wchar_t *out,int outlen )
 {
   wchar_t drives[128];
   if( !GetLogicalDriveStringsW(127,drives) ) return( 0 );

@@ -4114,7 +4114,10 @@ static int getHandleName( HANDLE h,wchar_t *buf,int buflen,HANDLE heap )
       lstrcpyW( buf,oni->Name.Buffer );
 
       if( lstrcmpW(buf,L"\\Device\\Null") )
+      {
+        convertDeviceName( oni->Name.Buffer,buf,buflen );
         ret = 1;
+      }
     }
   }
   else if( GetFileType(h)==FILE_TYPE_PIPE )
