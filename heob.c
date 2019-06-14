@@ -1201,143 +1201,6 @@ static NORETURN void exitHeob( appData *ad,
 }
 
 // }}}
-// process startup failure {{{
-
-static int checkModule( appData *ad,textColor *tc,int level,
-    HMODULE mod,DWORD errCode )
-{
-  PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)mod;
-  PIMAGE_NT_HEADERS inh = (PIMAGE_NT_HEADERS)REL_PTR( idh,idh->e_lfanew );
-
-  PIMAGE_DATA_DIRECTORY idd =
-    &inh->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
-  if( !idd->Size ) return( 1 );
-
-  PIMAGE_IMPORT_DESCRIPTOR iid =
-    (PIMAGE_IMPORT_DESCRIPTOR)REL_PTR( idh,idd->VirtualAddress );
-
-  wchar_t *exePath = ad->exePathW;
-  GetModuleFileNameW( mod,exePath,MAX_PATH );
-  printf( "%i%S\n",level,exePath );
-
-  UINT i;
-  for( i=0; iid[i].Characteristics; i++ )
-  {
-    if( !iid[i].FirstThunk || !iid[i].OriginalFirstThunk )
-      break;
-
-    PSTR curModName = (PSTR)REL_PTR( idh,iid[i].Name );
-    if( !curModName[0] ) continue;
-
-    HMODULE subMod = LoadLibrary( curModName );
-    if( subMod )
-    {
-      exePath[0] = 0;
-
-      PIMAGE_THUNK_DATA originalThunk =
-        (PIMAGE_THUNK_DATA)REL_PTR( idh,iid[i].OriginalFirstThunk );
-
-      for( ; originalThunk->u1.Function; originalThunk++ )
-      {
-        if( !(originalThunk->u1.Ordinal&IMAGE_ORDINAL_FLAG) )
-        {
-          PIMAGE_IMPORT_BY_NAME import = (PIMAGE_IMPORT_BY_NAME)REL_PTR(
-              idh,originalThunk->u1.AddressOfData );
-          if( !GetProcAddress(subMod,(LPCSTR)import->Name) )
-          {
-            if( !exePath[0] )
-            {
-              GetModuleFileNameW( subMod,exePath,MAX_PATH );
-              printf( "%i%S\n",level+1,exePath );
-            }
-            printf( "%i$Wcan't find symbol $I%s\n",level+2,import->Name );
-          }
-        }
-        else
-        {
-          WORD ordinal = (WORD)originalThunk->u1.Ordinal;
-          if( !GetProcAddress(subMod,(LPCSTR)(UINT_PTR)ordinal) )
-          {
-            if( !exePath[0] )
-            {
-              GetModuleFileNameW( subMod,exePath,MAX_PATH );
-              printf( "%i%S\n",level+1,exePath );
-            }
-            printf( "%i$Wcan't find ordinal $I%d\n",level+2,ordinal );
-          }
-        }
-      }
-
-      FreeLibrary( subMod );
-      if( exePath[0] ) return( 0 );
-      continue;
-    }
-
-    DWORD e = GetLastError();
-    subMod = LoadLibraryEx( curModName,NULL,DONT_RESOLVE_DLL_REFERENCES );
-    if( subMod )
-    {
-      checkModule( ad,tc,level+1,subMod,e );
-      FreeLibrary( subMod );
-    }
-    else printf( "%i$Wcan't load $O%s\n",level+1,curModName );
-
-    return( 0 );
-  }
-
-  if( errCode==ERROR_DLL_INIT_FAILED )
-    printf( "%i$Wdll initialization routine failed\n",level+1 );
-  else
-    printf( "%i$Werror: %x (%e)\n",level+1,errCode,errCode );
-
-  return( 1 );
-}
-
-static DWORD unexpectedEnd( appData *ad )
-{
-  DWORD ec;
-  if( !GetExitCodeProcess(ad->pi.hProcess,&ec) ) ec = 0;
-
-  if( ec!=STATUS_DLL_NOT_FOUND && ec!=STATUS_ORDINAL_NOT_FOUND &&
-      ec!=STATUS_ENTRYPOINT_NOT_FOUND && ec!=STATUS_DLL_INIT_FAILED )
-    return( ec );
-
-  HANDLE heap = ad->heap;
-  wchar_t *exePath = ad->exePathW;
-  textColor *tc = ad->tcOut;
-
-  nameOfProcess( GetModuleHandle("ntdll.dll"),
-      heap,ad->pi.hProcess,exePath,-1 );
-  HMODULE exeMod =
-    LoadLibraryExW( exePath,NULL,DONT_RESOLVE_DLL_REFERENCES );
-  if( !exeMod )
-  {
-    printf( "\n$Wcan't load %S\n",exePath );
-    return( ec );
-  }
-
-  const char *ecStr =
-    ec==STATUS_DLL_NOT_FOUND ? "DLL_NOT_FOUND" :
-    ec==STATUS_ORDINAL_NOT_FOUND ? "ORDINAL_NOT_FOUND" :
-    ec==STATUS_ENTRYPOINT_NOT_FOUND ? "ENTRYPOINT_NOT_FOUND" :
-    "DLL_INIT_FAILED";
-  printf( "\n$Sdll loading failure on process startup (%s):\n",ecStr );
-
-  wchar_t *lastDelim = strrchrW( exePath,'\\' );
-  if( lastDelim && lastDelim>exePath )
-  {
-    *lastDelim = 0;
-    SetDllDirectoryW( exePath );
-  }
-
-  checkModule( ad,tc,0,exeMod,0 );
-
-  FreeLibrary( exeMod );
-
-  return( ec );
-}
-
-// }}}
 // code injection {{{
 
 typedef VOID CALLBACK func_heob( ULONG_PTR );
@@ -1631,13 +1494,7 @@ static CODE_SEG(".text$2") HANDLE inject(
     HeapFree( heap,0,fullData );
 
     if( *ad->heobExit==HEOB_PROCESS_FAIL )
-    {
-      DWORD ec = unexpectedEnd( ad );
-      printf( "\n$Wprocess initialization failed" );
-      if( ec ) printf( " (%x)",ec );
-      printf( "\n" );
       return( NULL );
-    }
 
     printf( "$Wprocess killed\n" );
     *ad->heobExit = HEOB_PROCESS_KILLED;
@@ -4880,6 +4737,144 @@ static void writeSvgFooter( textColor *tc,appData *ad,int sample_times )
 }
 
 // }}}
+// process startup failure {{{
+
+static int checkModule( appData *ad,textColor *tc,int level,
+    HMODULE mod,DWORD errCode )
+{
+  PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)mod;
+  PIMAGE_NT_HEADERS inh = (PIMAGE_NT_HEADERS)REL_PTR( idh,idh->e_lfanew );
+
+  PIMAGE_DATA_DIRECTORY idd =
+    &inh->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+  if( !idd->Size ) return( 1 );
+
+  PIMAGE_IMPORT_DESCRIPTOR iid =
+    (PIMAGE_IMPORT_DESCRIPTOR)REL_PTR( idh,idd->VirtualAddress );
+
+  wchar_t *exePath = ad->exePathW;
+  GetModuleFileNameW( mod,exePath,MAX_PATH );
+  printf( "%i%S\n",level,exePath );
+
+  UINT i;
+  for( i=0; iid[i].Characteristics; i++ )
+  {
+    if( !iid[i].FirstThunk || !iid[i].OriginalFirstThunk )
+      break;
+
+    PSTR curModName = (PSTR)REL_PTR( idh,iid[i].Name );
+    if( !curModName[0] ) continue;
+
+    HMODULE subMod = LoadLibrary( curModName );
+    if( subMod )
+    {
+      exePath[0] = 0;
+
+      PIMAGE_THUNK_DATA originalThunk =
+        (PIMAGE_THUNK_DATA)REL_PTR( idh,iid[i].OriginalFirstThunk );
+
+      for( ; originalThunk->u1.Function; originalThunk++ )
+      {
+        if( !(originalThunk->u1.Ordinal&IMAGE_ORDINAL_FLAG) )
+        {
+          PIMAGE_IMPORT_BY_NAME import = (PIMAGE_IMPORT_BY_NAME)REL_PTR(
+              idh,originalThunk->u1.AddressOfData );
+          if( !GetProcAddress(subMod,(LPCSTR)import->Name) )
+          {
+            if( !exePath[0] )
+            {
+              GetModuleFileNameW( subMod,exePath,MAX_PATH );
+              printf( "%i%S\n",level+1,exePath );
+            }
+            printf( "%i$Wcan't find symbol $I%s\n",level+2,import->Name );
+          }
+        }
+        else
+        {
+          WORD ordinal = (WORD)originalThunk->u1.Ordinal;
+          if( !GetProcAddress(subMod,(LPCSTR)(UINT_PTR)ordinal) )
+          {
+            if( !exePath[0] )
+            {
+              GetModuleFileNameW( subMod,exePath,MAX_PATH );
+              printf( "%i%S\n",level+1,exePath );
+            }
+            printf( "%i$Wcan't find ordinal $I%d\n",level+2,ordinal );
+          }
+        }
+      }
+
+      FreeLibrary( subMod );
+      if( exePath[0] ) return( 0 );
+      continue;
+    }
+
+    DWORD e = GetLastError();
+    subMod = LoadLibraryEx( curModName,NULL,DONT_RESOLVE_DLL_REFERENCES );
+    if( subMod )
+    {
+      checkModule( ad,tc,level+1,subMod,e );
+      FreeLibrary( subMod );
+    }
+    else
+      printf( "%i$Wcan't load $O%s\n",level+1,curModName );
+
+    return( 0 );
+  }
+
+  if( errCode==ERROR_DLL_INIT_FAILED )
+    printf( "%i$Wdll initialization routine failed\n",level+1 );
+  else
+    printf( "%i$Werror: %x (%e)\n",level+1,errCode,errCode );
+
+  return( 1 );
+}
+
+static DWORD unexpectedEnd( appData *ad )
+{
+  DWORD ec;
+  if( !GetExitCodeProcess(ad->pi.hProcess,&ec) ) ec = 0;
+
+  if( ec!=STATUS_DLL_NOT_FOUND && ec!=STATUS_ORDINAL_NOT_FOUND &&
+      ec!=STATUS_ENTRYPOINT_NOT_FOUND && ec!=STATUS_DLL_INIT_FAILED )
+    return( ec );
+
+  HANDLE heap = ad->heap;
+  wchar_t *exePath = ad->exePathW;
+  textColor *tc = ad->tcOut;
+
+  nameOfProcess( GetModuleHandle("ntdll.dll"),
+      heap,ad->pi.hProcess,exePath,-1 );
+  HMODULE exeMod =
+    LoadLibraryExW( exePath,NULL,DONT_RESOLVE_DLL_REFERENCES );
+  if( !exeMod )
+  {
+    printf( "\n$Wcan't load %S\n",exePath );
+    return( ec );
+  }
+
+  const char *ecStr =
+    ec==STATUS_DLL_NOT_FOUND ? "DLL_NOT_FOUND" :
+    ec==STATUS_ORDINAL_NOT_FOUND ? "ORDINAL_NOT_FOUND" :
+    ec==STATUS_ENTRYPOINT_NOT_FOUND ? "ENTRYPOINT_NOT_FOUND" :
+    "DLL_INIT_FAILED";
+  printf( "\n$Sdll loading failure on process startup (%s):\n",ecStr );
+
+  wchar_t *lastDelim = strrchrW( exePath,'\\' );
+  if( lastDelim && lastDelim>exePath )
+  {
+    *lastDelim = 0;
+    SetDllDirectoryW( exePath );
+  }
+
+  checkModule( ad,tc,0,exeMod,0 );
+
+  FreeLibrary( exeMod );
+
+  return( ec );
+}
+
+// }}}
 // main loop {{{
 
 static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
@@ -6928,7 +6923,16 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     ad->readPipe = inject( ad,&defopt,tc,
         subOutName,subXmlName,subSvgName,subCurDir );
   if( !ad->readPipe )
+  {
+    if( heobExit==HEOB_PROCESS_FAIL )
+    {
+      DWORD ec = unexpectedEnd( ad );
+      printf( "\n$Wprocess initialization failed" );
+      if( ec ) printf( " (%x)",ec );
+      printf( "\n" );
+    }
     TerminateProcess( ad->pi.hProcess,1 );
+  }
 
   UINT exitCode = 0x7fffffff;
   if( ad->readPipe )
