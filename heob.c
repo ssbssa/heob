@@ -1126,6 +1126,7 @@ typedef struct appData
   DWORD appCounterID;
   HANDLE appCounterMapping;
   size_t kernel32offset;
+  DWORD startTicks;
 
 #if USE_STACKWALK
   CRITICAL_SECTION csSampling;
@@ -1149,6 +1150,7 @@ static appData *initHeob( HANDLE heap )
   appData *ad = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(appData) );
   ad->heap = heap;
   ad->errorPipe = openErrorPipe( &ad->writeProcessPid );
+  ad->startTicks = GetTickCount();
 #if USE_STACKWALK
   InitializeCriticalSection( &ad->csSampling );
 #endif
@@ -3972,7 +3974,7 @@ static textColor *createExpandedXml( appData *ad,const wchar_t *name )
   return( tc );
 }
 
-static textColor *writeXmlHeader( appData *ad,DWORD startTicks )
+static textColor *writeXmlHeader( appData *ad )
 {
   textColor *tc = createExpandedXml( ad,ad->xmlName );
   if( !tc ) return( NULL );
@@ -4105,23 +4107,23 @@ static textColor *writeXmlHeader( appData *ad,DWORD startTicks )
 
   printf( "<status>\n  <state>RUNNING</state>\n"
       "  <time>%t</time>\n</status>\n\n",
-      GetTickCount()-startTicks );
+      GetTickCount()-ad->startTicks );
 
   return( tc );
 }
 
-static void writeXmlFooter( textColor *tc,HANDLE heap,DWORD startTicks )
+static void writeXmlFooter( textColor *tc,appData *ad )
 {
   if( !tc ) return;
 
   printf( "<status>\n  <state>FINISHED</state>\n"
       "  <time>%t</time>\n</status>\n\n",
-      GetTickCount()-startTicks );
+      GetTickCount()-ad->startTicks );
 
   printf( "</valgrindoutput>\n" );
 
   CloseHandle( tc->out );
-  HeapFree( heap,0,tc );
+  HeapFree( ad->heap,0,tc );
 }
 
 static void writeXmlAllocatedFreed( textColor *tc,dbgsym *ds,
@@ -4877,9 +4879,9 @@ static DWORD unexpectedEnd( appData *ad )
 // }}}
 // main loop {{{
 
-static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
+static void mainLoop( appData *ad,UINT *exitCode )
 {
-  textColor *tcXml = writeXmlHeader( ad,startTicks );
+  textColor *tcXml = writeXmlHeader( ad );
   textColor *tcSvg = writeSvgHeader( ad );
 
   HANDLE heap = ad->heap;
@@ -6038,7 +6040,7 @@ static void mainLoop( appData *ad,DWORD startTicks,UINT *exitCode )
     deleteFileOnClose( tcSvg );
   }
 
-  writeXmlFooter( tcXml,heap,startTicks );
+  writeXmlFooter( tcXml,ad );
   writeSvgFooter( tcSvg,ad,sample_times );
 }
 
@@ -6321,7 +6323,6 @@ static const char *funcnames[FT_COUNT] = {
 
 CODE_SEG(".text$7") void mainCRTStartup( void )
 {
-  DWORD startTicks = GetTickCount();
   HANDLE heap = GetProcessHeap();
   appData *ad = initHeob( heap );
   ad->in = GetStdHandle( STD_INPUT_HANDLE );
@@ -7026,7 +7027,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
       ad->attachEvent = NULL;
     }
 
-    mainLoop( ad,startTicks,&exitCode );
+    mainLoop( ad,&exitCode );
 
 #if USE_STACKWALK
     if( sampler )
