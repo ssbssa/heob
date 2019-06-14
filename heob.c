@@ -128,7 +128,7 @@ NOINLINE wchar_t *num2strW( wchar_t *start,uintptr_t arg,int minus )
 
 static NOINLINE void mprintf( textColor *tc,const char *format,... )
 {
-  if( !tc->out ) return;
+  if( !tc || !tc->out ) return;
 
   va_list vl;
   va_start( vl,format );
@@ -4741,7 +4741,7 @@ static void writeSvgFooter( textColor *tc,appData *ad,int sample_times )
 // }}}
 // process startup failure {{{
 
-static int checkModule( appData *ad,textColor *tc,int level,
+static int checkModule( appData *ad,textColor *tc,textColor *tcXml,int level,
     HMODULE mod,DWORD errCode )
 {
   PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)mod;
@@ -4757,6 +4757,11 @@ static int checkModule( appData *ad,textColor *tc,int level,
   wchar_t *exePath = ad->exePathW;
   GetModuleFileNameW( mod,exePath,MAX_PATH );
   printf( "%i%S\n",level,exePath );
+  mprintf( tcXml,
+      "    <frame>\n"
+      "      <obj>%S</obj>\n"
+      "    </frame>\n",
+      exePath );
 
   UINT i;
   for( i=0; iid[i].Characteristics; i++ )
@@ -4787,8 +4792,18 @@ static int checkModule( appData *ad,textColor *tc,int level,
             {
               GetModuleFileNameW( subMod,exePath,MAX_PATH );
               printf( "%i%S\n",level+1,exePath );
+              mprintf( tcXml,
+                  "    <frame>\n"
+                  "      <obj>%S</obj>\n"
+                  "    </frame>\n",
+                  exePath );
             }
             printf( "%i$Wcan't find symbol $I%s\n",level+2,import->Name );
+            mprintf( tcXml,
+                "  </stack>\n"
+                "  <auxwhat>can't find symbol %s</auxwhat>\n"
+                "  <stack>\n",
+                import->Name );
           }
         }
         else
@@ -4800,8 +4815,18 @@ static int checkModule( appData *ad,textColor *tc,int level,
             {
               GetModuleFileNameW( subMod,exePath,MAX_PATH );
               printf( "%i%S\n",level+1,exePath );
+              mprintf( tcXml,
+                  "    <frame>\n"
+                  "      <obj>%S</obj>\n"
+                  "    </frame>\n",
+                  exePath );
             }
             printf( "%i$Wcan't find ordinal $I%d\n",level+2,ordinal );
+            mprintf( tcXml,
+                "  </stack>\n"
+                "  <auxwhat>can't find ordinal %d</auxwhat>\n"
+                "  <stack>\n",
+                ordinal );
           }
         }
       }
@@ -4815,25 +4840,47 @@ static int checkModule( appData *ad,textColor *tc,int level,
     subMod = LoadLibraryEx( curModName,NULL,DONT_RESOLVE_DLL_REFERENCES );
     if( subMod )
     {
-      checkModule( ad,tc,level+1,subMod,e );
+      checkModule( ad,tc,tcXml,level+1,subMod,e );
       FreeLibrary( subMod );
     }
     else
+    {
       printf( "%i$Wcan't load $O%s\n",level+1,curModName );
+      mprintf( tcXml,
+          "  </stack>\n"
+          "  <auxwhat>can't load %s</auxwhat>\n"
+          "  <stack>\n",
+          curModName );
+    }
 
     return( 0 );
   }
 
   if( errCode==ERROR_DLL_INIT_FAILED )
+  {
     printf( "%i$Wdll initialization routine failed\n",level+1 );
+    mprintf( tcXml,
+        "  </stack>\n"
+        "  <auxwhat>dll initialization routine failed</auxwhat>\n"
+        "  <stack>\n" );
+  }
   else
+  {
     printf( "%i$Werror: %x (%e)\n",level+1,errCode,errCode );
+    mprintf( tcXml,
+        "  </stack>\n"
+        "  <auxwhat>error: %x (%e)</auxwhat>\n"
+        "  <stack>\n",
+        errCode,errCode );
+  }
 
   return( 1 );
 }
 
-static DWORD unexpectedEnd( appData *ad )
+static DWORD unexpectedEnd( appData *ad,textColor *tcXml,int *errorWritten )
 {
+  *errorWritten = 0;
+
   DWORD ec;
   if( !GetExitCodeProcess(ad->pi.hProcess,&ec) ) ec = 0;
 
@@ -4841,9 +4888,22 @@ static DWORD unexpectedEnd( appData *ad )
       ec!=STATUS_ENTRYPOINT_NOT_FOUND && ec!=STATUS_DLL_INIT_FAILED )
     return( ec );
 
+  *errorWritten = 1;
+
   HANDLE heap = ad->heap;
   wchar_t *exePath = ad->exePathW;
   textColor *tc = ad->tcOut;
+
+  int xmlCreated = 0;
+  if( !tcXml )
+  {
+    tcXml = writeXmlHeader( ad );
+    xmlCreated = 1;
+  }
+
+  mprintf( tcXml,
+      "<error>\n"
+      "  <kind>SyscallParam</kind>\n" );
 
   nameOfProcess( GetModuleHandle("ntdll.dll"),
       heap,ad->pi.hProcess,exePath,-1 );
@@ -4852,6 +4912,11 @@ static DWORD unexpectedEnd( appData *ad )
   if( !exeMod )
   {
     printf( "\n$Wcan't load %S\n",exePath );
+    mprintf( tcXml,
+        "  <what>can't load %S</what>\n"
+        "</error>\n\n",
+        exePath );
+    if( xmlCreated ) writeXmlFooter( tcXml,ad );
     return( ec );
   }
 
@@ -4862,6 +4927,12 @@ static DWORD unexpectedEnd( appData *ad )
     "DLL_INIT_FAILED";
   printf( "\n$Sdll loading failure on process startup (%s):\n",ecStr );
 
+  mprintf( tcXml,
+      "  <what>dll loading failure on process startup (%s)</what>\n"
+      "  <auxwhat>dll dependencies</auxwhat>\n"
+      "  <stack>\n",
+      ecStr );
+
   wchar_t *lastDelim = strrchrW( exePath,'\\' );
   if( lastDelim && lastDelim>exePath )
   {
@@ -4869,7 +4940,12 @@ static DWORD unexpectedEnd( appData *ad )
     SetDllDirectoryW( exePath );
   }
 
-  checkModule( ad,tc,0,exeMod,0 );
+  checkModule( ad,tc,tcXml,0,exeMod,0 );
+
+  mprintf( tcXml,
+      "  </stack>\n"
+      "</error>\n\n" );
+  if( xmlCreated ) writeXmlFooter( tcXml,ad );
 
   FreeLibrary( exeMod );
 
@@ -6012,11 +6088,18 @@ static void mainLoop( appData *ad,UINT *exitCode )
 
   if( terminated==-2 )
   {
-    DWORD ec = unexpectedEnd( ad );
+    int errorWritten;
+    DWORD ec = unexpectedEnd( ad,tcXml,&errorWritten );
     printf( "\n$Wunexpected end of application" );
     if( ec ) printf( " (%x)",ec );
     printf( "\n" );
-    *ad->heobExit = HEOB_UNEXPECTED_END;
+    if( !errorWritten )
+      *ad->heobExit = HEOB_UNEXPECTED_END;
+    else
+    {
+      *ad->heobExit = HEOB_OK;
+      *ad->heobExitData = ec;
+    }
   }
 
   CloseHandle( ov.hEvent );
@@ -6927,10 +7010,17 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   {
     if( heobExit==HEOB_PROCESS_FAIL )
     {
-      DWORD ec = unexpectedEnd( ad );
+      int errorWritten;
+      DWORD ec = unexpectedEnd( ad,NULL,&errorWritten );
       printf( "\n$Wprocess initialization failed" );
       if( ec ) printf( " (%x)",ec );
       printf( "\n" );
+
+      if( errorWritten )
+      {
+        heobExit = HEOB_OK;
+        heobExitData = ec;
+      }
     }
     TerminateProcess( ad->pi.hProcess,1 );
   }
