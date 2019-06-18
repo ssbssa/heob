@@ -576,16 +576,17 @@ static NOINLINE int trackFree(
     // successful free {{{
     if( LIKELY(successfulFree) )
     {
-      RtlMoveMemory( &fa,&sa->alloc_a[i],sizeof(allocation) );
+      allocation *a = sa->alloc_a + i;
+      RtlMoveMemory( &fa,a,sizeof(allocation) );
 
-      if( !failed_realloc )
+      if( UNLIKELY(failed_realloc) )
+        a->ftFreed = FT_COUNT;
+      else
       {
         sa->alloc_q--;
-        if( i<sa->alloc_q ) RtlMoveMemory(
-            &sa->alloc_a[i],&sa->alloc_a[sa->alloc_q],sizeof(allocation) );
+        if( i<sa->alloc_q )
+          RtlMoveMemory( a,&sa->alloc_a[sa->alloc_q],sizeof(allocation) );
       }
-      else
-        sa->alloc_a[i].ftFreed = FT_COUNT;
 
       LeaveCriticalSection( &sa->cs );
 
@@ -679,8 +680,9 @@ static NOINLINE int trackFree(
     {
       if( i>=0 )
       {
-        RtlMoveMemory( &fa,&sa->alloc_a[i],sizeof(allocation) );
-        sa->alloc_a[i].ftFreed = FT_BLOCKED;
+        allocation *a = sa->alloc_a + i;
+        RtlMoveMemory( &fa,a,sizeof(allocation) );
+        a->ftFreed = FT_BLOCKED;
       }
 
       LeaveCriticalSection( &sa->cs );
