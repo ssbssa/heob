@@ -2476,6 +2476,7 @@ static void addLoadedModule( HMODULE mod )
   replaceModFuncs();
   LeaveCriticalSection( &rd->csMod );
 
+#if USE_STACKWALK
   if( rd->opt.samplingInterval )
   {
     int mi_q = 0;
@@ -2488,6 +2489,7 @@ static void addLoadedModule( HMODULE mod )
 
     LeaveCriticalSection( &rd->csWrite );
   }
+#endif
 }
 
 static HMODULE WINAPI new_LoadLibraryA( LPCSTR name )
