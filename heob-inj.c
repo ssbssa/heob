@@ -1029,8 +1029,6 @@ static NOINLINE int trackFree(
                 aa[1].id = 3;
                 aa[1].frames[0] =
                   REL_PTR( idh,inh->OptionalHeader.BaseOfCode );
-
-                foundAlloc = 1;
               }
               break;
             }
