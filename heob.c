@@ -1100,8 +1100,8 @@ typedef struct appData
   wchar_t *xmlName;
   wchar_t *svgName;
   wchar_t *specificOptions;
-  modInfo *a2l_mi_a;
-  int a2l_mi_q;
+  modInfo *mi_a;
+  int mi_q;
   DWORD ppid;
   wchar_t pExePath[MAX_PATH];
   DWORD dbgPid;
@@ -1177,7 +1177,7 @@ static NORETURN void exitHeob( appData *ad,
   if( ad->xmlName ) HeapFree( heap,0,ad->xmlName );
   if( ad->svgName ) HeapFree( heap,0,ad->svgName );
   if( ad->specificOptions ) HeapFree( heap,0,ad->specificOptions );
-  if( ad->a2l_mi_a ) HeapFree( heap,0,ad->a2l_mi_a );
+  if( ad->mi_a ) HeapFree( heap,0,ad->mi_a );
   if( ad->api ) HeapFree( heap,0,ad->api );
 
 #if USE_STACKWALK
@@ -6662,13 +6662,12 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
           if( !*end || end<=start ) break;
           uintptr_t base = wtop( end+1 );
           if( !base ) break;
-          ad->a2l_mi_q++;
-          if( !ad->a2l_mi_a )
-            ad->a2l_mi_a = HeapAlloc( heap,0,ad->a2l_mi_q*sizeof(modInfo) );
+          ad->mi_q++;
+          if( !ad->mi_a )
+            ad->mi_a = HeapAlloc( heap,0,ad->mi_q*sizeof(modInfo) );
           else
-            ad->a2l_mi_a = HeapReAlloc(
-                heap,0,ad->a2l_mi_a,ad->a2l_mi_q*sizeof(modInfo) );
-          modInfo *mi = ad->a2l_mi_a + ( ad->a2l_mi_q-1 );
+            ad->mi_a = HeapReAlloc( heap,0,ad->mi_a,ad->mi_q*sizeof(modInfo) );
+          modInfo *mi = ad->mi_a + ( ad->mi_q-1 );
           mi->base = base;
           mi->size = 0;
           size_t len = end - start;
@@ -6722,11 +6721,11 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   // }}}
 
   // trace mode {{{
-  if( ad->a2l_mi_a )
+  if( ad->mi_a )
   {
     allocation *a = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(allocation) );
-    modInfo *a2l_mi_a = ad->a2l_mi_a;
-    int a2l_mi_q = ad->a2l_mi_q;
+    modInfo *a2l_mi_a = ad->mi_a;
+    int a2l_mi_q = ad->mi_q;
 
     while( args && args[0]>='0' && args[0]<='9' )
     {
