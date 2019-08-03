@@ -1757,7 +1757,7 @@ static void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
     ds->undname = HeapAlloc( heap,0,MAX_SYM_NAME+1 );
 
     if( fSymSetOptions )
-      fSymSetOptions( SYMOPT_LOAD_LINES );
+      fSymSetOptions( SYMOPT_LOAD_LINES|SYMOPT_DEFERRED_LOADS );
     if( fSymInitializeW )
       fSymInitializeW( ds->process,dbgPath,invade );
     else if( fSymInitialize )
