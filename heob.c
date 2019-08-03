@@ -2195,6 +2195,47 @@ static void cacheSymbolData(
   HeapFree( ds->heap,0,frames );
 }
 
+static const char *mapOfFile( const wchar_t *name,size_t *size )
+{
+  HANDLE file = CreateFileW( name,GENERIC_READ,FILE_SHARE_READ,
+      NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,0 );
+  if( file==INVALID_HANDLE_VALUE ) return( NULL );
+
+  const char *map = NULL;
+
+  BY_HANDLE_FILE_INFORMATION bhfi;
+  if( GetFileInformationByHandle(file,&bhfi) && (
+#ifndef _WIN64
+        !bhfi.nFileSizeHigh &&
+#else
+        bhfi.nFileSizeHigh ||
+#endif
+        bhfi.nFileSizeLow) )
+  {
+    HANDLE mapping = CreateFileMapping( file,NULL,PAGE_READONLY,0,0,NULL );
+    if( mapping )
+    {
+      map = MapViewOfFile( mapping,FILE_MAP_READ,0,0,0 );
+
+      CloseHandle( mapping );
+    }
+  }
+
+  CloseHandle( file );
+
+  if( !map ) return( NULL );
+
+  if( size )
+  {
+    *size = bhfi.nFileSizeLow;
+#ifdef _WIN64
+    *size |= (size_t)bhfi.nFileSizeHigh << 32;
+#endif
+  }
+
+  return( map );
+}
+
 static void locOut( textColor *tc,uintptr_t addr,
     const wchar_t *filename,int lineno,int columnno,const char *funcname,
     options *opt,int indent )
@@ -2243,75 +2284,57 @@ static void locOut( textColor *tc,uintptr_t addr,
       // show source code {{{
       if( opt->sourceCode )
       {
-        HANDLE file = CreateFileW( filename,GENERIC_READ,FILE_SHARE_READ,
-            NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,0 );
-        if( file!=INVALID_HANDLE_VALUE )
+        size_t filesize;
+        const char *map = mapOfFile( filename,&filesize );
+        if( map )
         {
-          BY_HANDLE_FILE_INFORMATION fileInfo;
-          if( GetFileInformationByHandle(file,&fileInfo) &&
-              fileInfo.nFileSizeLow && !fileInfo.nFileSizeHigh )
+          const char *bol = map;
+          const char *eof = map + filesize;
+          int firstLine = lineno + 1 - opt->sourceCode;
+          if( firstLine<1 ) firstLine = 1;
+          int lastLine = lineno - 1 + opt->sourceCode;
+          if( firstLine>1 )
+            printf( "%i      ...\n",indent );
+          int i;
+          if( columnno>0 ) columnno--;
+          for( i=1; i<=lastLine; i++ )
           {
-            HANDLE mapping = CreateFileMapping(
-                file,NULL,PAGE_READONLY,0,0,NULL );
-            if( mapping )
+            const char *eol = memchr( bol,'\n',eof-bol );
+            if( !eol ) eol = eof;
+            else eol++;
+
+            if( i>=firstLine )
             {
-              const char *map = MapViewOfFile( mapping,FILE_MAP_READ,0,0,0 );
-              if( map )
+              if( i==lineno )
               {
-                const char *bol = map;
-                const char *eof = map + fileInfo.nFileSizeLow;
-                int firstLine = lineno + 1 - opt->sourceCode;
-                if( firstLine<1 ) firstLine = 1;
-                int lastLine = lineno - 1 + opt->sourceCode;
-                if( firstLine>1 )
-                  printf( "%i      ...\n",indent );
-                int i;
-                if( columnno>0 ) columnno--;
-                for( i=1; i<=lastLine; i++ )
+                printf( "%i$S  >   ",indent );
+                if( columnno>0 && columnno<eol-bol )
                 {
-                  const char *eol = memchr( bol,'\n',eof-bol );
-                  if( !eol ) eol = eof;
-                  else eol++;
-
-                  if( i>=firstLine )
-                  {
-                    if( i==lineno )
-                    {
-                      printf( "%i$S  >   ",indent );
-                      if( columnno>0 && columnno<eol-bol )
-                      {
-                        printf( "$N" );
-                        tc->fWriteText( tc,bol,columnno );
-                        bol += columnno;
-                        printf( "$S" );
-                      }
-                      tc->fWriteText( tc,bol,eol-bol );
-                      printf( "$N" );
-                    }
-                    else
-                    {
-                      printf( "%i      ",indent );
-                      tc->fWriteText( tc,bol,eol-bol );
-                    }
-                  }
-
-                  bol = eol;
-                  if( bol==eof ) break;
+                  printf( "$N" );
+                  tc->fWriteText( tc,bol,columnno );
+                  bol += columnno;
+                  printf( "$S" );
                 }
-                if( bol>map && bol[-1]!='\n' )
-                  printf( "\n" );
-                if( bol!=eof )
-                  printf( "%i      ...\n",indent );
-                printf( "%i\n",indent );
-
-                UnmapViewOfFile( map );
+                tc->fWriteText( tc,bol,eol-bol );
+                printf( "$N" );
               }
-
-              CloseHandle( mapping );
+              else
+              {
+                printf( "%i      ",indent );
+                tc->fWriteText( tc,bol,eol-bol );
+              }
             }
-          }
 
-          CloseHandle( file );
+            bol = eol;
+            if( bol==eof ) break;
+          }
+          if( bol>map && bol[-1]!='\n' )
+            printf( "\n" );
+          if( bol!=eof )
+            printf( "%i      ...\n",indent );
+          printf( "%i\n",indent );
+
+          UnmapViewOfFile( map );
         }
       }
       // }}}
