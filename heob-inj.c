@@ -3864,6 +3864,7 @@ void stackwalkDbghelp( stackwalkFunctions *swf,options *opt,
   stack.AddrFrame.Mode = AddrModeFlat;
 
   func_StackWalk64 *fStackWalk64 = swf->fStackWalk64;
+  PREAD_PROCESS_MEMORY_ROUTINE64 fReadProcessMemory = swf->fReadProcessMemory;
   PFUNCTION_TABLE_ACCESS_ROUTINE64 fSymFunctionTableAccess64 =
     swf->fSymFunctionTableAccess64;
   PGET_MODULE_BASE_ROUTINE64 fSymGetModuleBase64 =
@@ -3873,7 +3874,8 @@ void stackwalkDbghelp( stackwalkFunctions *swf,options *opt,
   while( count<PTRS )
   {
     if( !fStackWalk64(MACH_TYPE,process,thread,&stack,&context,
-          NULL,fSymFunctionTableAccess64,fSymGetModuleBase64,NULL) )
+          fReadProcessMemory,fSymFunctionTableAccess64,fSymGetModuleBase64,
+          NULL) )
       break;
 
     uintptr_t frame = (uintptr_t)stack.AddrPC.Offset;

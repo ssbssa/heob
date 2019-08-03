@@ -1080,6 +1080,16 @@ typedef struct sharedAppCounter
 }
 sharedAppCounter;
 
+#if USE_STACKWALK
+typedef struct dump_memory_loc
+{
+  const char *ptr;
+  size_t size;
+  size_t address;
+}
+dump_memory_loc;
+#endif
+
 typedef struct appData
 {
   HANDLE heap;
@@ -1141,6 +1151,11 @@ typedef struct appData
   threadSamplingType *thread_samp_a;
   int thread_samp_q;
   int thread_samp_s;
+
+  dump_memory_loc *dump_mem_a;
+  int dump_mem_q;
+  const char **dump_mi_map_a;
+  MINIDUMP_MODULE *dump_mod_a;
 #endif
 }
 appData;
@@ -1185,6 +1200,8 @@ static NORETURN void exitHeob( appData *ad,
   if( ad->samplingStop ) CloseHandle( ad->samplingStop );
   if( ad->thread_samp_a ) HeapFree( heap,0,ad->thread_samp_a );
   if( ad->samp_a ) HeapFree( heap,0,ad->samp_a );
+
+  if( ad->dump_mem_a ) HeapFree( heap,0,ad->dump_mem_a );
 #endif
 
 #ifndef NO_DBGENG
@@ -1607,6 +1624,7 @@ typedef struct dbgsym
   func_MiniDumpWriteDump *fMiniDumpWriteDump;
 #if USE_STACKWALK
   stackwalkFunctions swf;
+  func_SymFindFileInPathW *fSymFindFileInPathW;
 #endif
   IMAGEHLP_LINE64 *il;
   IMAGEHLP_LINEW64 *ilW;
@@ -1748,6 +1766,10 @@ static void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
     ds->swf.fSymGetModuleBase64 =
       (PGET_MODULE_BASE_ROUTINE64)GetProcAddress(
           ds->symMod,"SymGetModuleBase64" );
+    ds->swf.fReadProcessMemory = NULL;
+    ds->fSymFindFileInPathW =
+      (func_SymFindFileInPathW*)GetProcAddress(
+          ds->symMod,"SymFindFileInPathW" );
 #endif
     ds->fMiniDumpWriteDump = (func_MiniDumpWriteDump*)GetProcAddress(
         ds->symMod,"MiniDumpWriteDump" );
@@ -5188,6 +5210,392 @@ static void writeException( appData *ad,textColor *tcXml,
 }
 
 // }}}
+// minidump {{{
+
+#if USE_STACKWALK
+static int addDumpMemoryLoc( appData *ad,
+    const char *ptr,size_t size,size_t address )
+{
+  if( !(ad->dump_mem_q%64) )
+  {
+    dump_memory_loc *dump_mem_a = ad->dump_mem_a;
+    int dump_mem_q = ad->dump_mem_q + 64;
+    if( !dump_mem_a )
+      dump_mem_a = HeapAlloc( ad->heap,0,dump_mem_q*sizeof(dump_memory_loc) );
+    else
+      dump_mem_a = HeapReAlloc(
+          ad->heap,0,dump_mem_a,dump_mem_q*sizeof(dump_memory_loc) );
+    if( !dump_mem_a ) return( 0 );
+
+    ad->dump_mem_a = dump_mem_a;
+  }
+
+  dump_memory_loc *dml = ad->dump_mem_a + ad->dump_mem_q;
+  dml->ptr = ptr;
+  dml->size = size;
+  dml->address = address;
+
+  ad->dump_mem_q++;
+
+  return( 1 );
+}
+
+static const void *getDumpLoc( appData *ad,size_t address,size_t *size )
+{
+  dump_memory_loc *dump_mem_a = ad->dump_mem_a;
+  int dump_mem_q = ad->dump_mem_q;
+  int i;
+  for( i=0; i<dump_mem_q; i++ )
+  {
+    dump_memory_loc *dml = dump_mem_a + i;
+    if( address>=dml->address && address<dml->address+dml->size )
+    {
+      if( size ) *size = dml->address + dml->size - address;
+      return( dml->ptr + address - dml->address );
+    }
+  }
+  return( NULL );
+}
+
+static BOOL WINAPI readDumpMemory( HANDLE process,
+    DWORD64 address,PVOID buffer,DWORD size,LPDWORD bytesRead )
+{
+  appData *ad = process;
+
+  size_t maxSize;
+  const void *loc = getDumpLoc( ad,(size_t)address,&maxSize );
+  if( loc )
+  {
+    if( size>maxSize ) size = (DWORD)maxSize;
+    RtlMoveMemory( buffer,loc,size );
+    *bytesRead = size;
+    return( TRUE );
+  }
+
+  if( !ad->dump_mi_map_a ) return( FALSE );
+
+  int i;
+  for( i=0; i<ad->mi_q; i++ )
+  {
+    if( address<ad->mi_a[i].base ||
+        address>=ad->mi_a[i].base+ad->mi_a[i].size )
+      continue;
+
+    if( ad->dump_mi_map_a[i] ) break;
+
+    const char *map = mapOfFile( ad->mi_a[i].path,NULL );
+    if( !map )
+    {
+      ad->dump_mi_map_a[i] = (char*)1;
+      break;
+    }
+
+    PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)map;
+    PIMAGE_NT_HEADERS inh = REL_PTR( idh,idh->e_lfanew );
+
+    size_t base = ad->mi_a[i].base;
+
+    addDumpMemoryLoc( ad,map,inh->OptionalHeader.SizeOfHeaders,base );
+
+    PIMAGE_SECTION_HEADER ish = IMAGE_FIRST_SECTION( inh );
+    int j;
+    for( j=0; j<inh->FileHeader.NumberOfSections; j++,ish++ )
+    {
+      if( !ish->SizeOfRawData ) continue;
+
+      addDumpMemoryLoc( ad,
+          map+ish->PointerToRawData,ish->SizeOfRawData,
+          base+ish->VirtualAddress );
+    }
+
+    ad->dump_mi_map_a[i] = map;
+
+    return( readDumpMemory(process,address,buffer,size,bytesRead) );
+  }
+
+  *bytesRead = 0;
+  return( FALSE );
+}
+
+static BOOL WINAPI symbolCallback( HANDLE process,
+    ULONG action,ULONG64 data,ULONG64 context )
+{
+  (void)context;
+
+  switch( action )
+  {
+    case CBA_READ_MEMORY:
+      {
+        IMAGEHLP_CBA_READ_MEMORY *icrm =
+          (IMAGEHLP_CBA_READ_MEMORY*)(size_t)data;
+        return( readDumpMemory(process,
+              icrm->addr,icrm->buf,icrm->bytes,icrm->bytesread) );
+      }
+    case CBA_DEFERRED_SYMBOL_LOAD_START:
+      {
+        appData *ad = process;
+        dbgsym *ds = ad->ds;
+        if( !ds->fSymFindFileInPathW ) return( FALSE );
+
+        IMAGEHLP_DEFERRED_SYMBOL_LOAD64 *symload =
+          (IMAGEHLP_DEFERRED_SYMBOL_LOAD64*)(size_t)data;
+        int m;
+        for( m=0; m<ad->mi_q; m++ )
+          if( ad->dump_mod_a[m].BaseOfImage==symload->BaseOfImage ) break;
+        if( m==ad->mi_q ) return( FALSE );
+
+        wchar_t *filename = ad->mi_a[m].path;
+        BOOL ret = ds->fSymFindFileInPathW( ds->process,NULL,filename,
+            &ad->dump_mod_a[m].TimeDateStamp,ad->dump_mod_a[m].SizeOfImage,
+            0,SSRVOPT_DWORDPTR,ds->absPath,NULL,NULL );
+        if( ret )
+        {
+          lstrcpynW( filename,ds->absPath,MAX_PATH );
+          return( TRUE );
+        }
+
+        return( FALSE );
+      }
+  }
+
+  return( FALSE );
+}
+
+static int isMinidump( appData *ad,const wchar_t *name )
+{
+  HANDLE heap = ad->heap;
+  textColor *tc = ad->tcOut;
+
+  const wchar_t *symPath = L".";
+  wchar_t *nameCopy = NULL;
+  const wchar_t *end = NULL;
+  if( name[0]=='"' )
+  {
+    name++;
+    end = strchrW( name,'"' );
+  }
+  else end = strchrW( name,' ' );
+  if( end )
+  {
+    int l = (int)( end - name );
+    nameCopy = HeapAlloc( heap,0,(l+1)*2 );
+    RtlMoveMemory( nameCopy,name,l*2 );
+    nameCopy[l] = 0;
+    name = nameCopy;
+
+    if( end[0]=='"' ) end++;
+    while( end[0]==' ') end++;
+    if( end[0] ) symPath = end;
+  }
+
+  int l = lstrlenW( name );
+  if( l<=4 ||
+      CompareStringW(LOCALE_SYSTEM_DEFAULT,NORM_IGNORECASE,
+        name+l-4,4,L".dmp",4)!=2 )
+  {
+    if( nameCopy ) HeapFree( heap,0,nameCopy );
+    return( 0 );
+  }
+
+  size_t size;
+  const char *dump = mapOfFile( name,&size );
+  if( nameCopy ) HeapFree( heap,0,nameCopy );
+  if( !dump ) return( 0 );
+
+  if( size<sizeof(MINIDUMP_HEADER) ||
+      dump[0]!='M' || dump[1]!='D' || dump[2]!='M' || dump[3]!='P' )
+  {
+    UnmapViewOfFile( dump );
+    return( 0 );
+  }
+
+  dbgsym ds;
+  dbgsym_init( &ds,ad,tc,ad->opt,NULL,heap,symPath,FALSE,NULL );
+  ad->ds = &ds;
+
+  if( !ds.swf.fStackWalk64 )
+  {
+    printf( "$Wminidump reader needs StackWalk64() from dbghelp.dll\n" );
+    UnmapViewOfFile( dump );
+    dbgsym_close( &ds );
+    return( 1 );
+  }
+
+  MINIDUMP_MODULE_LIST *mods = NULL;
+  MINIDUMP_MEMORY_LIST *mml = NULL;
+  MINIDUMP_MEMORY64_LIST *mm64l = NULL;
+  MINIDUMP_THREAD_LIST *mtl = NULL;
+  MINIDUMP_EXCEPTION_STREAM *exception = NULL;
+
+  MINIDUMP_HEADER *header = REL_PTR( dump,0 );
+  MINIDUMP_DIRECTORY *dir = REL_PTR( dump,header->StreamDirectoryRva );
+  uint32_t s;
+  for( s=0; s<header->NumberOfStreams; s++)
+  {
+    switch( dir[s].StreamType )
+    {
+      case ModuleListStream:
+        mods = REL_PTR( dump,dir[s].Location.Rva );
+        break;
+      case MemoryListStream:
+        mml = REL_PTR( dump,dir[s].Location.Rva );
+        break;
+      case Memory64ListStream:
+        mm64l = REL_PTR( dump,dir[s].Location.Rva );
+        break;
+      case ThreadListStream:
+        mtl = REL_PTR( dump,dir[s].Location.Rva );
+        break;
+      case ExceptionStream:
+        exception = REL_PTR( dump,dir[s].Location.Rva );
+        break;
+    }
+  }
+
+  if( !exception || exception->ThreadContext.DataSize!=sizeof(CONTEXT) )
+  {
+    if( !exception )
+      printf( "$Wminidump doesn't contain exception information stream\n" );
+    else
+      printf( "$Wminidump exception context size mismatch\n" );
+    UnmapViewOfFile( dump );
+    dbgsym_close( &ds );
+    return( 1 );
+  }
+
+  if( mml )
+  {
+    uint32_t r;
+    for( r=0; r<mml->NumberOfMemoryRanges; r++)
+    {
+      addDumpMemoryLoc( ad,
+          dump+mml->MemoryRanges[r].Memory.Rva,
+          mml->MemoryRanges[r].Memory.DataSize,
+          (size_t)mml->MemoryRanges[r].StartOfMemoryRange );
+    }
+  }
+
+  if( mm64l )
+  {
+    size_t rva = (size_t)mm64l->BaseRva;
+    size_t r;
+    for( r=0; r<mm64l->NumberOfMemoryRanges; r++ )
+    {
+      addDumpMemoryLoc( ad,
+          dump+rva,(size_t)mm64l->MemoryRanges[r].DataSize,
+          (size_t)mm64l->MemoryRanges[r].StartOfMemoryRange );
+
+      rva += (size_t)mm64l->MemoryRanges[r].DataSize;
+    }
+  }
+
+  if( mods && mods->NumberOfModules )
+  {
+    ad->dump_mod_a = mods->Modules;
+
+    ad->mi_q = mods->NumberOfModules;
+    ad->mi_a = HeapAlloc( heap,0,ad->mi_q*sizeof(modInfo) );
+    if( !ad->mi_a ) ad->mi_q = 0;
+
+    int m;
+    for( m=0; m<ad->mi_q; m++ )
+    {
+      MINIDUMP_MODULE *mod = mods->Modules + m;
+      MINIDUMP_STRING *moduleName = REL_PTR( dump,mod->ModuleNameRva );
+
+      modInfo *mi = ad->mi_a + m;
+      mi->base = (size_t)mod->BaseOfImage;
+      mi->size = mod->SizeOfImage;
+      mi->versionMS = mod->VersionInfo.dwFileVersionMS;
+      mi->versionLS = mod->VersionInfo.dwFileVersionLS;
+      lstrcpynW( mi->path,moduleName->Buffer,MAX_PATH );
+
+      if( ds.fSymLoadModule64 )
+        dbgsym_loadmodule( &ds,mi->path,mi->base,(DWORD)mi->size );
+    }
+    if( ad->mi_q )
+      ad->dump_mi_map_a =
+        HeapAlloc( heap,HEAP_ZERO_MEMORY,ad->mi_q*sizeof(char*) );
+  }
+
+  if( mtl )
+  {
+    uint32_t t;
+    for( t=0; t<mtl->NumberOfThreads &&
+        mtl->Threads[t].ThreadId!=exception->ThreadId; t++ );
+    if( t<mtl->NumberOfThreads )
+    {
+      MINIDUMP_THREAD *thread = mtl->Threads + t;
+
+      addDumpMemoryLoc( ad,
+          dump+thread->Stack.Memory.Rva,thread->Stack.Memory.DataSize,
+          (size_t)thread->Stack.StartOfMemoryRange );
+    }
+  }
+
+  ds.swf.fReadProcessMemory = readDumpMemory;
+  func_SymRegisterCallback64 *fSymRegisterCallback64 =
+    (func_SymRegisterCallback64*)GetProcAddress(
+        ds.symMod,"SymRegisterCallback64" );
+  if( fSymRegisterCallback64 )
+    fSymRegisterCallback64( ds.process,symbolCallback,0 );
+
+  CONTEXT *context = REL_PTR( dump,exception->ThreadContext.Rva );
+  MINIDUMP_EXCEPTION *me = &exception->ExceptionRecord;
+
+  exceptionInfo *ei = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(exceptionInfo) );
+  stackwalkDbghelp( &ad->ds->swf,ad->opt,ad,(HANDLE)2,context,ei->aa->frames );
+  ei->aq = 1;
+  RtlMoveMemory( &ei->c,context,sizeof(CONTEXT) );
+#ifndef _WIN64
+  ei->er.ExceptionCode = me->ExceptionCode;
+  ei->er.ExceptionFlags = me->ExceptionFlags;
+  ei->er.ExceptionRecord = (EXCEPTION_RECORD*)(DWORD)me->ExceptionRecord;
+  ei->er.ExceptionAddress = (PVOID)(DWORD)me->ExceptionAddress;
+  ei->er.NumberParameters = me->NumberParameters;
+  int j;
+  for( j=0; j<EXCEPTION_MAXIMUM_PARAMETERS; j++ )
+    ei->er.ExceptionInformation[j] = (ULONG_PTR)me->ExceptionInformation[j];
+#else
+  RtlMoveMemory( &ei->er,me,sizeof(MINIDUMP_EXCEPTION) );
+#endif
+
+#ifndef NO_DBGENG
+  size_t ip = 0;
+  if( ei->aa->frames[0] && ad->opt->exceptionDetails>1 )
+  {
+    ip = (size_t)getDumpLoc( ad,(size_t)ei->aa->frames[0]-1,NULL );
+    ad->pi.dwProcessId = GetCurrentProcessId();
+  }
+#endif
+
+  writeException( ad,NULL,
+#ifndef NO_THREADS
+      0,NULL,
+#endif
+#ifndef NO_DBGENG
+      ip,
+#endif
+      ei,ad->mi_a,ad->mi_q );
+
+  if( ad->dump_mi_map_a )
+  {
+    int i;
+    for( i=0; i<ad->mi_q; i++ )
+      if( (size_t)ad->dump_mi_map_a[i]>1 )
+        UnmapViewOfFile( ad->dump_mi_map_a[i] );
+    HeapFree( heap,0,(void*)ad->dump_mi_map_a );
+  }
+
+  UnmapViewOfFile( dump );
+  dbgsym_close( &ds );
+  HeapFree( heap,0,ei );
+
+  return( 1 );
+}
+#endif
+
+// }}}
 // main loop {{{
 
 static void mainLoop( appData *ad,UINT *exitCode )
@@ -6203,8 +6611,14 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
   wchar_t *point = strrchrW( delim,'.' );
   if( point ) point[0] = 0;
 
-  printf( "Usage: $O%S $I[OPTION]... $SAPP [APP-OPTION]...\n\n",
+  printf( "Usage: $O%S $I[OPTION]... $SAPP [APP-OPTION]...\n",
       delim );
+#if USE_STACKWALK
+  if( fullhelp )
+    printf( "       $O%S $I[OPTION]... $SCRASH.DMP [SYMBOL-PATH]\n",
+        delim );
+#endif
+  printf( "\n" );
   if( fullhelp )
     printf( "    $I-A$BX$N    attach to thread\n" );
   printf( "    $I-o$BX$N    heob output [$I%d$N]",1 );
@@ -6810,6 +7224,11 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   if( (!args || !args[0]) && !opt.attached )
     showHelpText( ad,&defopt,fullhelp );
   // }}}
+
+#if USE_STACKWALK
+  if( isMinidump(ad,args) )
+    exitHeob( ad,HEOB_TRACE,0,0 );
+#endif
 
   // wine detection {{{
   HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
