@@ -519,6 +519,8 @@ typedef struct
   size_t base;
   size_t size;
   wchar_t path[MAX_PATH];
+  DWORD versionMS;
+  DWORD versionLS;
 }
 modInfo;
 

@@ -5016,7 +5016,15 @@ static void writeException( appData *ad,textColor *tcXml,
       printf( "$S  modules:\n" );
       int m;
       for( m=0; m<mi_q; m++ )
-        printf( "    %X   %S\n",mi_a[m].base,mi_a[m].path );
+      {
+        modInfo *mi = mi_a + m;
+        printf( "    %X   %S",mi->base,mi->path );
+        if( mi->versionMS || mi->versionLS )
+          printf( " [$I%u.%u.%u.%u$N]",
+              mi->versionMS>>16,mi->versionMS&0xffff,
+              mi->versionLS>>16,mi->versionLS&0xffff );
+        printf( "\n" );
+      }
     }
     // }}}
 

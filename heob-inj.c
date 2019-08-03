@@ -382,7 +382,7 @@ static void writeModsFind( modInfo **p_mi_a,int *p_mi_q )
   }
   while( entry!=head );
 
-  modInfo *mi_a = HeapAlloc( rd->heap,0,mi_q*sizeof(modInfo) );
+  modInfo *mi_a = HeapAlloc( rd->heap,HEAP_ZERO_MEMORY,mi_q*sizeof(modInfo) );
   if( !mi_a )
   {
     fLdrUnlockLoaderLock( 0,ldrLockCookie );
@@ -412,6 +412,30 @@ static void writeModsFind( modInfo **p_mi_a,int *p_mi_q )
   while( entry!=head );
 
   fLdrUnlockLoaderLock( 0,ldrLockCookie );
+
+  if( rd->opt.exceptionDetails>2 )
+  {
+    int i;
+    for( i=0; i<mi_q; i++ )
+    {
+      modInfo *mi = mi_a + i;
+      HMODULE mod = (HMODULE)mi->base;
+      HRSRC src = FindResource(
+          mod,MAKEINTRESOURCE(VS_VERSION_INFO),RT_VERSION );
+      if( !src || SizeofResource(mod,src)<40+sizeof(VS_FIXEDFILEINFO) )
+        continue;
+
+      HGLOBAL g = LoadResource( mod,src );
+      if( !g ) continue;
+
+      char *res = LockResource( g );
+      VS_FIXEDFILEINFO *ver = (VS_FIXEDFILEINFO*)( res+40 );
+      if( !res || ver->dwSignature!=0xfeef04bd ) continue;
+
+      mi->versionMS = ver->dwFileVersionMS;
+      mi->versionLS = ver->dwFileVersionLS;
+    }
+  }
 
   *p_mi_q = mi_q;
   *p_mi_a = mi_a;
