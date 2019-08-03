@@ -6445,6 +6445,8 @@ static const char *funcnames[FT_COUNT] = {
 
 CODE_SEG(".text$7") void mainCRTStartup( void )
 {
+  SetErrorMode( SEM_FAILCRITICALERRORS );
+
   HANDLE heap = GetProcessHeap();
   appData *ad = initHeob( heap );
   ad->in = GetStdHandle( STD_INPUT_HANDLE );
@@ -6819,8 +6821,6 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
 
   if( !opt.attached )
   {
-    SetErrorMode( SEM_FAILCRITICALERRORS );
-
     STARTUPINFOW si;
     RtlZeroMemory( &si,sizeof(STARTUPINFO) );
     si.cb = sizeof(STARTUPINFO);
