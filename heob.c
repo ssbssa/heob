@@ -3797,7 +3797,7 @@ static void getAppCounter( appData *ad,
 // disassembler {{{
 
 #ifndef NO_DBGENG
-static char *disassemble( DWORD pid,void *addr,HANDLE heap )
+static char *disassemble( DWORD pid,size_t addr,HANDLE heap )
 {
   HMODULE dbgeng = NULL;
   IDebugClient *dbgclient = NULL;
@@ -3843,7 +3843,7 @@ static char *disassemble( DWORD pid,void *addr,HANDLE heap )
     if( res!=S_OK ) break;
 
     asmbuf = HeapAlloc( heap,0,65536 );
-    ULONG64 offset = (uintptr_t)addr;
+    ULONG64 offset = addr;
     res = dbgcontrol->lpVtbl->Disassemble( dbgcontrol,
         offset,0,asmbuf,65536,NULL,&offset );
     if( res!=S_OK ) break;
@@ -4953,6 +4953,210 @@ static DWORD unexpectedEnd( appData *ad,textColor *tcXml,int *errorWritten )
 }
 
 // }}}
+// exception {{{
+
+static void writeException( appData *ad,textColor *tcXml,
+#ifndef NO_THREADS
+    int threadName_q,char **threadName_a,
+#endif
+#ifndef NO_DBGENG
+    size_t ip,
+#endif
+    exceptionInfo *ei,modInfo *mi_a,int mi_q )
+{
+  dbgsym *ds = ad->ds;
+  options *opt = ds->opt;
+  textColor *tc = ad->tcOut;
+
+  cacheSymbolData( ei->aa,NULL,ei->aq,mi_a,mi_q,ds,1 );
+
+  // exception code {{{
+  const char *desc = NULL;
+  switch( ei->er.ExceptionCode )
+  {
+#define EXCEPTION_FATAL_APP_EXIT STATUS_FATAL_APP_EXIT
+#define EXCEPTION_ASSERTION_FAILURE STATUS_ASSERTION_FAILURE
+#define EX_DESC( name ) \
+    case EXCEPTION_##name: \
+                           desc = " (" #name ")"; break
+
+    EX_DESC( ACCESS_VIOLATION );
+    EX_DESC( ARRAY_BOUNDS_EXCEEDED );
+    EX_DESC( BREAKPOINT );
+    EX_DESC( DATATYPE_MISALIGNMENT );
+    EX_DESC( FLT_DENORMAL_OPERAND );
+    EX_DESC( FLT_DIVIDE_BY_ZERO );
+    EX_DESC( FLT_INEXACT_RESULT );
+    EX_DESC( FLT_INVALID_OPERATION );
+    EX_DESC( FLT_OVERFLOW );
+    EX_DESC( FLT_STACK_CHECK );
+    EX_DESC( FLT_UNDERFLOW );
+    EX_DESC( ILLEGAL_INSTRUCTION );
+    EX_DESC( IN_PAGE_ERROR );
+    EX_DESC( INT_DIVIDE_BY_ZERO );
+    EX_DESC( INT_OVERFLOW );
+    EX_DESC( INVALID_DISPOSITION );
+    EX_DESC( NONCONTINUABLE_EXCEPTION );
+    EX_DESC( PRIV_INSTRUCTION );
+    EX_DESC( SINGLE_STEP );
+    EX_DESC( STACK_OVERFLOW );
+    EX_DESC( FATAL_APP_EXIT );
+    EX_DESC( ASSERTION_FAILURE );
+    EX_DESC( VC_CPP_EXCEPTION );
+  }
+  printf( "\n$Wunhandled exception code: %x%s\n",
+      ei->er.ExceptionCode,desc );
+  // }}}
+
+  if( opt->exceptionDetails>0 && tc->out )
+  {
+    // modules {{{
+    if( opt->exceptionDetails>2 )
+    {
+      printf( "$S  modules:\n" );
+      int m;
+      for( m=0; m<mi_q; m++ )
+        printf( "    %X   %S\n",mi_a[m].base,mi_a[m].path );
+    }
+    // }}}
+
+    // assembly instruction {{{
+#ifndef NO_DBGENG
+    if( ip )
+    {
+      HANDLE heap = ad->heap;
+      char *dis = disassemble( ad->pi.dwProcessId,ip,heap );
+      if( dis )
+      {
+        printf( "$S  assembly instruction:\n" );
+        char *space = strchr( dis,' ' );
+        if( space ) space[0] = 0;
+        printf( "    $O%s",dis );
+        if( space )
+        {
+          space[0] = ' ';
+          printf( "$N%s",space );
+        }
+        printf( "\n" );
+        HeapFree( heap,0,dis );
+      }
+    }
+#endif
+    // }}}
+
+    // registers {{{
+    printf( "$S  registers:\n" );
+#define PREG( name,reg,type,before,after ) \
+    printf( before "$I" name "$N=" type after,ei->c.reg )
+    if( ei->c.ContextFlags&CONTEXT_INTEGER )
+    {
+#ifndef _WIN64
+      PREG( "edi"   ,Edi   ,"%X","    "           ,     );
+      PREG( "esi"   ,Esi   ,"%X","       "        ,     );
+      PREG( "ebx"   ,Ebx   ,"%X","       "        ,"\n" );
+      PREG( "edx"   ,Edx   ,"%X","    "           ,     );
+      PREG( "ecx"   ,Ecx   ,"%X","       "        ,     );
+      PREG( "eax"   ,Eax   ,"%X","       "        ,"\n" );
+#else
+      PREG( "rax"   ,Rax   ,"%X","    "           ,     );
+      PREG( "rcx"   ,Rcx   ,"%X","  "             ,     );
+      PREG( "rdx"   ,Rdx   ,"%X","  "             ,"\n" );
+      PREG( "rbx"   ,Rbx   ,"%X","    "           ,     );
+      PREG( "rbp"   ,Rbp   ,"%X","  "             ,     );
+      PREG( "rsi"   ,Rsi   ,"%X","  "             ,"\n" );
+      PREG( "rdi"   ,Rdi   ,"%X","    "           ,     );
+      PREG( "r8"    ,R8    ,"%X","  "             ,     );
+      PREG( "r9"    ,R9    ,"%X","   "            ,"\n" );
+      PREG( "r10"   ,R10   ,"%X","    "           ,     );
+      PREG( "r11"   ,R11   ,"%X","  "             ,     );
+      PREG( "r12"   ,R12   ,"%X","  "             ,"\n" );
+      PREG( "r13"   ,R13   ,"%X","    "           ,     );
+      PREG( "r14"   ,R14   ,"%X","  "             ,     );
+      PREG( "r15"   ,R15   ,"%X","  "             ,"\n" );
+#endif
+    }
+    if( ei->c.ContextFlags&CONTEXT_CONTROL )
+    {
+#ifndef _WIN64
+      PREG( "ebp"   ,Ebp   ,"%X","    "           ,     );
+      PREG( "eip"   ,Eip   ,"%X","       "        ,     );
+      PREG( "cs"    ,SegCs ,"%w","       "        ,"\n" );
+      PREG( "eflags",EFlags,"%x","    "           ,     );
+      PREG( "esp"   ,Esp   ,"%X","    "           ,     );
+      PREG( "ss"    ,SegSs ,"%w","       "        ,"\n" );
+#else
+      PREG( "ss"    ,SegSs ,"%w","    "           ,     );
+      PREG( "rsp"   ,Rsp   ,"%X","               ", );
+      PREG( "cs"    ,SegCs ,"%w","  "             ,"\n" );
+      PREG( "rip"   ,Rip   ,"%X","    "           ,     );
+      PREG( "eflags",EFlags,"%x","  "             ,"\n" );
+#endif
+    }
+    if( ei->c.ContextFlags&CONTEXT_SEGMENTS )
+    {
+#ifndef _WIN64
+      PREG( "gs"    ,SegGs ,"%w","    "           ,     );
+      PREG( "fs"    ,SegFs ,"%w","     "          ,     );
+      PREG( "es"    ,SegEs ,"%w","     "          ,     );
+      PREG( "ds"    ,SegDs ,"%w","     "          ,"\n" );
+#else
+      PREG( "ds"    ,SegDs ,"%w","    "           ,     );
+      PREG( "es"    ,SegEs ,"%w","       "        ,     );
+      PREG( "fs"    ,SegFs ,"%w","       "        ,     );
+      PREG( "gs"    ,SegGs ,"%w","       "        ,"\n" );
+#endif
+    }
+    // }}}
+  }
+
+  printf( "$S  exception on:" );
+  printThreadName( ei->aa[0].threadNum );
+  printStackCount( ei->aa[0].frames,ei->aa[0].frameCount,
+      mi_a,mi_q,ds,FT_COUNT,0 );
+
+  char *addr = NULL;
+  const char *violationType = NULL;
+  const char *nearBlock = NULL;
+  const char *blockType = NULL;
+  // access violation {{{
+  if( ei->er.ExceptionCode==EXCEPTION_ACCESS_VIOLATION &&
+      ei->er.NumberParameters==2 )
+  {
+    ULONG_PTR flag = ei->er.ExceptionInformation[0];
+    addr = (char*)ei->er.ExceptionInformation[1];
+    violationType = flag==8 ? "data execution prevention" :
+      ( flag ? "write access" : "read access" );
+    printf( "$W  %s violation at %p\n",violationType,addr );
+
+    if( ei->aq>1 )
+    {
+      char *ptr = (char*)ei->aa[1].ptr;
+      size_t size = ei->aa[1].size;
+      nearBlock = ei->nearest ? "near " : "";
+      intptr_t accessPos = addr - ptr;
+      blockType = ei->aq>2 ? "freed block" :
+        ( accessPos>=0 && (size_t)accessPos<size ?
+          "accessible (!) area of" : "protected area of" );
+      printf( "$I  %s%s %p (size %U, offset %s%D)\n",
+          nearBlock,blockType,
+          ptr,size,accessPos>0?"+":"",accessPos );
+      printAllocatedFreed( &ei->aa[1],ei->aq>2,mi_a,mi_q,ds );
+    }
+  }
+  // }}}
+  // VC c++ exception {{{
+  else if( ei->throwName[0] )
+  {
+    char *throwName = undecorateVCsymbol( ds,ei->throwName );
+    printf( "$I  VC c++ exception: $N%s\n",throwName );
+  }
+  // }}}
+
+  writeXmlException( tcXml,ds,ei,desc,addr,violationType,
+      nearBlock,blockType,mi_a,mi_q );
+}
+
+// }}}
 // main loop {{{
 
 static void mainLoop( appData *ad,UINT *exitCode )
@@ -4988,7 +5192,7 @@ static void mainLoop( appData *ad,UINT *exitCode )
   int errColor = 0;
   COORD consoleCoord = { 0,0 };
   allocation *aa = HeapAlloc( heap,0,4*sizeof(allocation) );
-  exceptionInfo *eiPtr = HeapAlloc( heap,0,sizeof(exceptionInfo) );
+  exceptionInfo *ei = HeapAlloc( heap,0,sizeof(exceptionInfo) );
   DWORD flashStart = 0;
   int sample_times = 0;
   int tsq = 0;
@@ -5361,208 +5565,35 @@ static void mainLoop( appData *ad,UINT *exitCode )
         {
           taskbarRecording = setTaskbarStatus( tl3,conHwnd );
 
-#define ei (*eiPtr)
-          if( !readFile(readPipe,&ei,sizeof(exceptionInfo),&ov) )
+          if( !readFile(readPipe,ei,sizeof(exceptionInfo),&ov) )
             break;
-          ei.throwName[sizeof(ei.throwName)-1] = 0;
+          ei->throwName[sizeof(ei->throwName)-1] = 0;
 
-          cacheSymbolData( ei.aa,NULL,ei.aq,mi_a,mi_q,ds,1 );
-
-          // exception code {{{
-          const char *desc = NULL;
-          switch( ei.er.ExceptionCode )
-          {
-#define EXCEPTION_FATAL_APP_EXIT STATUS_FATAL_APP_EXIT
-#define EXCEPTION_ASSERTION_FAILURE STATUS_ASSERTION_FAILURE
-#define EX_DESC( name ) \
-            case EXCEPTION_##name: \
-              desc = " (" #name ")"; break
-
-            EX_DESC( ACCESS_VIOLATION );
-            EX_DESC( ARRAY_BOUNDS_EXCEEDED );
-            EX_DESC( BREAKPOINT );
-            EX_DESC( DATATYPE_MISALIGNMENT );
-            EX_DESC( FLT_DENORMAL_OPERAND );
-            EX_DESC( FLT_DIVIDE_BY_ZERO );
-            EX_DESC( FLT_INEXACT_RESULT );
-            EX_DESC( FLT_INVALID_OPERATION );
-            EX_DESC( FLT_OVERFLOW );
-            EX_DESC( FLT_STACK_CHECK );
-            EX_DESC( FLT_UNDERFLOW );
-            EX_DESC( ILLEGAL_INSTRUCTION );
-            EX_DESC( IN_PAGE_ERROR );
-            EX_DESC( INT_DIVIDE_BY_ZERO );
-            EX_DESC( INT_OVERFLOW );
-            EX_DESC( INVALID_DISPOSITION );
-            EX_DESC( NONCONTINUABLE_EXCEPTION );
-            EX_DESC( PRIV_INSTRUCTION );
-            EX_DESC( SINGLE_STEP );
-            EX_DESC( STACK_OVERFLOW );
-            EX_DESC( FATAL_APP_EXIT );
-            EX_DESC( ASSERTION_FAILURE );
-            EX_DESC( VC_CPP_EXCEPTION );
-          }
-          printf( "\n$Wunhandled exception code: %x%s\n",
-              ei.er.ExceptionCode,desc );
-          // }}}
-
-          if( opt->exceptionDetails>0 && tc->out )
-          {
-            // modules {{{
-            if( opt->exceptionDetails>2 )
-            {
-              printf( "$S  modules:\n" );
-              int m;
-              for( m=0; m<mi_q; m++ )
-                printf( "    %X   %S\n",mi_a[m].base,mi_a[m].path );
-            }
-            // }}}
-
-            // assembly instruction {{{
 #ifndef NO_DBGENG
-            if( ad->exceptionWait &&
-                ei.er.ExceptionCode!=EXCEPTION_BREAKPOINT )
-            {
-              char *dis = disassemble(
-                  ad->pi.dwProcessId,ei.aa[0].frames[0],heap );
-              if( dis )
-              {
-                printf( "$S  assembly instruction:\n" );
-                char *space = strchr( dis,' ' );
-                if( space ) space[0] = 0;
-                printf( "    $O%s",dis );
-                if( space )
-                {
-                  space[0] = ' ';
-                  printf( "$N%s",space );
-                }
-                printf( "\n" );
-                HeapFree( heap,0,dis );
-              }
-            }
+          size_t ip = 0;
+          if( ad->exceptionWait &&
+              ei->er.ExceptionCode!=EXCEPTION_BREAKPOINT )
+            ip = (size_t)ei->aa[0].frames[0] - 1;
 #endif
-            // }}}
 
-            // registers {{{
-            printf( "$S  registers:\n" );
-#define PREG( name,reg,type,before,after ) \
-            printf( before "$I" name "$N=" type after,ei.c.reg )
-            if( ei.c.ContextFlags&CONTEXT_INTEGER )
-            {
-#ifndef _WIN64
-              PREG( "edi"   ,Edi   ,"%X","    "           ,     );
-              PREG( "esi"   ,Esi   ,"%X","       "        ,     );
-              PREG( "ebx"   ,Ebx   ,"%X","       "        ,"\n" );
-              PREG( "edx"   ,Edx   ,"%X","    "           ,     );
-              PREG( "ecx"   ,Ecx   ,"%X","       "        ,     );
-              PREG( "eax"   ,Eax   ,"%X","       "        ,"\n" );
-#else
-              PREG( "rax"   ,Rax   ,"%X","    "           ,     );
-              PREG( "rcx"   ,Rcx   ,"%X","  "             ,     );
-              PREG( "rdx"   ,Rdx   ,"%X","  "             ,"\n" );
-              PREG( "rbx"   ,Rbx   ,"%X","    "           ,     );
-              PREG( "rbp"   ,Rbp   ,"%X","  "             ,     );
-              PREG( "rsi"   ,Rsi   ,"%X","  "             ,"\n" );
-              PREG( "rdi"   ,Rdi   ,"%X","    "           ,     );
-              PREG( "r8"    ,R8    ,"%X","  "             ,     );
-              PREG( "r9"    ,R9    ,"%X","   "            ,"\n" );
-              PREG( "r10"   ,R10   ,"%X","    "           ,     );
-              PREG( "r11"   ,R11   ,"%X","  "             ,     );
-              PREG( "r12"   ,R12   ,"%X","  "             ,"\n" );
-              PREG( "r13"   ,R13   ,"%X","    "           ,     );
-              PREG( "r14"   ,R14   ,"%X","  "             ,     );
-              PREG( "r15"   ,R15   ,"%X","  "             ,"\n" );
+          writeException( ad,tcXml,
+#ifndef NO_THREADS
+              threadName_q,threadName_a,
 #endif
-            }
-            if( ei.c.ContextFlags&CONTEXT_CONTROL )
-            {
-#ifndef _WIN64
-              PREG( "ebp"   ,Ebp   ,"%X","    "           ,     );
-              PREG( "eip"   ,Eip   ,"%X","       "        ,     );
-              PREG( "cs"    ,SegCs ,"%w","       "        ,"\n" );
-              PREG( "eflags",EFlags,"%x","    "           ,     );
-              PREG( "esp"   ,Esp   ,"%X","    "           ,     );
-              PREG( "ss"    ,SegSs ,"%w","       "        ,"\n" );
-#else
-              PREG( "ss"    ,SegSs ,"%w","    "           ,     );
-              PREG( "rsp"   ,Rsp   ,"%X","               ", );
-              PREG( "cs"    ,SegCs ,"%w","  "             ,"\n" );
-              PREG( "rip"   ,Rip   ,"%X","    "           ,     );
-              PREG( "eflags",EFlags,"%x","  "             ,"\n" );
+#ifndef NO_DBGENG
+              ip,
 #endif
-            }
-            if( ei.c.ContextFlags&CONTEXT_SEGMENTS )
-            {
-#ifndef _WIN64
-              PREG( "gs"    ,SegGs ,"%w","    "           ,     );
-              PREG( "fs"    ,SegFs ,"%w","     "          ,     );
-              PREG( "es"    ,SegEs ,"%w","     "          ,     );
-              PREG( "ds"    ,SegDs ,"%w","     "          ,"\n" );
-#else
-              PREG( "ds"    ,SegDs ,"%w","    "           ,     );
-              PREG( "es"    ,SegEs ,"%w","       "        ,     );
-              PREG( "fs"    ,SegFs ,"%w","       "        ,     );
-              PREG( "gs"    ,SegGs ,"%w","       "        ,"\n" );
-#endif
-            }
-            // }}}
-          }
+              ei,mi_a,mi_q );
+
 #ifndef NO_DBGENG
           if( ad->exceptionWait &&
-              ei.er.ExceptionCode!=EXCEPTION_BREAKPOINT )
+              ei->er.ExceptionCode!=EXCEPTION_BREAKPOINT )
             SetEvent( ad->exceptionWait );
 #endif
 
-          printf( "$S  exception on:" );
-          printThreadName( ei.aa[0].threadNum );
-          printStackCount( ei.aa[0].frames,ei.aa[0].frameCount,
-              mi_a,mi_q,ds,FT_COUNT,0 );
-
-          char *addr = NULL;
-          const char *violationType = NULL;
-          const char *nearBlock = NULL;
-          const char *blockType = NULL;
-          // access violation {{{
-          if( ei.er.ExceptionCode==EXCEPTION_ACCESS_VIOLATION &&
-              ei.er.NumberParameters==2 )
-          {
-            ULONG_PTR flag = ei.er.ExceptionInformation[0];
-            addr = (char*)ei.er.ExceptionInformation[1];
-            violationType = flag==8 ? "data execution prevention" :
-              ( flag ? "write access" : "read access" );
-            printf( "$W  %s violation at %p\n",violationType,addr );
-
-            if( ei.aq>1 )
-            {
-              char *ptr = (char*)ei.aa[1].ptr;
-              size_t size = ei.aa[1].size;
-              nearBlock = ei.nearest ? "near " : "";
-              intptr_t accessPos = addr - ptr;
-              blockType = ei.aq>2 ? "freed block" :
-                ( accessPos>=0 && (size_t)accessPos<size ?
-                  "accessible (!) area of" : "protected area of" );
-              printf( "$I  %s%s %p (size %U, offset %s%D)\n",
-                  nearBlock,blockType,
-                  ptr,size,accessPos>0?"+":"",accessPos );
-              printAllocatedFreed( &ei.aa[1],ei.aq>2,mi_a,mi_q,ds );
-            }
-          }
-          // }}}
-          // VC c++ exception {{{
-          else if( ei.throwName[0] )
-          {
-            char *throwName = undecorateVCsymbol( ds,ei.throwName );
-            printf( "$I  VC c++ exception: $N%s\n",throwName );
-          }
-          // }}}
-
-          writeXmlException( tcXml,ds,eiPtr,desc,addr,violationType,
-              nearBlock,blockType,mi_a,mi_q );
-
           terminated = -1;
           *ad->heobExit = HEOB_EXCEPTION;
-          *ad->heobExitData = ei.er.ExceptionCode;
-#undef ei
+          *ad->heobExitData = ei->er.ExceptionCode;
         }
         break;
 
@@ -5831,7 +5862,7 @@ static void mainLoop( appData *ad,UINT *exitCode )
 
       case WRITE_EXIT_TRACE:
         {
-          allocation *exitTrace = eiPtr->aa;
+          allocation *exitTrace = ei->aa;
           if( !readFile(readPipe,exitTrace,sizeof(allocation),&ov) )
             break;
 
@@ -6104,7 +6135,7 @@ static void mainLoop( appData *ad,UINT *exitCode )
 
   CloseHandle( ov.hEvent );
   HeapFree( heap,0,aa );
-  HeapFree( heap,0,eiPtr );
+  HeapFree( heap,0,ei );
   if( mi_a ) HeapFree( heap,0,mi_a );
 #ifndef NO_THREADS
   if( threadName_a )
