@@ -201,13 +201,15 @@ typedef struct _TEB
   PVOID ExceptionList;
   PVOID StackBase;
   PVOID StackLimit;
-  BYTE Reserved1[1952];
-  PVOID Reserved2[409];
+  PVOID Reserved1[9];
+  struct _PEB *Peb;
+  PVOID Reserved2[399];
+  BYTE Reserved3[1952];
   PVOID TlsSlots[64];
-  BYTE Reserved3[8];
-  PVOID Reserved4[26];
+  BYTE Reserved4[8];
+  PVOID Reserved5[26];
   PVOID ReservedForOle;
-  PVOID Reserved5[4];
+  PVOID Reserved6[4];
   PVOID *TlsExpansionSlots;
 }
 TEB, *PTEB;
@@ -243,17 +245,23 @@ typedef struct _LDR_DATA_TABLE_ENTRY
 }
 LDR_DATA_TABLE_ENTRY, *PLDR_DATA_TABLE_ENTRY;
 
+typedef struct
+{
+  DWORD Reserved1[5];
+  PVOID Reserved2[4];
+  UNICODE_STRING CurrentDirectory;
+  PVOID CurrentDirectoryHandle;
+  UNICODE_STRING DllPath;
+  UNICODE_STRING ImagePathName;
+  UNICODE_STRING CommandLine;
+}
+RTL_USER_PROCESS_PARAMETERS;
+
 typedef struct _PEB
 {
-  BYTE Reserved1[2];
-  BYTE BeingDebugged;
-#ifndef _WIN64
-  BYTE Reserved2[1];
-  PVOID Reserved3[2];
-#else
-  BYTE Reserved2[21];
-#endif
+  PVOID Reserved1[3];
   PPEB_LDR_DATA Ldr;
+  RTL_USER_PROCESS_PARAMETERS *ProcessParameters;
 }
 PEB, *PPEB;
 

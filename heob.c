@@ -5425,6 +5425,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
   MINIDUMP_MEMORY_LIST *mml = NULL;
   MINIDUMP_MEMORY64_LIST *mm64l = NULL;
   MINIDUMP_THREAD_LIST *mtl = NULL;
+  MINIDUMP_MISC_INFO *misc = NULL;
   MINIDUMP_EXCEPTION_STREAM *exception = NULL;
 
   MINIDUMP_HEADER *header = REL_PTR( dump,0 );
@@ -5445,6 +5446,9 @@ static int isMinidump( appData *ad,const wchar_t *name )
         break;
       case ThreadListStream:
         mtl = REL_PTR( dump,dir[s].Location.Rva );
+        break;
+      case MiscInfoStream:
+        misc = REL_PTR( dump,dir[s].Location.Rva );
         break;
       case ExceptionStream:
         exception = REL_PTR( dump,dir[s].Location.Rva );
@@ -5518,8 +5522,11 @@ static int isMinidump( appData *ad,const wchar_t *name )
         HeapAlloc( heap,HEAP_ZERO_MEMORY,ad->mi_q*sizeof(char*) );
   }
 
-  if( mtl )
+  if( mtl && ad->dump_mod_a )
   {
+    MINIDUMP_STRING *appName = REL_PTR( dump,ad->dump_mod_a[0].ModuleNameRva );
+    printf( "\n$Iapplication: $N%S\n",appName->Buffer );
+
     uint32_t t;
     for( t=0; t<mtl->NumberOfThreads &&
         mtl->Threads[t].ThreadId!=exception->ThreadId; t++ );
@@ -5530,7 +5537,34 @@ static int isMinidump( appData *ad,const wchar_t *name )
       addDumpMemoryLoc( ad,
           dump+thread->Stack.Memory.Rva,thread->Stack.Memory.DataSize,
           (size_t)thread->Stack.StartOfMemoryRange );
+
+      size_t maxSize;
+      const TEB *teb = getDumpLoc( ad,(size_t)thread->Teb,&maxSize );
+      if( teb && maxSize>=sizeof(TEB) )
+      {
+        const PEB *peb = getDumpLoc( ad,(size_t)teb->Peb,&maxSize );
+        if( peb && maxSize>=sizeof(PEB) )
+        {
+          const RTL_USER_PROCESS_PARAMETERS *upp =
+            getDumpLoc( ad,(size_t)peb->ProcessParameters,&maxSize );
+          if( upp && maxSize>=sizeof(RTL_USER_PROCESS_PARAMETERS) )
+          {
+            const wchar_t *commandLine = getDumpLoc(
+                ad,(size_t)upp->CommandLine.Buffer,&maxSize );
+            if( commandLine && maxSize>=upp->CommandLine.Length )
+              printf( "$Icommand line: $N%S\n",commandLine );
+
+            const wchar_t *currentDirectory = getDumpLoc(
+                ad,(size_t)upp->CurrentDirectory.Buffer,&maxSize );
+            if( currentDirectory && maxSize>=upp->CurrentDirectory.Length )
+              printf( "$Idirectory: $N%S\n",currentDirectory );
+          }
+        }
+      }
     }
+
+    if( misc && misc->Flags1&MINIDUMP_MISC1_PROCESS_ID )
+      printf( "$IPID: $N%u\n",misc->ProcessId );
   }
 
   ds.swf.fReadProcessMemory = readDumpMemory;
