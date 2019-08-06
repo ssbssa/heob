@@ -1887,6 +1887,7 @@ static void dbgsym_close( dbgsym *ds )
     FreeLibrary( ds->symMod );
   }
   if( ds->il ) HeapFree( heap,0,ds->il );
+  if( ds->ilW ) HeapFree( heap,0,ds->ilW );
   if( ds->si ) HeapFree( heap,0,ds->si );
   if( ds->undname ) HeapFree( heap,0,ds->undname );
 #endif
