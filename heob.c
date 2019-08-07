@@ -5595,6 +5595,39 @@ static int isMinidump( appData *ad,const wchar_t *name )
   RtlMoveMemory( &ei->er,me,sizeof(MINIDUMP_EXCEPTION) );
 #endif
 
+  // VC c++ exception {{{
+  if( me->ExceptionCode==EXCEPTION_VC_CPP_EXCEPTION &&
+      me->NumberParameters==THROW_ARGS )
+  {
+    const DWORD *ptr = (DWORD*)ei->er.ExceptionInformation[2];
+#ifdef _WIN64
+    char *mod = (char*)ei->er.ExceptionInformation[3];
+#endif
+    size_t maxSize;
+    ptr = getDumpLoc( ad,(size_t)ptr,&maxSize );
+    if( ptr && maxSize>=4*sizeof(DWORD) )
+    {
+      ptr = getDumpLoc( ad,CALC_THROW_ARG(mod,ptr[3]),&maxSize );
+      if( ptr && maxSize>=2*sizeof(DWORD) )
+      {
+        ptr = getDumpLoc( ad,CALC_THROW_ARG(mod,ptr[1]),&maxSize );
+        if( ptr && maxSize>=2*sizeof(DWORD) )
+        {
+          ptr = getDumpLoc( ad,
+              CALC_THROW_ARG(mod,ptr[1])+2*sizeof(void*),&maxSize );
+          if( ptr && maxSize )
+          {
+            if( maxSize>=sizeof(ei->throwName) )
+              maxSize = sizeof(ei->throwName) - 1;
+            RtlMoveMemory( ei->throwName,ptr,maxSize );
+            ei->throwName[maxSize] = 0;
+          }
+        }
+      }
+    }
+  }
+  // }}}
+
 #ifndef NO_DBGENG
   size_t ip = 0;
   if( ei->aa->frames[0] && ad->opt->exceptionDetails>1 )

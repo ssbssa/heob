@@ -70,6 +70,13 @@
 #endif
 
 #define EXCEPTION_VC_CPP_EXCEPTION 0xe06d7363
+#ifndef _WIN64
+#define THROW_ARGS 3
+#define CALC_THROW_ARG(mod,ofs) (ofs)
+#else
+#define THROW_ARGS 4
+#define CALC_THROW_ARG(mod,ofs) ((size_t)(mod)+(ofs))
+#endif
 
 #define REL_PTR( base,ofs ) ( (void*)(((PBYTE)base)+ofs) )
 

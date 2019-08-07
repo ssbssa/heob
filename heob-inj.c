@@ -3932,14 +3932,6 @@ static void stackwalk( CONTEXT *contextRecord,void **frames )
   // }}}
 }
 
-#ifdef _WIN64
-#define THROW_ARGS 4
-#define CALC_THROW_ARG(mod,ofs) ((char*)(mod)+(ofs))
-#else
-#define THROW_ARGS 3
-#define CALC_THROW_ARG(mod,ofs) (ofs)
-#endif
-
 static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 {
   GET_REMOTEDATA( rd );
