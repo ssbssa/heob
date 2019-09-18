@@ -5553,12 +5553,25 @@ static int isMinidump( appData *ad,const wchar_t *name )
             const wchar_t *commandLine = getDumpLoc(
                 ad,(size_t)upp->CommandLine.Buffer,&maxSize );
             if( commandLine && maxSize>=upp->CommandLine.Length )
-              printf( "$Icommand line: $N%S\n",commandLine );
+            {
+              wchar_t *cl = HeapAlloc(
+                  heap,HEAP_ZERO_MEMORY,upp->CommandLine.Length+2 );
+              RtlMoveMemory( cl,commandLine,upp->CommandLine.Length );
+              printf( "$Icommand line: $N%S\n",cl );
+              HeapFree( heap,0,cl );
+            }
 
             const wchar_t *currentDirectory = getDumpLoc(
                 ad,(size_t)upp->CurrentDirectory.Buffer,&maxSize );
             if( currentDirectory && maxSize>=upp->CurrentDirectory.Length )
-              printf( "$Idirectory: $N%S\n",currentDirectory );
+            {
+              wchar_t *cd = HeapAlloc(
+                  heap,HEAP_ZERO_MEMORY,upp->CurrentDirectory.Length+2 );
+              RtlMoveMemory( cd,currentDirectory,
+                  upp->CurrentDirectory.Length );
+              printf( "$Idirectory: $N%S\n",cd );
+              HeapFree( heap,0,cd );
+            }
           }
         }
       }
