@@ -299,7 +299,7 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
           // }}}
           // time {{{
 
-        case 't': // time
+        case 't': // milliseconds
           {
             DWORD ticks = va_arg( vl,DWORD );
             unsigned milli = ticks%1000;
@@ -319,6 +319,31 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
               milli/100+'0',(milli/10)%10+'0',milli%10+'0',
             };
             tc->fWriteText( tc,timestr,15 );
+          }
+          break;
+
+        case 'T': // FILETIME*
+          {
+            FILETIME *ft = va_arg( vl,FILETIME* );
+            SYSTEMTIME st,stl;
+            if( !FileTimeToSystemTime(ft,&st) ||
+                !SystemTimeToTzSpecificLocalTime(NULL,&st,&stl) )
+              RtlZeroMemory( &stl,sizeof(stl) );
+            int y = stl.wYear;
+            int m = stl.wMonth;
+            int d = stl.wDay;
+            int h = stl.wHour;
+            int mi = stl.wMinute;
+            int s = stl.wSecond;
+            char timestr[19] = {
+              y/1000+'0',(y/100)%10+'0',(y/10)%10+'0',y%10+'0','.',
+              m  /10+'0',m      %10+'0','.',
+              d  /10+'0',d      %10+'0',' ',
+              h  /10+'0',h      %10+'0',':',
+              mi /10+'0',mi     %10+'0',':',
+              s  /10+'0',s      %10+'0',
+            };
+            tc->fWriteText( tc,timestr,19 );
           }
           break;
 
@@ -5398,6 +5423,10 @@ static int isMinidump( appData *ad,const wchar_t *name )
     return( 0 );
   }
 
+  WIN32_FILE_ATTRIBUTE_DATA wfad;
+  if( !GetFileAttributesExW(name,GetFileExInfoStandard,&wfad) )
+    RtlZeroMemory( &wfad,sizeof(wfad) );
+
   size_t size;
   const char *dump = mapOfFile( name,&size );
   if( nameCopy ) HeapFree( heap,0,nameCopy );
@@ -5579,6 +5608,22 @@ static int isMinidump( appData *ad,const wchar_t *name )
 
     if( misc && misc->Flags1&MINIDUMP_MISC1_PROCESS_ID )
       printf( "$IPID: $N%u\n",misc->ProcessId );
+    if( misc && misc->Flags1&MINIDUMP_MISC1_PROCESS_TIMES )
+    {
+      printf( "$Iuser CPU time:   $N%t\n",misc->ProcessUserTime*1000 );
+      printf( "$Ikernel CPU time: $N%t\n",misc->ProcessKernelTime*1000 );
+
+      LONGLONG ll = Int32x32To64( misc->ProcessCreateTime,10000000 ) +
+        116444736000000000LL;
+      FILETIME ft;
+      ft.dwLowDateTime = (DWORD)ll;
+      ft.dwHighDateTime = (DWORD)( ll>>32 );
+      printf( "$Iprocess creation time:  $N%T\n",&ft );
+
+      if( wfad.ftLastWriteTime.dwLowDateTime ||
+          wfad.ftLastWriteTime.dwHighDateTime )
+        printf( "$Iminidump modified time: $N%T\n",&wfad.ftLastWriteTime );
+    }
   }
 
   ds.swf.fReadProcessMemory = readDumpMemory;
