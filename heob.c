@@ -6121,7 +6121,8 @@ static void mainLoop( appData *ad,UINT *exitCode )
           for( m=0; m<mi_q; m++ )
           {
             if( !ds->fSymGetModuleInfo64(ds->process,mi_a[m].base,&im) )
-              dbgsym_loadmodule( ds,mi_a[m].path,mi_a[m].base,0 );
+              dbgsym_loadmodule( ds,mi_a[m].path,mi_a[m].base,
+                  (DWORD)mi_a[m].size );
           }
         }
 #endif
