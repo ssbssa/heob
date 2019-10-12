@@ -1809,10 +1809,14 @@ static void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
       fSymInitializeW( ds->process,dbgPath,invade );
     else if( fSymInitialize )
     {
-      char *ansiPath = ds->ansiPath;
-      int count = WideCharToMultiByte( CP_ACP,0,
-          dbgPath,-1,ansiPath,MAX_PATH,NULL,NULL );
-      if( count<=0 || count>=MAX_PATH ) ansiPath[0] = 0;
+      char *ansiPath = NULL;
+      if( dbgPath )
+      {
+        ansiPath = ds->ansiPath;
+        int count = WideCharToMultiByte( CP_ACP,0,
+            dbgPath,-1,ansiPath,MAX_PATH,NULL,NULL );
+        if( count<=0 || count>=MAX_PATH ) ansiPath[0] = 0;
+      }
       fSymInitialize( ds->process,ansiPath,invade );
     }
   }
