@@ -4821,17 +4821,43 @@ VOID CALLBACK heob( ULONG_PTR arg )
         void *padding2[9];
         uint32_t padding3[6];
         cygheap_exec_info *moreinfo;
+        int padding4[2];
+        char padding5[4];
       }
-      cyg_child_info;
-      cyg_child_info *ci = (cyg_child_info*)startup.lpReserved2;
-      int type = 0;
-      if( startup.cbReserved2>=sizeof(cyg_child_info) && ci )
-        type = ci->type;
-      if( (type==1 || type==2) &&
-          ci->moreinfo && ci->moreinfo->argc && ci->moreinfo->argv )
+      cyg_child_info_1;
+      typedef struct
       {
-        int argc = ci->moreinfo->argc;
-        const char **argv = ci->moreinfo->argv;
+        uint32_t padding1[4];
+        unsigned short type;
+        void *padding2[9];
+        uint32_t padding3[6];
+        void *cygpid;
+        cygheap_exec_info *moreinfo;
+        int padding4[2];
+        char padding5[4];
+      }
+      cyg_child_info_2;
+      cyg_child_info_1 *ci1 = (cyg_child_info_1*)startup.lpReserved2;
+      cyg_child_info_2 *ci2 = (cyg_child_info_2*)startup.lpReserved2;
+      int type = 0;
+      if( startup.cbReserved2>=sizeof(cyg_child_info_1) && ci1 )
+        type = ci1->type;
+      int argc = 0;
+      const char **argv = NULL;
+      if( (type==1 || type==2) &&
+          startup.cbReserved2==sizeof(cyg_child_info_1) && ci1->moreinfo )
+      {
+        argc = ci1->moreinfo->argc;
+        argv = ci1->moreinfo->argv;
+      }
+      else if( (type==1 || type==2) &&
+          startup.cbReserved2==sizeof(cyg_child_info_2) && ci2->moreinfo )
+      {
+        argc = ci2->moreinfo->argc;
+        argv = ci2->moreinfo->argv;
+      }
+      if( argc && argv )
+      {
         wchar_t *cmdLine = api->commandLine;
         wchar_t *cmdLineEnd = cmdLine + 32768 - 1;
         int i;
