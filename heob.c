@@ -5393,6 +5393,8 @@ static BOOL WINAPI symbolCallback( HANDLE process,
 
 static int isMinidump( appData *ad,const wchar_t *name )
 {
+  if( ad->pi.hProcess ) return( 0 );
+
   HANDLE heap = ad->heap;
   textColor *tc = ad->tcOut;
 
