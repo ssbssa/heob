@@ -2636,8 +2636,8 @@ static void *protect_alloc_m( size_t s )
     if( rd->opt.protect>1 ) slackStart += s;
     size_t count = slackSize>>3;
     ASSUME( count>0 );
-    uint64_t *u64 = ASSUME_ALIGNED( (uint64_t*)slackStart,
-        MEMORY_ALLOCATION_ALIGNMENT );
+    uint64_t *u64;
+    ASSUME_ALIGNED( u64,(uint64_t*)slackStart,MEMORY_ALLOCATION_ALIGNMENT );
     size_t i;
     uint64_t slackInit64 = rd->slackInit64;
     for( i=0; i<count; i++ )
@@ -2685,8 +2685,8 @@ static NOINLINE void protect_free_m( void *b,funcType ft )
   {
     size_t count = slackSize>>3;
     ASSUME( count>0 );
-    uint64_t *u64 = ASSUME_ALIGNED( (uint64_t*)slackStart,
-        MEMORY_ALLOCATION_ALIGNMENT );
+    uint64_t *u64;
+    ASSUME_ALIGNED( u64,(uint64_t*)slackStart,MEMORY_ALLOCATION_ALIGNMENT );
     size_t i;
     uint64_t slackInit64 = rd->slackInit64;
     for( i=0; i<count && u64[i]==slackInit64; i++ );
@@ -2749,7 +2749,8 @@ static inline void alloc_initialize( void *b,size_t s,
   s += ( align - (s%align) )%align;
   size_t count = s>>3;
   ASSUME( count>0 );
-  uint64_t *u64 = ASSUME_ALIGNED( b,MEMORY_ALLOCATION_ALIGNMENT );
+  uint64_t *u64;
+  ASSUME_ALIGNED( u64,b,MEMORY_ALLOCATION_ALIGNMENT );
   size_t i;
   for( i=0; i<count; i++ )
     u64[i] = init;
