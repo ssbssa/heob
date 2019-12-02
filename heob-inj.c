@@ -430,7 +430,7 @@ static void writeModsFind( modInfo **p_mi_a,int *p_mi_q )
 
       char *res = LockResource( g );
       VS_FIXEDFILEINFO *ver = (VS_FIXEDFILEINFO*)( res+40 );
-      if( !res || ver->dwSignature!=0xfeef04bd ) continue;
+      if( !res || ver->dwSignature!=VS_FFI_SIGNATURE ) continue;
 
       mi->versionMS = ver->dwFileVersionMS;
       mi->versionLS = ver->dwFileVersionLS;
