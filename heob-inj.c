@@ -429,8 +429,9 @@ static void writeModsFind( modInfo **p_mi_a,int *p_mi_q )
       if( !g ) continue;
 
       char *res = LockResource( g );
+      if( !res ) continue;
       VS_FIXEDFILEINFO *ver = (VS_FIXEDFILEINFO*)( res+40 );
-      if( !res || ver->dwSignature!=VS_FFI_SIGNATURE ) continue;
+      if( ver->dwSignature!=VS_FFI_SIGNATURE ) continue;
 
       mi->versionMS = ver->dwFileVersionMS;
       mi->versionLS = ver->dwFileVersionLS;
@@ -2288,9 +2289,9 @@ int heobSubProcess(
     {
       // heob command line {{{
       wchar_t num[32];
-      wchar_t *numEnd = num + sizeof(num)/2;
+      wchar_t *numEnd = num + sizeof(num)/2 - 1;
       int defVal;
-      *(--numEnd) = 0;
+      *numEnd = 0;
       lstrcpyW( heobCmd,heobEnd );
 #define ADD_OPTION( option,val,defVal ) \
       addOption( heobCmd,L##option,opt->val,defVal,numEnd )
@@ -4659,10 +4660,10 @@ VOID CALLBACK heob( ULONG_PTR arg )
     fInitCritSecEx( &ld->csMod,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
     fInitCritSecEx( &ld->csWrite,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
     fInitCritSecEx( &ld->csFreedMod,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
-    int i;
     if( ld->splits )
     {
       fInitCritSecEx( &ld->csAllocId,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
+      int i;
       for( i=0; i<=SPLIT_MASK; i++ )
       {
         fInitCritSecEx( &ld->splits[i].cs,
@@ -4681,10 +4682,10 @@ VOID CALLBACK heob( ULONG_PTR arg )
     InitializeCriticalSection( &ld->csMod );
     InitializeCriticalSection( &ld->csWrite );
     InitializeCriticalSection( &ld->csFreedMod );
-    int i;
     if( ld->splits )
     {
       InitializeCriticalSection( &ld->csAllocId );
+      int i;
       for( i=0; i<=SPLIT_MASK; i++ )
       {
         InitializeCriticalSection( &ld->splits[i].cs );

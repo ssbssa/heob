@@ -641,8 +641,6 @@ static void WriteTextW( textColor *tc,const wchar_t *t,size_t l )
     uint8_t c8 = c32;
     if( c32>=0x80 )
       c8 = '?';
-    else
-      c8 = c32;
     WriteFile( tc->out,&c8,1,&written,NULL );
 
     if( chars>1 ) i++;
@@ -3278,8 +3276,8 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
   // }}}
   int l;
   int lMax = leakDetails>1 ? LT_COUNT : 1;
-  int lDetails = leakDetails>1 ? ( leakDetails&1 ? LT_COUNT : LT_REACHABLE ) :
-    ( leakDetails ? 1 : 0 );
+  int lDetails = leakDetails>1 ?
+    ( (leakDetails&1) ? LT_COUNT : LT_REACHABLE ) : ( leakDetails ? 1 : 0 );
   stackGroup *sg_a =
     HeapAlloc( heap,HEAP_ZERO_MEMORY,lMax*sizeof(stackGroup) );
   const char *leakTypeNames[LT_COUNT] = {
@@ -5393,7 +5391,7 @@ static BOOL WINAPI symbolCallback( HANDLE process,
 
 static int isMinidump( appData *ad,const wchar_t *name )
 {
-  if( ad->pi.hProcess ) return( 0 );
+  if( ad->pi.hProcess || !name ) return( 0 );
 
   HANDLE heap = ad->heap;
   textColor *tc = ad->tcOut;
@@ -7399,7 +7397,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     RtlZeroMemory( &si,sizeof(STARTUPINFO) );
     si.cb = sizeof(STARTUPINFO);
     BOOL result = CreateProcessW( NULL,args,NULL,NULL,FALSE,
-        CREATE_SUSPENDED|(opt.newConsole&1?CREATE_NEW_CONSOLE:0),
+        CREATE_SUSPENDED|((opt.newConsole&1)?CREATE_NEW_CONSOLE:0),
         NULL,NULL,&si,&ad->pi );
     if( !result )
     {
