@@ -2289,7 +2289,7 @@ int heobSubProcess(
     {
       // heob command line {{{
       wchar_t num[32];
-      wchar_t *numEnd = num + sizeof(num)/2 - 1;
+      wchar_t *numEnd = num + ( sizeof(num)/2-1 );
       int defVal;
       *numEnd = 0;
       lstrcpyW( heobCmd,heobEnd );

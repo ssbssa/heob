@@ -45,7 +45,7 @@ function heobInit()
   let rect0 = addRectPara(svgNs, '100%', '100%', '#cccccc');
   svgs[0].insertBefore(rect0, svgs[0].firstChild);
 
-  svgs[0].onmousedown = function(e) { if (e.button == 1) return false; }
+  svgs[0].onmousedown = function(e) { if (e.button == 1) return false; };
 
   maxStack = -1;
   let bottom, zoomSvg;
