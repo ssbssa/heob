@@ -45,7 +45,7 @@ function heobInit()
   let rect0 = addRectPara(svgNs, '100%', '100%', '#cccccc');
   svgs[0].insertBefore(rect0, svgs[0].firstChild);
 
-  svgs[0].onmousedown = function(e) { if (e.button == 1) return false; };
+  svgs[0].onmousedown = function(e) { if (e.button === 1) return false; };
 
   maxStack = -1;
   let bottom, zoomSvg;
@@ -62,31 +62,31 @@ function heobInit()
   for (let i = 0; i < svgs.length; i++)
   {
     let svg = svgs[i];
-    if (svg.attributes['heobSum'] == undefined) continue;
+    if (svg.attributes['heobSum'] === undefined) continue;
 
     let ofs = parseInt(svg.attributes['heobOfs'].value);
     let stack = parseInt(svg.attributes['heobStack'].value);
     let samples = parseInt(svg.attributes['heobSum'].value);
     let allocs = 0;
-    let svgType = svg.attributes['heobAllocs'] == undefined;
+    let svgType = svg.attributes['heobAllocs'] === undefined;
     if (!svgType)
       allocs = parseInt(svg.attributes['heobAllocs'].value);
-    if (mapType == undefined)
+    if (mapType === undefined)
       mapType = svgType;
 
-    if (firstSvg == undefined && stack > 0)
+    if (firstSvg === undefined && stack > 0)
       firstSvg = svg;
 
-    if (stack == 1)
+    if (stack === 1)
     {
       if (!svgType)
         sumSamples += samples;
       sumAllocs += allocs;
     }
 
-    if (stack == 1 && zoomSvg == undefined)
+    if (stack === 1 && zoomSvg === undefined)
       zoomSvg = svg;
-    else if (stack == 0)
+    else if (stack === 0)
     {
       bottom = svg;
       if (samples > parseInt(zoomSvg.attributes['heobSum'].value) + 0.1)
@@ -104,18 +104,18 @@ function heobInit()
 
     if (stack > 1)
     {
-      if (svg.attributes['heobAddr'] != undefined &&
-          svg.attributes['heobMod'] != undefined)
+      if (svg.attributes['heobAddr'] !== undefined &&
+          svg.attributes['heobMod'] !== undefined)
       {
         let addrKey = svg.attributes['heobAddr'].value;
         addToCountMap(addrKey, addrCountMap, ofs, samples, svg);
       }
-      if (svg.attributes['heobSource'] != undefined)
+      if (svg.attributes['heobSource'] !== undefined)
       {
         let sourceKey = svg.attributes['heobSource'].value;
         addToCountMap(sourceKey, sourceCountMap, ofs, samples, svg);
       }
-      if (svg.attributes['heobFunc'] != undefined)
+      if (svg.attributes['heobFunc'] !== undefined)
       {
         let funcKey = svg.attributes['heobFunc'].value;
         addToCountMap(funcKey, funcCountMap, ofs, samples, svg);
@@ -125,21 +125,21 @@ function heobInit()
     let color;
     if (stack <= 1)
       color = createBaseColor();
-    else if (svg.attributes['heobSource'] != undefined)
+    else if (svg.attributes['heobSource'] !== undefined)
     {
       color = getColorOfMap(svg,
           colorMapSource, 'heobFunc', createSourceColor);
-      if (svg.attributes['heobAddr'] == undefined)
+      if (svg.attributes['heobAddr'] === undefined)
         color = '#' +
           (parseInt(color.substring(1), 16) + 0x004000).toString(16);
     }
-    else if (svg.attributes['heobFunc'] != undefined)
+    else if (svg.attributes['heobFunc'] !== undefined)
       color = getColorOfMap(svg,
           colorMapFunc, 'heobFunc', createFuncColor);
-    else if (svg.attributes['heobAddr'] != undefined)
+    else if (svg.attributes['heobAddr'] !== undefined)
       color = getColorOfMap(svg,
           colorMapAddr, 'heobAddr', createAddrColor);
-    else if (svg.attributes['heobBlocked'] != undefined)
+    else if (svg.attributes['heobBlocked'] !== undefined)
       color = getColorOfMap(svg,
           colorMapBlocked, 'heobThread', createBlockedColor);
     else
@@ -160,33 +160,33 @@ function heobInit()
     addRect(svg, svgNs, color);
 
     let t;
-    if (svg.attributes['heobFunc'] != undefined)
+    if (svg.attributes['heobFunc'] !== undefined)
       t = svg.attributes['heobFunc'].value;
-    else if (svg.attributes['heobSource'] != undefined)
+    else if (svg.attributes['heobSource'] !== undefined)
       t = svg.attributes['heobSource'].value;
-    else if (svg.attributes['heobMod'] != undefined)
+    else if (svg.attributes['heobMod'] !== undefined)
     {
       t = svg.attributes['heobMod'].value;
       let delim = t.lastIndexOf('\\');
       if (delim >= 0)
         t = t.substr(delim + 1);
     }
-    else if (svg.attributes['heobAddr'] != undefined)
+    else if (svg.attributes['heobAddr'] !== undefined)
       t = svg.attributes['heobAddr'].value;
-    else if (svg.attributes['heobThread'] != undefined)
+    else if (svg.attributes['heobThread'] !== undefined)
       t = svg.attributes['heobThread'].value;
     else
       continue;
     addText(svg, svgNs, t);
 
-    if (svg.attributes['heobBlocked'] != undefined)
+    if (svg.attributes['heobBlocked'] !== undefined)
       blockedCount++;
 
-    if (svg.attributes['heobThread'] != undefined)
+    if (svg.attributes['heobThread'] !== undefined)
     {
       let thread = svg.attributes['heobThread'].value;
       let mapEntry = threadMap.get(thread);
-      if (mapEntry == undefined)
+      if (mapEntry === undefined)
       {
         mapEntry = new Array(5);
         mapEntry[0] = 0;           // sum of samples
@@ -196,9 +196,9 @@ function heobInit()
         mapEntry[4] = undefined;   // color
         threadMap.set(thread, mapEntry);
       }
-      if (ofs + 0.1 >= mapEntry[1] && mapType == svgType)
+      if (ofs + 0.1 >= mapEntry[1] && mapType === svgType)
       {
-        if (mapEntry[0] && mapEntry[4] == undefined)
+        if (mapEntry[0] && mapEntry[4] === undefined)
           mapEntry[4] = getColorOfMap(svg,
               colorMapThread, 'heobThread', createThreadColor);
         mapEntry[0] += samples;
@@ -215,7 +215,7 @@ function heobInit()
     for (let i = 0; i < svgs.length; i++)
     {
       let svg = svgs[i];
-      if (svg.attributes['heobStack'] == undefined) continue;
+      if (svg.attributes['heobStack'] === undefined) continue;
 
       svg.setAttribute('heobStack',
           parseInt(svg.attributes['heobStack'].value) - 1);
@@ -225,7 +225,7 @@ function heobInit()
   for (let i = 0; i < svgs.length; i++)
   {
     let svg = svgs[i];
-    if (svg.attributes['heobSum'] == undefined) continue;
+    if (svg.attributes['heobSum'] === undefined) continue;
 
     let t = withNL(funcAttribute(svg)) + withNL(sourceAttribute(svg, true)) +
       withNL(addrModAttribute(svg, true)) + withNL(sumAttribute(svg)) +
@@ -235,7 +235,7 @@ function heobInit()
 
   let svg = svgs[0];
 
-  if (firstSvg != undefined && bottom != undefined)
+  if (firstSvg !== undefined && bottom !== undefined)
     svg.insertBefore(bottom, firstSvg);
 
   let svgWidth = parseInt(svg.width.baseVal.value);
@@ -260,11 +260,11 @@ function heobInit()
     {
       let sumSamplesA = threadMap.get(a)[0];
       let sumSamplesB = threadMap.get(b)[0];
-      if (sumSamplesA != sumSamplesB)
+      if (sumSamplesA !== sumSamplesB)
         return sumSamplesB - sumSamplesA;
       return a.localeCompare(b, undefined, {numeric: true});
     });
-  if (threadArray.length == 1)
+  if (threadArray.length === 1)
     threadArray.pop();
 
   let extraCount = Math.max(showCount, threadArray.length);
@@ -390,7 +390,7 @@ function heobInit()
 
   showType(0, 0);
 
-  if (zoomSvg != undefined)
+  if (zoomSvg !== undefined)
   {
     // fake left mouse button
     let e = { button: 0 };
@@ -401,7 +401,7 @@ function heobInit()
   window.addEventListener("keydown",
       function(e)
       {
-        if (e.keyCode == 114 || (e.ctrlKey && e.keyCode == 70))
+        if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70))
         {
           e.preventDefault();
           searchFunction();
@@ -411,12 +411,12 @@ function heobInit()
 
 function searchFunction()
 {
-  if (searchRe != undefined)
+  if (searchRe !== undefined)
     searchRe = undefined;
   else
   {
     let str = prompt("Search string", "");
-    if (str != null)
+    if (str !== null)
       searchRe = new RegExp(str, 'i');
   }
 
@@ -425,9 +425,9 @@ function searchFunction()
   for (let i = 0; i < svgs.length; i++)
   {
     let svg = svgs[i];
-    if (svg.attributes['heobFunc'] == undefined) continue;
+    if (svg.attributes['heobFunc'] === undefined) continue;
     let rect = svg.getElementsByTagName('rect')[1];
-    if (searchRe == undefined ||
+    if (searchRe === undefined ||
         svg.attributes['heobFunc'].value.search(searchRe) < 0)
     {
       rect.setAttribute('fill', svg.attributes['heobColor'].value);
@@ -462,12 +462,12 @@ function createGradient(svg, svgNs, name, grad1, grad2)
 function getColorOfMap(svg, map, attr, colorFunction)
 {
   let color;
-  if (svg.attributes[attr] != undefined)
+  if (svg.attributes[attr] !== undefined)
     color = map.get(svg.attributes[attr].value);
-  if (color == undefined)
+  if (color === undefined)
   {
     color = colorFunction();
-    if (svg.attributes[attr] != undefined)
+    if (svg.attributes[attr] !== undefined)
       map.set(svg.attributes[attr].value, color);
   }
   return color;
@@ -476,7 +476,7 @@ function getColorOfMap(svg, map, attr, colorFunction)
 function addToCountMap(key, map, ofs, samples, svg)
 {
   let val = map.get(key);
-  if (val == undefined)
+  if (val === undefined)
   {
     val = new Array(7);
     val[0] = 0;   // count
@@ -517,28 +517,28 @@ function resetCountMap(map)
       val[1] = 0;
       val[2] = 0;
       val[3] = 0;
-      val[5] = val[4].attributes['heobSource'] != undefined ? 1 : 0;
-      val[6] = val[4].attributes['heobAddr'] != undefined ? 1 : 0;
+      val[5] = val[4].attributes['heobSource'] !== undefined ? 1 : 0;
+      val[6] = val[4].attributes['heobAddr'] !== undefined ? 1 : 0;
     });
 }
 
 function updateCountMap(map, svg, keyName, ofs, samples, shownSamples, allocs)
 {
-  if (svg.attributes[keyName] == undefined) return;
+  if (svg.attributes[keyName] === undefined) return;
   let key = svg.attributes[keyName].value;
   let val = map.get(key);
-  if (val == undefined || ofs + 0.1 < val[1]) return;
+  if (val === undefined || ofs + 0.1 < val[1]) return;
   val[0]++;
   val[1] = ofs + samples;
   val[2] += shownSamples;
   val[3] += allocs;
   if (val[5] &&
-      (svg.attributes['heobSource'] == undefined ||
+      (svg.attributes['heobSource'] === undefined ||
        svg.attributes['heobSource'].value !=
        val[4].attributes['heobSource'].value))
     val[5] = 0;
   if (val[6] &&
-      (svg.attributes['heobAddr'] == undefined ||
+      (svg.attributes['heobAddr'] === undefined ||
        svg.attributes['heobAddr'].value !=
        val[4].attributes['heobAddr'].value))
     val[6] = 0;
@@ -551,7 +551,7 @@ function sortCountMap(map, arr)
     {
       let valueA = map.get(a);
       let valueB = map.get(b);
-      if ((valueA[0] >= 2) == (valueB[0] >= 2))
+      if ((valueA[0] >= 2) === (valueB[0] >= 2))
         return valueB[2] - valueA[2];
       return valueA[0] >= 2 ? -1 : 1;
     });
@@ -560,7 +560,7 @@ function sortCountMap(map, arr)
 function getShowKey(svg)
 {
   let key;
-  if (svg.attributes[showKey] != undefined)
+  if (svg.attributes[showKey] !== undefined)
     key = svg.attributes[showKey].value;
   return key;
 }
@@ -626,7 +626,7 @@ function addTitle(par, svgNs, t)
 function addText(par, svgNs, t, x)
 {
   let newText = document.createElementNS(svgNs, 'text');
-  if (x == undefined)
+  if (x === undefined)
     x = '2';
   newText.setAttribute('x', x);
   newText.setAttribute('y', '10.5');
@@ -696,7 +696,7 @@ function addPlusMinus(par, svgNs, x, y, stack)
   if (!stack)
     svg.style['display'] = 'none';
   addTitle(svg, svgNs,
-      stack == 0 ? 'show all stack frames' :
+      stack === 0 ? 'show all stack frames' :
       (stack < 0 ? 'suppress irrelevant stack frames' :
        'suppress stack frames'));
   par.appendChild(svg);
@@ -714,10 +714,10 @@ function plusMinus(stack)
 
 function attributeToText(svg, attr, noPath)
 {
-  if (svg.attributes[attr] != undefined)
+  if (svg.attributes[attr] !== undefined)
   {
     let t = svg.attributes[attr].value;
-    if (noPath == true)
+    if (noPath === true)
     {
       let delim = t.lastIndexOf('\\');
       if (delim >= 0)
@@ -743,7 +743,7 @@ function addrModAttribute(svg, noPath)
 {
   let tAddr = attributeToText(svg, 'heobAddr');
   let tMod = attributeToText(svg, 'heobMod', noPath);
-  if (tAddr.length == 0 && tMod.length > 0)
+  if (tAddr.length === 0 && tMod.length > 0)
     tAddr = 'inlined';
   if (tAddr.length > 0 && tMod.length > 0)
     return tAddr + ': ' + tMod;
@@ -770,11 +770,11 @@ function sumText(samples, bytes, allocs)
 
 function sumAttribute(svg)
 {
-  if (svg.attributes['heobText'] != undefined)
+  if (svg.attributes['heobText'] !== undefined)
     return svg.attributes['heobText'].value;
 
   let sum = parseInt(svg.attributes['heobSum'].value);
-  if (svg.attributes['heobAllocs'] != undefined)
+  if (svg.attributes['heobAllocs'] !== undefined)
     return sumText(0, sum, parseInt(svg.attributes['heobAllocs'].value));
   else
     return sumText(sum, 0, 0);
@@ -792,7 +792,7 @@ function idAttribute(svg)
 
 function withNL(t)
 {
-  if (t.length == 0)
+  if (t.length === 0)
     return t;
   return t + '\n';
 }
@@ -822,12 +822,12 @@ function addrInfoSet(svg)
   for (let i = 0; i < svgs.length; i++)
   {
     let svgEntry = svgs[i];
-    if (svgEntry.attributes['heobSum'] == undefined) continue;
-    if (svgEntry.style['display'] == 'none') continue;
+    if (svgEntry.attributes['heobSum'] === undefined) continue;
+    if (svgEntry.style['display'] === 'none') continue;
 
     let opacity = parseFloat(svgEntry.attributes['heobOpacity'].value);
     let entryKey = getShowKey(svgEntry);
-    if (entryKey == undefined || entryKey != key)
+    if (entryKey === undefined || entryKey !== key)
       opacity *= 0.25;
     else
       opacity = 1;
@@ -841,8 +841,8 @@ function addrInfoClear()
   for (let i = 0; i < svgs.length; i++)
   {
     let svgEntry = svgs[i];
-    if (svgEntry.attributes['heobSum'] == undefined) continue;
-    if (svgEntry.style['display'] == 'none') continue;
+    if (svgEntry.attributes['heobSum'] === undefined) continue;
+    if (svgEntry.style['display'] === 'none') continue;
 
     let opacity = parseFloat(svgEntry.attributes['heobOpacity'].value);
     svgEntry.style['opacity'] = opacity;
@@ -856,12 +856,12 @@ function threadInfoSet(svg)
   for (let i = 0; i < svgs.length; i++)
   {
     let svgEntry = svgs[i];
-    if (svgEntry.attributes['heobSum'] == undefined) continue;
-    if (svgEntry.style['display'] == 'none') continue;
+    if (svgEntry.attributes['heobSum'] === undefined) continue;
+    if (svgEntry.style['display'] === 'none') continue;
 
     let opacity = parseFloat(svgEntry.attributes['heobOpacity'].value);
-    if (svgEntry.attributes['heobThread'] == undefined ||
-        svgEntry.attributes['heobThread'].value != key)
+    if (svgEntry.attributes['heobThread'] === undefined ||
+        svgEntry.attributes['heobThread'].value !== key)
       opacity *= 0.25;
     else
       opacity = 1;
@@ -875,11 +875,11 @@ function blockedInfoSet()
   for (let i = 0; i < svgs.length; i++)
   {
     let svgEntry = svgs[i];
-    if (svgEntry.attributes['heobSum'] == undefined) continue;
-    if (svgEntry.style['display'] == 'none') continue;
+    if (svgEntry.attributes['heobSum'] === undefined) continue;
+    if (svgEntry.style['display'] === 'none') continue;
 
     let opacity = parseFloat(svgEntry.attributes['heobOpacity'].value);
-    if (svgEntry.attributes['heobBlocked'] == undefined)
+    if (svgEntry.attributes['heobBlocked'] === undefined)
       opacity *= 0.25;
     else
       opacity = 1;
@@ -911,17 +911,17 @@ function getAddrZoomers(key)
   for (let i = 0; i < svgs.length; i++)
   {
     let svg = svgs[i];
-    if (svg.attributes['heobSum'] == undefined) continue;
+    if (svg.attributes['heobSum'] === undefined) continue;
 
     let entryKey = getShowKey(svg);
-    if (entryKey == undefined || entryKey != key)
+    if (entryKey === undefined || entryKey !== key)
       continue;
 
     let ofs = parseInt(svg.attributes['heobOfs'].value);
     if (ofs + 0.1 < maxExtention)
       continue;
 
-    if (foundSvg == undefined)
+    if (foundSvg === undefined)
       foundSvg = svg;
 
     let stack = parseInt(svg.attributes['heobStack'].value);
@@ -946,10 +946,10 @@ function getThreadZoomers(key)
   for (let i = 0; i < svgs.length; i++)
   {
     let svg = svgs[i];
-    if (svg.attributes['heobSum'] == undefined) continue;
+    if (svg.attributes['heobSum'] === undefined) continue;
 
-    if (svg.attributes['heobThread'] == undefined ||
-        svg.attributes['heobThread'].value != key)
+    if (svg.attributes['heobThread'] === undefined ||
+        svg.attributes['heobThread'].value !== key)
       continue;
 
     let ofs = parseInt(svg.attributes['heobOfs'].value);
@@ -978,9 +978,9 @@ function getBlockedZoomers()
   for (let i = 0; i < svgs.length; i++)
   {
     let svg = svgs[i];
-    if (svg.attributes['heobSum'] == undefined) continue;
+    if (svg.attributes['heobSum'] === undefined) continue;
 
-    if (svg.attributes['heobBlocked'] == undefined)
+    if (svg.attributes['heobBlocked'] === undefined)
       continue;
 
     let ofs = parseInt(svg.attributes['heobOfs'].value);
@@ -1098,7 +1098,7 @@ function zoomArr(zoomers)
   lastZoomers = zoomers;
 
   let zoomSamples = 0;
-  let minStack = suppressStacks == 0 ? 0 : maxStack;
+  let minStack = suppressStacks === 0 ? 0 : maxStack;
   for (let i = 0; i < zoomers.length; i++)
   {
     zoomSamples += zoomers[i][2];
@@ -1141,13 +1141,13 @@ function zoomArr(zoomers)
   for (let i = 0; i < svgs.length; i++)
   {
     let svg = svgs[i];
-    if (svg.attributes['heobSum'] == undefined) continue;
+    if (svg.attributes['heobSum'] === undefined) continue;
 
     let ofs = parseInt(svg.attributes['heobOfs'].value);
     let stack = parseInt(svg.attributes['heobStack'].value);
     let samples = parseInt(svg.attributes['heobSum'].value);
     let allocs = 0;
-    let svgType = svg.attributes['heobAllocs'] == undefined;
+    let svgType = svg.attributes['heobAllocs'] === undefined;
     if (!svgType)
       allocs = parseInt(svg.attributes['heobAllocs'].value);
 
@@ -1172,7 +1172,7 @@ function zoomArr(zoomers)
     if (stack > visibleStack)
       visibleStack = stack;
 
-    if (svg.attributes['heobBlocked'] != undefined)
+    if (svg.attributes['heobBlocked'] !== undefined)
       blockedCount++;
 
     let x1 = pos;
@@ -1188,7 +1188,7 @@ function zoomArr(zoomers)
     }
     let shownSamples = x2 - x1;
 
-    if (mapType == svgType)
+    if (mapType === svgType)
     {
       updateCountMap(addrCountMap, svg, 'heobAddr',
           ofs, samples, shownSamples, allocs);
@@ -1198,12 +1198,12 @@ function zoomArr(zoomers)
           ofs, samples, shownSamples, allocs);
 
       let thread;
-      if (svg.attributes['heobThread'] != undefined)
+      if (svg.attributes['heobThread'] !== undefined)
         thread = svg.attributes['heobThread'].value;
       let mapEntry;
-      if (thread != undefined)
+      if (thread !== undefined)
         mapEntry = threadMap.get(thread);
-      if (mapEntry != undefined && ofs + 0.1 >= mapEntry[1])
+      if (mapEntry !== undefined && ofs + 0.1 >= mapEntry[1])
       {
         mapEntry[0] += shownSamples;
         mapEntry[1] = ofs + samples;
@@ -1261,7 +1261,7 @@ function zoomArr(zoomers)
   for (let i = 4; i < maxStack; i++)
   {
     let minusSvg = document.getElementById('minus' + i);
-    if (i < stackShowMin || i > visibleStack || i == suppressStacks)
+    if (i < stackShowMin || i > visibleStack || i === suppressStacks)
     {
       minusSvg.style['display'] = 'none';
       continue;
@@ -1283,9 +1283,9 @@ function zoomArr(zoomers)
   {
     let arr = showArrs[i];
     let l = arr.length;
-    if (l == 0) continue;
+    if (l === 0) continue;
     let map0 = showMaps[i].get(arr[0]);
-    if (map0[2] == 0 || map0[0] < 2) l = 0;
+    if (map0[2] === 0 || map0[0] < 2) l = 0;
     if (l > showCount) showCount = l;
   }
 
@@ -1294,12 +1294,12 @@ function zoomArr(zoomers)
     {
       let sumSamplesA = threadMap.get(a)[0];
       let sumSamplesB = threadMap.get(b)[0];
-      if (sumSamplesA != sumSamplesB)
+      if (sumSamplesA !== sumSamplesB)
         return sumSamplesB - sumSamplesA;
       return a.localeCompare(b, undefined, {numeric: true});
     });
   let threadCount = threadArray.length;
-  if (threadCount > 1 && threadMap.get(threadArray[1])[0] == 0)
+  if (threadCount > 1 && threadMap.get(threadArray[1])[0] === 0)
     threadCount = 0;
 
   halfWidth = fullWidth;
@@ -1323,13 +1323,13 @@ function zoomArr(zoomers)
     let svg = document.getElementById('thread' + i);
 
     let sum = value[0];
-    if (sum == 0 || i >= threadCount)
+    if (sum === 0 || i >= threadCount)
     {
       svg.style['display'] = 'none';
       continue;
     }
 
-    if (maxThreadSamples == 0)
+    if (maxThreadSamples === 0)
       maxThreadSamples = sum;
 
     let refSvg = value[2];
@@ -1337,7 +1337,7 @@ function zoomArr(zoomers)
     let width = Math.max(sum * halfWidth / maxThreadSamples, 2);
     let x = spacer + fullWidth - width;
     let color = value[4];
-    if (color == undefined)
+    if (color === undefined)
       color = refSvg.attributes['heobColor'].value;
 
     let title = svg.getElementsByTagName('title')[0];
@@ -1373,7 +1373,7 @@ function showTypeData(maxShowSamples)
   for (let i = 0; i < maxCount; i++)
   {
     let svg = document.getElementById('show' + i);
-    if (svg == undefined) break;
+    if (svg === undefined) break;
 
     if (i >= showArr.length)
     {
@@ -1385,13 +1385,13 @@ function showTypeData(maxShowSamples)
     let value = showMap.get(key);
 
     let sum = value[2];
-    if (sum == 0 || value[0] < 2)
+    if (sum === 0 || value[0] < 2)
     {
       svg.style['display'] = 'none';
       continue;
     }
 
-    if (maxShowSamples == undefined)
+    if (maxShowSamples === undefined)
       maxShowSamples = sum;
 
     let refSvg = value[4];
@@ -1407,7 +1407,7 @@ function showTypeData(maxShowSamples)
     let text = svg.getElementsByTagName('text')[0];
 
     let textContent = refSvg.getElementsByTagName('text')[0].textContent;
-    if (searchRe != undefined && textContent.search(searchRe) >= 0)
+    if (searchRe !== undefined && textContent.search(searchRe) >= 0)
       color = '#ffffff';
 
     let t = withNL(funcAttribute(refSvg));
@@ -1453,13 +1453,13 @@ function setButtonVisible(svg, b)
 
 function showType(t, refresh)
 {
-  if (t == 0)
+  if (t === 0)
   {
     showMap = funcCountMap;
     showArr = funcCountArr;
     showKey = 'heobFunc';
   }
-  else if (t == 1)
+  else if (t === 1)
   {
     showMap = sourceCountMap;
     showArr = sourceCountArr;
@@ -1475,7 +1475,7 @@ function showType(t, refresh)
   for (let i = 0; i < 3; i++)
   {
     let svg = document.getElementById('showType' + i);
-    setButtonEnabled(svg, i != t);
+    setButtonEnabled(svg, i !== t);
   }
 
   if (refresh)
@@ -1484,7 +1484,7 @@ function showType(t, refresh)
 
 function zoom(e, svg)
 {
-  if (e.button != 0) return;
+  if (e.button !== 0) return;
 
   functionTextReset = funcAttribute(svg);
   sourceTextReset = sourceAttribute(svg);
@@ -1496,7 +1496,7 @@ function zoom(e, svg)
 
 function delZoom(e, svg)
 {
-  if (e.button != 1) return;
+  if (e.button !== 1) return;
 
   let zoomers = getZoomers(svg);
   zoomers = zoomersAndNot(zoomers, e.ctrlKey);
@@ -1506,7 +1506,7 @@ function delZoom(e, svg)
 
 function addrZoom(e, svg)
 {
-  if (e.button != 0) return;
+  if (e.button !== 0) return;
 
   let key = svg.attributes['heobKey'].value;
 
@@ -1533,7 +1533,7 @@ function addrZoom(e, svg)
 
 function delAddrZoom(e, svg)
 {
-  if (e.button != 1) return;
+  if (e.button !== 1) return;
 
   let key = svg.attributes['heobKey'].value;
   let zoomersRet = getAddrZoomers(key);
@@ -1547,7 +1547,7 @@ function delAddrZoom(e, svg)
 
 function threadZoom(e, svg)
 {
-  if (e.button != 0) return;
+  if (e.button !== 0) return;
 
   let key = svg.attributes['heobKey'].value;
   let zoomers = getThreadZoomers(key);
@@ -1562,7 +1562,7 @@ function threadZoom(e, svg)
 
 function delThreadZoom(e, svg)
 {
-  if (e.button != 1) return;
+  if (e.button !== 1) return;
 
   let key = svg.attributes['heobKey'].value;
   let zoomers = getThreadZoomers(key);
@@ -1573,7 +1573,7 @@ function delThreadZoom(e, svg)
 
 function blockedZoom(e)
 {
-  if (e.button != 0) return;
+  if (e.button !== 0) return;
 
   let zoomers = getBlockedZoomers();
   zoomArr(zoomers);
@@ -1587,7 +1587,7 @@ function blockedZoom(e)
 
 function delBlockedZoom(e)
 {
-  if (e.button != 1) return;
+  if (e.button !== 1) return;
 
   let zoomers = getBlockedZoomers();
   zoomers = zoomersAndNot(zoomers, e.ctrlKey);
