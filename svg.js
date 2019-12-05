@@ -1039,6 +1039,28 @@ function zoomersAndNot(zoomers, invert)
   return lastZoomers;
 }
 
+function setCommonSvgData(svg, t, key, width, color, textContent)
+{
+  let title = svg.getElementsByTagName('title')[0];
+  let rects = svg.getElementsByTagName('rect');
+  let rectBg = rects[0];
+  let rect = rects[1];
+  let text = svg.getElementsByTagName('text')[0];
+
+  title.textContent = t;
+
+  svg.style['display'] = 'block';
+  svg.setAttribute('heobKey', key);
+  svg.setAttribute('width', width);
+
+  rectBg.setAttribute('width', width);
+
+  rect.setAttribute('fill', color);
+  rect.setAttribute('width', width);
+
+  text.textContent = textContent;
+}
+
 function zoomArr(zoomers)
 {
   lastZoomers = zoomers;
@@ -1278,27 +1300,12 @@ function zoomArr(zoomers)
     if (color === undefined)
       color = refSvg.attributes['heobColor'].value;
 
-    let title = svg.getElementsByTagName('title')[0];
-    let rects = svg.getElementsByTagName('rect');
-    let rectBg = rects[0];
-    let rect = rects[1];
-    let text = svg.getElementsByTagName('text')[0];
-
     let t = withNL(key) +
       sumText(mapType ? sum : 0, mapType ? 0 : sum, value[3]);
-    title.textContent = t;
 
-    svg.style['display'] = 'block';
-    svg.setAttribute('heobKey', key);
-    svg.setAttribute('width', width);
+    setCommonSvgData(svg, t, key, width, color, key);
+
     svg.setAttribute('x', x);
-
-    rectBg.setAttribute('width', width);
-
-    rect.setAttribute('fill', color);
-    rect.setAttribute('width', width);
-
-    text.textContent = key;
   }
 
   if (cpos + 0.1 < cfinish)
@@ -1338,12 +1345,6 @@ function showTypeData(maxShowSamples)
     if (width > halfWidth) width = halfWidth;
     let color = refSvg.attributes['heobColor'].value;
 
-    let title = svg.getElementsByTagName('title')[0];
-    let rects = svg.getElementsByTagName('rect');
-    let rectBg = rects[0];
-    let rect = rects[1];
-    let text = svg.getElementsByTagName('text')[0];
-
     let textContent = refSvg.getElementsByTagName('text')[0].textContent;
     if (searchRe !== undefined && textContent.search(searchRe) >= 0)
       color = '#ffffff';
@@ -1352,18 +1353,8 @@ function showTypeData(maxShowSamples)
     if (value[5]) t += withNL(sourceAttribute(refSvg, true));
     if (value[6]) t += withNL(addrModAttribute(refSvg, true));
     t += sumText(mapType ? sum : 0, mapType ? 0 : sum, value[4]);
-    title.textContent = t;
 
-    svg.style['display'] = 'block';
-    svg.setAttribute('heobKey', key);
-    svg.setAttribute('width', width);
-
-    rectBg.setAttribute('width', width);
-
-    rect.setAttribute('fill', color);
-    rect.setAttribute('width', width);
-
-    text.textContent = textContent;
+    setCommonSvgData(svg, t, key, width, color, textContent);
   }
 }
 
