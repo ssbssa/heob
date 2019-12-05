@@ -45,7 +45,7 @@ function heobInit()
   let rect0 = addRectPara(svgNs, '100%', '100%', '#cccccc');
   svgs[0].insertBefore(rect0, svgs[0].firstChild);
 
-  svgs[0].onmousedown = function(e) { if (e.button === 1) return false; };
+  svgs[0].onmousedown = function (e) { if (e.button === 1) return false; };
 
   maxStack = -1;
   let bottom, zoomSvg;
@@ -255,15 +255,7 @@ function heobInit()
       if (value[0] > 0)
         threadArray.push(key);
     });
-  threadArray.sort(
-    function (a, b)
-    {
-      let sumSamplesA = threadMap.get(a)[0];
-      let sumSamplesB = threadMap.get(b)[0];
-      if (sumSamplesA !== sumSamplesB)
-        return sumSamplesB - sumSamplesA;
-      return a.localeCompare(b, undefined, {numeric: true});
-    });
+  threadSort();
   if (threadArray.length === 1)
     threadArray.pop();
 
@@ -286,51 +278,10 @@ function heobInit()
   for (let i = 4; i < maxStack; i++)
     addPlusMinus(svg, svgNs, 1, 0, i);
 
-  for (let i = 0; i < showCount; i++)
-  {
-    let x = spacer;
-    let y = fullHeight + 31 + i * 16;
+  addDistSvgs(svgNs, svg, showCount, 'addr', 0, fullHeight, rect0);
 
-    let newSvg = createSvg(svgNs, x, y, halfWidth, 16, 'show' + i);
-
-    addTitle(newSvg, svgNs, '');
-
-    addRectBg(newSvg, svgNs, rect0);
-
-    addRect(newSvg, svgNs);
-
-    addText(newSvg, svgNs, '');
-
-    newSvg.setAttribute('onmouseover', 'addrInfoSet(this)');
-    newSvg.setAttribute('onmouseout', 'addrInfoClear()');
-    newSvg.setAttribute('onclick', 'addrZoom(evt, this)');
-    newSvg.setAttribute('onmousedown', 'delAddrZoom(evt, this)');
-
-    svg.appendChild(newSvg);
-  }
-
-  for (let i = 0; i < threadArray.length; i++)
-  {
-    let x = spacer + fullWidth - halfWidth;
-    let y = fullHeight + 31 + i * 16;
-
-    let newSvg = createSvg(svgNs, x, y, halfWidth, 16, 'thread' + i);
-
-    addTitle(newSvg, svgNs, '');
-
-    addRectBg(newSvg, svgNs, rect0);
-
-    addRect(newSvg, svgNs);
-
-    addText(newSvg, svgNs, '');
-
-    newSvg.setAttribute('onmouseover', 'threadInfoSet(this)');
-    newSvg.setAttribute('onmouseout', 'addrInfoClear()');
-    newSvg.setAttribute('onclick', 'threadZoom(evt, this)');
-    newSvg.setAttribute('onmousedown', 'delThreadZoom(evt, this)');
-
-    svg.appendChild(newSvg);
-  }
+  addDistSvgs(svgNs, svg, threadArray.length, 'thread',
+    fullWidth - halfWidth, fullHeight, rect0);
 
   let textWidth = 120;
   let blockedSvg = createSvg(svgNs,
@@ -341,9 +292,9 @@ function heobInit()
   let blockedText = addText(blockedSvg, svgNs, 'idle', textWidth / 2);
   blockedText.setAttribute('text-anchor', 'middle');
   blockedSvg.setAttribute('onmouseover', 'blockedInfoSet()');
-  blockedSvg.setAttribute('onmouseout', 'addrInfoClear()');
+  blockedSvg.setAttribute('onmouseout', 'infoClear()');
   blockedSvg.setAttribute('onclick', 'blockedZoom(evt)');
-  blockedSvg.setAttribute('onmousedown', 'delBlockedZoom(evt)');
+  blockedSvg.setAttribute('onmousedown', 'blockedDelZoom(evt)');
   svg.appendChild(blockedSvg);
 
   let grad1 = ['#3fa0a0', '#a03fa0', '#a0a03f'];
@@ -399,7 +350,7 @@ function heobInit()
   infoClear();
 
   window.addEventListener("keydown",
-      function(e)
+      function (e)
       {
         if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70))
         {
@@ -407,6 +358,45 @@ function heobInit()
           searchFunction();
         }
       });
+}
+
+function threadSort()
+{
+  threadArray.sort(
+    function (a, b)
+    {
+      let sumSamplesA = threadMap.get(a)[0];
+      let sumSamplesB = threadMap.get(b)[0];
+      if (sumSamplesA !== sumSamplesB)
+        return sumSamplesB - sumSamplesA;
+      return a.localeCompare(b, undefined, {numeric: true});
+    });
+}
+
+function addDistSvgs(svgNs, par, count, name, xOfs, fullHeight, rect0)
+{
+  for (let i = 0; i < count; i++)
+  {
+    let x = spacer + xOfs;
+    let y = fullHeight + 31 + i * 16;
+
+    let newSvg = createSvg(svgNs, x, y, halfWidth, 16, name + i);
+
+    addTitle(newSvg, svgNs, '');
+
+    addRectBg(newSvg, svgNs, rect0);
+
+    addRect(newSvg, svgNs);
+
+    addText(newSvg, svgNs, '');
+
+    newSvg.setAttribute('onmouseover', name + 'InfoSet(this)');
+    newSvg.setAttribute('onmouseout', 'infoClear()');
+    newSvg.setAttribute('onclick', name + 'Zoom(evt, this)');
+    newSvg.setAttribute('onmousedown', name + 'DelZoom(evt, this)');
+
+    par.appendChild(newSvg);
+  }
 }
 
 function searchFunction()
@@ -534,12 +524,12 @@ function updateCountMap(map, svg, keyName, ofs, samples, shownSamples, allocs)
   val[3] += allocs;
   if (val[5] &&
       (svg.attributes['heobSource'] === undefined ||
-       svg.attributes['heobSource'].value !=
+       svg.attributes['heobSource'].value !==
        val[4].attributes['heobSource'].value))
     val[5] = 0;
   if (val[6] &&
       (svg.attributes['heobAddr'] === undefined ||
-       svg.attributes['heobAddr'].value !=
+       svg.attributes['heobAddr'].value !==
        val[4].attributes['heobAddr'].value))
     val[6] = 0;
 }
@@ -815,9 +805,8 @@ function infoClear()
   threadText.textContent = threadTextReset;
 }
 
-function addrInfoSet(svg)
+function opacitySetter(setter)
 {
-  let key = svg.attributes['heobKey'].value;
   let svgs = document.getElementsByTagName('svg');
   for (let i = 0; i < svgs.length; i++)
   {
@@ -826,65 +815,58 @@ function addrInfoSet(svg)
     if (svgEntry.style['display'] === 'none') continue;
 
     let opacity = parseFloat(svgEntry.attributes['heobOpacity'].value);
-    let entryKey = getShowKey(svgEntry);
-    if (entryKey === undefined || entryKey !== key)
-      opacity *= 0.25;
-    else
-      opacity = 1;
+    if (setter !== undefined)
+      opacity = setter(svgEntry, opacity);
     svgEntry.style['opacity'] = opacity;
   }
 }
 
-function addrInfoClear()
+function addrInfoSet(svg)
 {
-  let svgs = document.getElementsByTagName('svg');
-  for (let i = 0; i < svgs.length; i++)
-  {
-    let svgEntry = svgs[i];
-    if (svgEntry.attributes['heobSum'] === undefined) continue;
-    if (svgEntry.style['display'] === 'none') continue;
+  let key = svg.attributes['heobKey'].value;
+  opacitySetter(
+    function (svgEntry, opacity)
+    {
+      let entryKey = getShowKey(svgEntry);
+      if (entryKey === undefined || entryKey !== key)
+        opacity *= 0.25;
+      else
+        opacity = 1;
+      return opacity;
+    });
+}
 
-    let opacity = parseFloat(svgEntry.attributes['heobOpacity'].value);
-    svgEntry.style['opacity'] = opacity;
-  }
+function infoClear()
+{
+  opacitySetter();
 }
 
 function threadInfoSet(svg)
 {
   let key = svg.attributes['heobKey'].value;
-  let svgs = document.getElementsByTagName('svg');
-  for (let i = 0; i < svgs.length; i++)
-  {
-    let svgEntry = svgs[i];
-    if (svgEntry.attributes['heobSum'] === undefined) continue;
-    if (svgEntry.style['display'] === 'none') continue;
-
-    let opacity = parseFloat(svgEntry.attributes['heobOpacity'].value);
-    if (svgEntry.attributes['heobThread'] === undefined ||
+  opacitySetter(
+    function (svgEntry, opacity)
+    {
+      if (svgEntry.attributes['heobThread'] === undefined ||
         svgEntry.attributes['heobThread'].value !== key)
-      opacity *= 0.25;
-    else
-      opacity = 1;
-    svgEntry.style['opacity'] = opacity;
-  }
+        opacity *= 0.25;
+      else
+        opacity = 1;
+      return opacity;
+    });
 }
 
 function blockedInfoSet()
 {
-  let svgs = document.getElementsByTagName('svg');
-  for (let i = 0; i < svgs.length; i++)
-  {
-    let svgEntry = svgs[i];
-    if (svgEntry.attributes['heobSum'] === undefined) continue;
-    if (svgEntry.style['display'] === 'none') continue;
-
-    let opacity = parseFloat(svgEntry.attributes['heobOpacity'].value);
-    if (svgEntry.attributes['heobBlocked'] === undefined)
-      opacity *= 0.25;
-    else
-      opacity = 1;
-    svgEntry.style['opacity'] = opacity;
-  }
+  opacitySetter(
+    function (svgEntry, opacity)
+    {
+      if (svgEntry.attributes['heobBlocked'] === undefined)
+        opacity *= 0.25;
+      else
+        opacity = 1;
+      return opacity;
+    });
 }
 
 function getZoomers(svg)
@@ -902,7 +884,7 @@ function getZoomers(svg)
   return zoomers;
 }
 
-function getAddrZoomers(key)
+function getSelZoomers(selector)
 {
   let svgs = document.getElementsByTagName('svg');
   let zoomers = new Array();
@@ -913,8 +895,7 @@ function getAddrZoomers(key)
     let svg = svgs[i];
     if (svg.attributes['heobSum'] === undefined) continue;
 
-    let entryKey = getShowKey(svg);
-    if (entryKey === undefined || entryKey !== key)
+    if (!selector(svg))
       continue;
 
     let ofs = parseInt(svg.attributes['heobOfs'].value);
@@ -938,67 +919,32 @@ function getAddrZoomers(key)
   return [zoomers, foundSvg];
 }
 
+function getAddrZoomers(key)
+{
+  return getSelZoomers(
+    function (svg)
+    {
+      return getShowKey(svg) === key;
+    });
+}
+
 function getThreadZoomers(key)
 {
-  let svgs = document.getElementsByTagName('svg');
-  let zoomers = new Array();
-  let maxExtention = 0;
-  for (let i = 0; i < svgs.length; i++)
-  {
-    let svg = svgs[i];
-    if (svg.attributes['heobSum'] === undefined) continue;
-
-    if (svg.attributes['heobThread'] === undefined ||
-        svg.attributes['heobThread'].value !== key)
-      continue;
-
-    let ofs = parseInt(svg.attributes['heobOfs'].value);
-    if (ofs + 0.1 < maxExtention)
-      continue;
-
-    let stack = parseInt(svg.attributes['heobStack'].value);
-    let samples = parseInt(svg.attributes['heobSum'].value);
-
-    maxExtention = ofs + samples;
-
-    let zoomer = new Array(3);
-    zoomer[0] = ofs;
-    zoomer[1] = stack;
-    zoomer[2] = samples;
-    zoomers.push(zoomer);
-  }
-  return zoomers;
+  return getSelZoomers(
+    function (svg)
+    {
+      return svg.attributes['heobThread'] !== undefined &&
+        svg.attributes['heobThread'].value === key
+    })[0];
 }
 
 function getBlockedZoomers()
 {
-  let svgs = document.getElementsByTagName('svg');
-  let zoomers = new Array();
-  let maxExtention = 0;
-  for (let i = 0; i < svgs.length; i++)
-  {
-    let svg = svgs[i];
-    if (svg.attributes['heobSum'] === undefined) continue;
-
-    if (svg.attributes['heobBlocked'] === undefined)
-      continue;
-
-    let ofs = parseInt(svg.attributes['heobOfs'].value);
-    if (ofs + 0.1 < maxExtention)
-      continue;
-
-    let stack = parseInt(svg.attributes['heobStack'].value);
-    let samples = parseInt(svg.attributes['heobSum'].value);
-
-    maxExtention = ofs + samples;
-
-    let zoomer = new Array(3);
-    zoomer[0] = ofs;
-    zoomer[1] = stack;
-    zoomer[2] = samples;
-    zoomers.push(zoomer);
-  }
-  return zoomers;
+  return getSelZoomers(
+    function (svg)
+    {
+      return svg.attributes['heobBlocked'] !== undefined;
+    })[0];
 }
 
 function zoomersAndNot(zoomers, invert)
@@ -1289,15 +1235,7 @@ function zoomArr(zoomers)
     if (l > showCount) showCount = l;
   }
 
-  threadArray.sort(
-    function (a, b)
-    {
-      let sumSamplesA = threadMap.get(a)[0];
-      let sumSamplesB = threadMap.get(b)[0];
-      if (sumSamplesA !== sumSamplesB)
-        return sumSamplesB - sumSamplesA;
-      return a.localeCompare(b, undefined, {numeric: true});
-    });
+  threadSort();
   let threadCount = threadArray.length;
   if (threadCount > 1 && threadMap.get(threadArray[1])[0] === 0)
     threadCount = 0;
@@ -1372,7 +1310,7 @@ function showTypeData(maxShowSamples)
 {
   for (let i = 0; i < maxCount; i++)
   {
-    let svg = document.getElementById('show' + i);
+    let svg = document.getElementById('addr' + i);
     if (svg === undefined) break;
 
     if (i >= showArr.length)
@@ -1531,7 +1469,7 @@ function addrZoom(e, svg)
   infoClear();
 }
 
-function delAddrZoom(e, svg)
+function addrDelZoom(e, svg)
 {
   if (e.button !== 1) return;
 
@@ -1560,7 +1498,7 @@ function threadZoom(e, svg)
   infoClear();
 }
 
-function delThreadZoom(e, svg)
+function threadDelZoom(e, svg)
 {
   if (e.button !== 1) return;
 
@@ -1585,7 +1523,7 @@ function blockedZoom(e)
   infoClear();
 }
 
-function delBlockedZoom(e)
+function blockedDelZoom(e)
 {
   if (e.button !== 1) return;
 
