@@ -611,7 +611,7 @@ static inline int mul_overflow( size_t n,size_t s,size_t *res )
     return( 1 );
   *res = (size_t)res64;
 #else
-  size_t resHigh;
+  size_t resHigh = 0;
   *res = _umul128( n,s,&resHigh );
   if( UNLIKELY(resHigh) )
     return( 1 );

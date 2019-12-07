@@ -6399,6 +6399,7 @@ static void mainLoop( appData *ad,UINT *exitCode )
           int threadNum;
           if( !readFile(readPipe,&threadNum,sizeof(int),&ov) )
             break;
+          ASSUME( threadNum>0 );
           int tnq = threadName_q;
           while( tnq<threadNum ) tnq += 64;
           if( tnq>threadName_q )
@@ -6597,7 +6598,7 @@ static void mainLoop( appData *ad,UINT *exitCode )
 
           if( !readFile(readPipe,&threadId,sizeof(threadId),&ov) )
             break;
-          if( !readFile(readPipe,&ep,sizeof(ep),&ov) )
+          if( !readFile(readPipe,&ep,sizeof(PEXCEPTION_POINTERS),&ov) )
             break;
 
           if( ds->fMiniDumpWriteDump )

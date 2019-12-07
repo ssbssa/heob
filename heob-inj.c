@@ -3934,7 +3934,7 @@ static void stackwalk( CONTEXT *contextRecord,void **frames )
   // }}}
 }
 
-static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
+static LONG WINAPI exceptionWalker( PEXCEPTION_POINTERS ep )
 {
   GET_REMOTEDATA( rd );
 
@@ -3950,7 +3950,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
     WriteFile( rd->master,&type,sizeof(int),&written,NULL );
     DWORD threadId = GetCurrentThreadId();
     WriteFile( rd->master,&threadId,sizeof(threadId),&written,NULL );
-    WriteFile( rd->master,&ep,sizeof(ep),&written,NULL );
+    WriteFile( rd->master,&ep,sizeof(PEXCEPTION_POINTERS),&written,NULL );
 
     LeaveCriticalSection( &rd->csWrite );
 
