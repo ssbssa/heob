@@ -69,6 +69,13 @@
 #define SET_LAST_ERROR(e) __writegsdword(0x68,e)
 #endif
 
+#ifdef __clang__
+#define __writefsdword(o,v) \
+  (*((volatile DWORD __attribute__((__address_space__(257)))*)(o)) = v)
+#define __writegsdword(o,v) \
+  (*((volatile DWORD __attribute__((__address_space__(256)))*)(o)) = v)
+#endif
+
 #define EXCEPTION_VC_CPP_EXCEPTION 0xe06d7363
 #ifndef _WIN64
 #define THROW_ARGS 3
