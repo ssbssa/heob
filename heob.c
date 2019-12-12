@@ -3204,6 +3204,19 @@ static void printFullStackGroupSvg( appData *ad,stackGroup *sg,textColor *tc,
     modInfo *mi_a,int mi_q,dbgsym *ds,
     const char *groupName,const char *groupTypeName,int sampling );
 
+static void writeFileSeekBack( textColor *tc,const char *text )
+{
+  if( !tc || !text || !text[0] ) return;
+
+  LARGE_INTEGER pos;
+  pos.LowPart = pos.HighPart = 0;
+  if( SetFilePointerEx(tc->out,pos,&pos,FILE_CURRENT) )
+  {
+    tc->fWriteText( tc,text,lstrlen(text) );
+    SetFilePointerEx( tc->out,pos,NULL,FILE_BEGIN );
+  }
+}
+
 static void printLeaks( allocation *alloc_a,int alloc_q,
     int alloc_ignore_q,size_t alloc_ignore_sum,
     int alloc_ignore_ind_q,size_t alloc_ignore_ind_sum,
@@ -3453,6 +3466,9 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
     freeStackGroup( sg,heap );
   }
   // }}}
+
+  writeFileSeekBack( tcXml,"</valgrindoutput>\n" );
+  writeFileSeekBack( tcSvg,"</svg>\n" );
 
   if( alloc_idxs )
     HeapFree( heap,0,alloc_idxs );
