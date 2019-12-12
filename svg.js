@@ -59,6 +59,35 @@ function heobInit()
   let colorMapBlocked = new Map();
   let colorMapThread = new Map();
   let blockedCount = 0;
+
+  let sumAll = 0;
+  for (let i = 0; i < svgs.length; i++)
+  {
+    let svg = svgs[i];
+    if (svg.attributes['heobSum'] === undefined) continue;
+
+    let stack = parseInt(svg.attributes['heobStack'].value);
+    if (stack != 1) continue;
+
+    let samples = parseInt(svg.attributes['heobSum'].value);
+    let svgType = svg.attributes['heobAllocs'] === undefined;
+
+    sumAll += samples;
+    if (svgType)
+      sumSamples += samples;
+  }
+  if (sumAll > 0)
+  {
+    let allSvg = document.createElementNS(svgNs, 'svg');
+    allSvg.setAttribute('heobSum', sumAll);
+    allSvg.setAttribute('heobOfs', 0);
+    allSvg.setAttribute('heobStack', 0);
+    allSvg.setAttribute('heobFunc', 'all');
+    allSvg.setAttribute('heobSamples', sumSamples);
+    svgs[0].appendChild(allSvg);
+  }
+
+  sumSamples = 0;
   for (let i = 0; i < svgs.length; i++)
   {
     let svg = svgs[i];

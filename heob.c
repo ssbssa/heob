@@ -1166,7 +1166,6 @@ typedef struct appData
   HANDLE samplingInit;
   HANDLE samplingStop;
   int recordingSamples;
-  int sample_times;
   allocation *samp_a;
   int samp_q;
   int samp_s;
@@ -3554,8 +3553,6 @@ static DWORD WINAPI samplingThread( LPVOID arg )
 
       ad->samp_q++;
     }
-
-    ad->sample_times++;
   }
   LeaveCriticalSection( &ad->csSampling );
 
@@ -4797,13 +4794,9 @@ static void printFullStackGroupSvg( appData *ad,stackGroup *sg,textColor *tc,
   ad->svgSum += sg->allocSumSize;
 }
 
-static void writeSvgFooter( textColor *tc,appData *ad,int sample_times )
+static void writeSvgFooter( textColor *tc,appData *ad )
 {
   if( !tc ) return;
-
-  if( ad->svgSum )
-    printf( "\n  <svg heobSum=\"%U\" heobOfs=\"0\" heobStack=\"0\""
-        " heobFunc=\"all\" heobSamples=\"%d\"/>\n",ad->svgSum,sample_times );
 
   printf( "</svg>\n" );
 
@@ -5763,7 +5756,6 @@ static void mainLoop( appData *ad,UINT *exitCode )
   allocation *aa = HeapAlloc( heap,0,4*sizeof(allocation) );
   exceptionInfo *ei = HeapAlloc( heap,0,sizeof(exceptionInfo) );
   DWORD flashStart = 0;
-  int sample_times = 0;
   int tsq = 0;
 
   // global hotkeys {{{
@@ -6496,10 +6488,7 @@ static void mainLoop( appData *ad,UINT *exitCode )
             case HEOB_LEAK_RECORDING_CLEAR:
 #if USE_STACKWALK
               if( opt->handleException>=2 )
-              {
-                ad->sample_times = 0;
                 ad->samp_q = 0;
-              }
 #endif
               // fallthrough
             case HEOB_LEAK_RECORDING_SHOW:
@@ -6517,15 +6506,12 @@ static void mainLoop( appData *ad,UINT *exitCode )
         {
           taskbarRecording = setTaskbarStatus( tl3,conHwnd );
 
-          sample_times += ad->sample_times;
-
           printLeaks( ad->samp_a,ad->samp_q,0,0,0,0,NULL,mi_a,mi_q,
 #ifndef NO_THREADS
               threadName_a,threadName_q,
 #endif
               opt,tc,ds,heap,tcXml,ad,tcSvg,1 );
 
-          ad->sample_times = 0;
           ad->samp_q = 0;
         }
         break;
@@ -6726,7 +6712,7 @@ static void mainLoop( appData *ad,UINT *exitCode )
   }
 
   writeXmlFooter( tcXml,ad );
-  writeSvgFooter( tcSvg,ad,sample_times );
+  writeSvgFooter( tcSvg,ad );
 }
 
 // }}}
