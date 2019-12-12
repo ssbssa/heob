@@ -67,7 +67,7 @@ function heobInit()
     if (svg.attributes['heobSum'] === undefined) continue;
 
     let stack = parseInt(svg.attributes['heobStack'].value);
-    if (stack != 1) continue;
+    if (stack !== 1) continue;
 
     let samples = parseInt(svg.attributes['heobSum'].value);
     let svgType = svg.attributes['heobAllocs'] === undefined;
@@ -963,7 +963,7 @@ function getThreadZoomers(key)
     function (svg)
     {
       return svg.attributes['heobThread'] !== undefined &&
-        svg.attributes['heobThread'].value === key
+        svg.attributes['heobThread'].value === key;
     })[0];
 }
 
