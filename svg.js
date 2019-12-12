@@ -108,7 +108,7 @@ function heobInit()
 
     if (stack === 1)
     {
-      if (!svgType)
+      if (svgType)
         sumSamples += samples;
       sumAllocs += allocs;
     }
