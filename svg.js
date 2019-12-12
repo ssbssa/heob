@@ -292,7 +292,7 @@ function heobInit()
   let blockedText = addText(blockedSvg, svgNs, 'idle', textWidth / 2);
   blockedText.setAttribute('text-anchor', 'middle');
   blockedSvg.setAttribute('onmouseover', 'blockedInfoSet()');
-  blockedSvg.setAttribute('onmouseout', 'infoClear()');
+  blockedSvg.setAttribute('onmouseout', 'addrInfoClear()');
   blockedSvg.setAttribute('onclick', 'blockedZoom(evt)');
   blockedSvg.setAttribute('onmousedown', 'blockedDelZoom(evt)');
   svg.appendChild(blockedSvg);
@@ -391,7 +391,7 @@ function addDistSvgs(svgNs, par, count, name, xOfs, fullHeight, rect0)
     addText(newSvg, svgNs, '');
 
     newSvg.setAttribute('onmouseover', name + 'InfoSet(this)');
-    newSvg.setAttribute('onmouseout', 'infoClear()');
+    newSvg.setAttribute('onmouseout', 'addrInfoClear()');
     newSvg.setAttribute('onclick', name + 'Zoom(evt, this)');
     newSvg.setAttribute('onmousedown', name + 'DelZoom(evt, this)');
 
@@ -836,7 +836,7 @@ function addrInfoSet(svg)
     });
 }
 
-function infoClear()
+function addrInfoClear()
 {
   opacitySetter();
 }
