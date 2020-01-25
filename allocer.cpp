@@ -192,6 +192,13 @@ static DWORD WINAPI freeThread( LPVOID arg )
 }
 
 
+static DWORD WINAPI sleepThread( LPVOID arg )
+{
+  Sleep( (UINT_PTR)arg );
+  return( 0 );
+}
+
+
 int choose( int arg )
 {
   printf( "allocer: main()\n" );
@@ -979,6 +986,19 @@ int choose( int arg )
             GetLastError()==c?"same":"different" );
       }
       break;
+
+    case 57:
+      // multiple sleeper threads
+      {
+        int times[5] = { 500,1000,750,2000,1500 };
+        HANDLE threads[5];
+        for( int i=0; i<5; i++ )
+          threads[i] = CreateThread(
+              NULL,0,&sleepThread,(void*)(UINT_PTR)times[i],0,NULL );
+        WaitForMultipleObjects( 5,threads,TRUE,INFINITE );
+        for( int i=0; i<5; i++ )
+          CloseHandle( threads[i] );
+      }
   }
 
   mem = (char*)realloc( mem,30 );

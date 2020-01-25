@@ -61,20 +61,30 @@ function heobInit()
   let blockedCount = 0;
 
   let sumAll = 0;
+  let thread1Ofs = 0;
   for (let i = 0; i < svgs.length; i++)
   {
     let svg = svgs[i];
     if (svg.attributes['heobSum'] === undefined) continue;
 
-    let stack = parseInt(svg.attributes['heobStack'].value);
-    if (stack !== 1) continue;
-
     let samples = parseInt(svg.attributes['heobSum'].value);
     let svgType = svg.attributes['heobAllocs'] === undefined;
 
+    if (svgType && svg.attributes['heobThread'] !== undefined)
+    {
+      let thread = parseInt(svg.attributes['heobThread'].value.substring(7));
+      let ofs = parseInt(svg.attributes['heobOfs'].value);
+      if (thread === 1 && ofs + 0.1 >= thread1Ofs)
+      {
+        sampleTimes += samples;
+        thread1Ofs = ofs + samples;
+      }
+    }
+
+    let stack = parseInt(svg.attributes['heobStack'].value);
+    if (stack !== 1) continue;
+
     sumAll += samples;
-    if (svgType)
-      sumSamples += samples;
   }
   if (sumAll > 0)
   {
@@ -83,11 +93,9 @@ function heobInit()
     allSvg.setAttribute('heobOfs', 0);
     allSvg.setAttribute('heobStack', 0);
     allSvg.setAttribute('heobFunc', 'all');
-    allSvg.setAttribute('heobSamples', sumSamples);
     svgs[0].appendChild(allSvg);
   }
 
-  sumSamples = 0;
   for (let i = 0; i < svgs.length; i++)
   {
     let svg = svgs[i];
@@ -122,8 +130,6 @@ function heobInit()
         zoomSvg = svg;
       else
         minStack = 1;
-
-      sampleTimes = parseInt(svg.attributes['heobSamples'].value);
 
       svg.setAttribute('heobText',
           sumText(sumSamples, samples - sumSamples, sumAllocs));
