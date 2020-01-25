@@ -282,7 +282,7 @@ function heobInit()
   funcCountArr = arrayFromCountMap(funcCountMap);
   maxCount = Math.max(addrCountArr.length,
       sourceCountArr.length, funcCountArr.length);
-  let showCount = Math.min(maxCount, SHOW_SUM_COUNT);
+  maxCount = Math.min(maxCount, SHOW_SUM_COUNT);
 
   threadMap.forEach(
     function (value, key, map)
@@ -294,7 +294,7 @@ function heobInit()
   if (threadArray.length === 1)
     threadArray.pop();
 
-  let extraCount = Math.max(showCount, threadArray.length);
+  let extraCount = Math.max(maxCount, threadArray.length);
   let svgHeight = fullHeight;
   if (extraCount > 0 || blockedCount > 0)
     svgHeight += 40;
@@ -304,7 +304,7 @@ function heobInit()
   svg.setAttribute('viewBox', '0 0 ' + svgWidth + ' ' + svgHeight);
 
   halfWidth = fullWidth;
-  if (showCount > 0 && threadArray.length > 0)
+  if (maxCount > 0 && threadArray.length > 0)
     halfWidth = (fullWidth - spacer) / 2;
 
   let plusMinusY = headerHeight + (maxStack - 2) * 16 + 3.5;
@@ -313,7 +313,7 @@ function heobInit()
   for (let i = 4; i < maxStack; i++)
     addPlusMinus(svg, svgNs, 1, 0, i);
 
-  addDistSvgs(svgNs, svg, showCount, 'addr', 0, fullHeight, rect0);
+  addDistSvgs(svgNs, svg, maxCount, 'addr', 0, fullHeight, rect0);
 
   addDistSvgs(svgNs, svg, threadArray.length, 'thread',
     fullWidth - halfWidth, fullHeight, rect0);
