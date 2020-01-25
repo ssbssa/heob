@@ -4485,17 +4485,31 @@ static textColor *writeSvgHeader( appData *ad )
   textColor *tc = createExpandedXml( ad,ad->svgName );
   if( !tc ) return( NULL );
 
+  int svgWidth = 1280;
+  HMODULE user32 = LoadLibrary( "user32.dll" );
+  if( user32 )
+  {
+    typedef int WINAPI func_GetSystemMetrics( int );
+    func_GetSystemMetrics *fGetSystemMetrics =
+      (func_GetSystemMetrics*)GetProcAddress( user32,"GetSystemMetrics" );
+    if( fGetSystemMetrics )
+      svgWidth = fGetSystemMetrics( SM_CXSCREEN ) -
+        fGetSystemMetrics( SM_CXVSCROLL );
+    FreeLibrary( user32 );
+  }
+
   printf( "<?xml version=\"1.0\"?>\n\n" );
   writeHeobInfo( tc,"Flame graph" );
   printf(
-      "<svg width=\"1280\" height=\"100\" onload=\"heobInit()\""
+      "<svg width=\"%d\" height=\"100\" onload=\"heobInit()\""
       " xmlns=\"http://www.w3.org/2000/svg\">\n"
       "  <style type=\"text/css\">\n"
       "    .sample:hover { stroke:black; stroke-width:0.5;"
       " cursor:pointer; }\n"
       "  </style>\n"
       "  <script type=\"text/ecmascript\">\n"
-      "    <![CDATA[\n" );
+      "    <![CDATA[\n",
+      svgWidth );
 
   writeResource( tc,100 );
 
