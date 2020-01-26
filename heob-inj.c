@@ -150,6 +150,9 @@ typedef struct localData
   int maxStackFrames;
   int noCRT;
 
+  allocation *exitTrace;
+  UINT exitCode;
+
 #ifndef NO_THREADS
   DWORD threadNumTls;
 #endif
@@ -239,13 +242,16 @@ static NORETURN void exitWait( UINT c,int terminate )
 {
   GET_REMOTEDATA( rd );
 
-  EnterCriticalSection( &rd->csWrite );
+  if( terminate || rd->opt.dlls!=4 )
+  {
+    EnterCriticalSection( &rd->csWrite );
 
-  FlushFileBuffers( rd->master );
-  CloseHandle( rd->master );
-  rd->master = INVALID_HANDLE_VALUE;
+    FlushFileBuffers( rd->master );
+    CloseHandle( rd->master );
+    rd->master = INVALID_HANDLE_VALUE;
 
-  LeaveCriticalSection( &rd->csWrite );
+    LeaveCriticalSection( &rd->csWrite );
+  }
 
   if( rd->heobProcess )
   {
@@ -317,7 +323,7 @@ static NORETURN void exitOutOfMemory( int needLock )
 
   LeaveCriticalSection( &rd->csWrite );
 
-  exitWait( 1,0 );
+  exitWait( 1,1 );
 }
 
 static void *add_realloc( void *ptr,int *count_p,int add,size_t blockSize,
@@ -2013,9 +2019,33 @@ static void writeSamplingData( void )
 // }}}
 // replacements for ExitProcess/TerminateProcess {{{
 
+static void writeExitData( void )
+{
+  GET_REMOTEDATA( rd );
+
+  writeLeakData();
+
+  if( rd->exitTrace )
+  {
+    int type = WRITE_EXIT_TRACE;
+    DWORD written;
+    WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+    WriteFile( rd->master,rd->exitTrace,sizeof(allocation),&written,NULL );
+  }
+
+  int type = WRITE_EXIT;
+  int terminated = 0;
+  DWORD written;
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,&rd->exitCode,sizeof(UINT),&written,NULL );
+  WriteFile( rd->master,&terminated,sizeof(int),&written,NULL );
+}
+
 static VOID WINAPI new_ExitProcess( UINT c )
 {
   GET_REMOTEDATA( rd );
+
+  rd->exitCode = c;
 
   if( rd->samplingStop )
   {
@@ -2029,18 +2059,18 @@ static VOID WINAPI new_ExitProcess( UINT c )
   LeaveCriticalSection( &rd->csFreedMod );
 
   // exit trace {{{
-  allocation exitTrace;
-  allocation *exitTracePtr = NULL;
   if( rd->opt.exitTrace )
   {
+    rd->exitTrace = HeapAlloc(
+        rd->heap,HEAP_ZERO_MEMORY,sizeof(allocation) );
+
 #ifndef NO_THREADS
-    exitTrace.threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
+    rd->exitTrace->threadNum =
+      (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
 #endif
 
-    CAPTURE_STACK_TRACE( 1,PTRS,exitTrace.frames,RETURN_ADDRESS(),
+    CAPTURE_STACK_TRACE( 1,PTRS,rd->exitTrace->frames,RETURN_ADDRESS(),
         rd->maxStackFrames );
-
-    exitTracePtr = &exitTrace;
   }
   // }}}
 
@@ -2088,22 +2118,14 @@ static VOID WINAPI new_ExitProcess( UINT c )
   }
   // }}}
 
-  writeLeakData();
-
-  if( exitTracePtr )
+  if( (rd->noCRT
+#if USE_STACKWALK
+      && !rd->opt.samplingInterval
+#endif
+      ) || rd->opt.dlls!=4 )
   {
-    int type = WRITE_EXIT_TRACE;
-    DWORD written;
-    WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-    WriteFile( rd->master,exitTracePtr,sizeof(allocation),&written,NULL );
+    writeExitData();
   }
-
-  int type = WRITE_EXIT;
-  int terminated = 0;
-  DWORD written;
-  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-  WriteFile( rd->master,&c,sizeof(UINT),&written,NULL );
-  WriteFile( rd->master,&terminated,sizeof(int),&written,NULL );
 
   if( rd->splits )
   {
@@ -2576,7 +2598,7 @@ static BOOL WINAPI new_FreeLibrary( HMODULE mod )
 
   if( m<0 ) return( rd->fFreeLibrary(mod) );
 
-  if( rd->opt.dlls<=2 ) return( TRUE );
+  if( rd->opt.dlls!=3 ) return( TRUE );
 
   EnterCriticalSection( &rd->csFreedMod );
 
@@ -4333,10 +4355,6 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
   (void)hinstDLL;
   (void)lpvReserved;
 
-  if( fdwReason!=DLL_THREAD_ATTACH && fdwReason!=DLL_THREAD_DETACH &&
-      fdwReason!=DLL_PROCESS_ATTACH )
-    return( TRUE );
-
   GET_REMOTEDATA( rd );
 
   if( fdwReason==DLL_THREAD_ATTACH || fdwReason==DLL_PROCESS_ATTACH )
@@ -4398,7 +4416,7 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
 #endif
     // }}}
   }
-  else // DLL_THREAD_DETACH
+  else if( fdwReason==DLL_THREAD_DETACH )
   {
     // remove sampling thread {{{
 #if USE_STACKWALK
@@ -4417,6 +4435,8 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
 #endif
     // }}}
   }
+  else if( rd->opt.dlls==4 ) // DLL_PROCESS_DETACH
+    writeExitData();
 
   return( TRUE );
 }
@@ -4448,27 +4468,35 @@ static void setupDllMain( void )
   }
   while( entry!=head );
 
+  // move heob directly after kernel32.dll in module initialization list
   head = &ldrData->InInitializationOrderModuleList;
   entry = head;
+  LIST_ENTRY *kernel32Entry = NULL;
   do
   {
     if( entry==heobEntry )
     {
-      // heob is already in the module initialization list
-      heobEntry = NULL;
-      break;
+      // remove from original position
+      heobEntry->Blink->Flink = heobEntry->Flink;
+      heobEntry->Flink->Blink = heobEntry->Blink;
     }
+
+    LDR_DATA_TABLE_ENTRY *ldrEntry = CONTAINING_RECORD(
+        entry,LDR_DATA_TABLE_ENTRY,InInitializationOrderModuleList );
+    if( ldrEntry->DllBase==rd->kernel32 )
+      kernel32Entry = entry;
+
     entry = entry->Flink;
   }
   while( entry!=head );
 
-  if( heobEntry )
+  if( heobEntry && kernel32Entry )
   {
-    // add heob to module initialization list
-    heobEntry->Blink = head->Blink;
-    heobEntry->Flink = head;
-    head->Blink->Flink = heobEntry;
-    head->Blink = heobEntry;
+    // insert after kernel32.dll
+    heobEntry->Blink = kernel32Entry;
+    heobEntry->Flink = kernel32Entry->Flink;
+    heobEntry->Blink->Flink = heobEntry;
+    heobEntry->Flink->Blink = heobEntry;
   }
 }
 

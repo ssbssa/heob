@@ -6822,6 +6822,8 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
     printf( "              $I1$N = static\n" );
     printf( "              $I2$N = static and dynamic (never free)\n" );
     printf( "              $I3$N = static and dynamic (free on end)\n" );
+    printf( "              $I4$N = static and dynamic"
+        " (leak detection after dll unload)\n" );
   }
   if( fullhelp )
   {
