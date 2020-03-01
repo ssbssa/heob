@@ -171,6 +171,7 @@ typedef struct localData
   wchar_t subXmlName[MAX_PATH];
   wchar_t subSvgName[MAX_PATH];
   wchar_t subCurDir[MAX_PATH];
+  wchar_t subSymPath[16384];
 
 #if USE_STACKWALK
   HMODULE dbghelp;
@@ -2285,6 +2286,7 @@ int heobSubProcess(
     func_CreateProcessW *fCreateProcessW,
     const wchar_t *subOutName,const wchar_t *subXmlName,
     const wchar_t *subSvgName,const wchar_t *subCurDir,
+    const wchar_t *subSymPath,
     int raise_alloc_q,size_t *raise_alloc_a,const wchar_t *specificOptions )
 {
   wchar_t heobPath[MAX_PATH];
@@ -2343,6 +2345,13 @@ int heobSubProcess(
       {
         lstrcatW( heobCmd,L" -v" );
         lstrcatW( heobCmd,subSvgName );
+      }
+      if( subSymPath && !subSymPath[0] ) subSymPath = NULL;
+      if( subSymPath )
+      {
+        lstrcatW( heobCmd,L" -y\"" );
+        lstrcatW( heobCmd,subSymPath );
+        lstrcatW( heobCmd,L"\"" );
       }
       ADD_OPTION( " -p",protect,1 );
       ADD_OPTION( " -a",align,MEMORY_ALLOCATION_ALIGNMENT );
@@ -2474,7 +2483,7 @@ BOOL WINAPI new_CreateProcessA(
   heobSubProcess( creationFlags,processInformation,
       rd->heobMod,rd->heap,&rd->globalopt,rd->appCounterID,
       rd->fCreateProcessW,rd->subOutName,rd->subXmlName,rd->subSvgName,
-      rd->subCurDir,0,NULL,rd->specificOptions );
+      rd->subCurDir,rd->subSymPath,0,NULL,rd->specificOptions );
 
   return( 1 );
 }
@@ -2503,7 +2512,7 @@ BOOL WINAPI new_CreateProcessW(
   heobSubProcess( creationFlags,processInformation,
       rd->heobMod,rd->heap,&rd->globalopt,rd->appCounterID,
       rd->fCreateProcessW,rd->subOutName,rd->subXmlName,rd->subSvgName,
-      rd->subCurDir,0,NULL,rd->specificOptions );
+      rd->subCurDir,rd->subSymPath,0,NULL,rd->specificOptions );
 
   return( 1 );
 }
@@ -4672,6 +4681,7 @@ VOID CALLBACK heob( ULONG_PTR arg )
   lstrcpyW( ld->subXmlName,rd->subXmlName );
   lstrcpyW( ld->subSvgName,rd->subSvgName );
   lstrcpyW( ld->subCurDir,rd->subCurDir );
+  lstrcpyW( ld->subSymPath,rd->subSymPath );
 
   if( !ld->noCRT )
     ld->splits = HeapAlloc( heap,HEAP_ZERO_MEMORY,

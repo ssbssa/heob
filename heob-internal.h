@@ -499,6 +499,7 @@ typedef struct remoteData
   wchar_t subXmlName[MAX_PATH];
   wchar_t subSvgName[MAX_PATH];
   wchar_t subCurDir[MAX_PATH];
+  wchar_t subSymPath[16384];
 
   int noCRT;
 
@@ -590,6 +591,7 @@ int heobSubProcess(
     func_CreateProcessW *fCreateProcessW,
     const wchar_t *subOutName,const wchar_t *subXmlName,
     const wchar_t *subSvgName,const wchar_t *subCurDir,
+    const wchar_t *subSymPath,
     int raise_alloc_q,size_t *raise_alloc_a,const wchar_t *specificOptions );
 int convertDeviceName( const wchar_t *in,wchar_t *out,int outlen );
 

@@ -1132,6 +1132,7 @@ typedef struct appData
   wchar_t *outName;
   wchar_t *xmlName;
   wchar_t *svgName;
+  wchar_t *symPath;
   wchar_t *specificOptions;
   modInfo *mi_a;
   int mi_q;
@@ -1213,6 +1214,7 @@ static NORETURN void exitHeob( appData *ad,
   if( ad->outName ) HeapFree( heap,0,ad->outName );
   if( ad->xmlName ) HeapFree( heap,0,ad->xmlName );
   if( ad->svgName ) HeapFree( heap,0,ad->svgName );
+  if( ad->symPath ) HeapFree( heap,0,ad->symPath );
   if( ad->specificOptions ) HeapFree( heap,0,ad->specificOptions );
   if( ad->mi_a ) HeapFree( heap,0,ad->mi_a );
   if( ad->api ) HeapFree( heap,0,ad->api );
@@ -1297,7 +1299,8 @@ static CODE_SEG(".text$1") VOID NTAPI remoteCall(
 static CODE_SEG(".text$2") HANDLE inject(
     appData *ad,options *globalopt,textColor *tc,
     const wchar_t *subOutName,const wchar_t *subXmlName,
-    const wchar_t *subSvgName,const wchar_t *subCurDir )
+    const wchar_t *subSvgName,const wchar_t *subCurDir,
+    const wchar_t *subSymPath )
 {
   // injection data {{{
   func_inj *finj = &remoteCall;
@@ -1443,6 +1446,7 @@ static CODE_SEG(".text$2") HANDLE inject(
   if( subXmlName ) lstrcpynW( data->subXmlName,subXmlName,MAX_PATH );
   if( subSvgName ) lstrcpynW( data->subSvgName,subSvgName,MAX_PATH );
   if( subCurDir ) lstrcpynW( data->subCurDir,subCurDir,MAX_PATH );
+  if( subSymPath ) lstrcpynW( data->subSymPath,subSymPath,16384 );
 
   data->raise_alloc_q = ad->raise_alloc_q;
   if( ad->raise_alloc_q )
@@ -1809,12 +1813,22 @@ static void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
       char *ansiPath = NULL;
       if( dbgPath )
       {
-        ansiPath = ds->ansiPath;
         int count = WideCharToMultiByte( CP_ACP,0,
-            dbgPath,-1,ansiPath,MAX_PATH,NULL,NULL );
-        if( count<=0 || count>=MAX_PATH ) ansiPath[0] = 0;
+            dbgPath,-1,NULL,0,NULL,NULL );
+        if( count>0 )
+        {
+          ansiPath = HeapAlloc( heap,0,count+1 );
+          int count2 = WideCharToMultiByte( CP_ACP,0,
+              dbgPath,-1,ansiPath,count,NULL,NULL );
+          if( count<=0 || count2>count )
+          {
+            HeapFree( heap,0,ansiPath );
+            ansiPath = NULL;
+          }
+        }
       }
       fSymInitialize( ds->process,ansiPath,invade );
+      if( ansiPath ) HeapFree( heap,0,ansiPath );
     }
   }
 #else
@@ -3788,6 +3802,25 @@ static wchar_t *getStringOption( const wchar_t *start,HANDLE heap )
 
   size_t len = end - start;
   wchar_t *str = HeapAlloc( heap,0,2*(len+1) );
+  if( !str ) return( NULL );
+
+  RtlMoveMemory( str,start,2*len );
+  str[len] = 0;
+  return( str );
+}
+
+static wchar_t *getQuotedStringOption( wchar_t *start,HANDLE heap,
+    wchar_t **endPtr )
+{
+  if( *start!='"' ) return( getStringOption(start,heap) );
+
+  start++;
+  wchar_t *end = strchrW( start,'"' );
+  if( !end || end==start ) return( NULL );
+
+  size_t len = end - start;
+  wchar_t *str = HeapAlloc( heap,0,2*(len+1) );
+  *endPtr = end;
   if( !str ) return( NULL );
 
   RtlMoveMemory( str,start,2*len );
@@ -6795,6 +6828,7 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
     if( fullhelp>1 )
       printf( "     %i",1 );
     printf( "\n" );
+    printf( "    $I-y$BX$N    symbol path\n" );
   }
   printf( "    $I-P$BX$N    show process ID and wait [$I%d$N]\n",
       defopt->pid );
@@ -7124,6 +7158,11 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
         ad->svgName = getStringOption( args+2,heap );
         break;
 
+      case 'y':
+        if( ad->symPath ) break;
+        ad->symPath = getQuotedStringOption( args+2,heap,&args );
+        break;
+
       case 'A':
         {
           if( args[2]==' ' )
@@ -7342,7 +7381,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     if( a->frameCount )
     {
       dbgsym ds;
-      dbgsym_init( &ds,(HANDLE)0x1,tc,&opt,NULL,heap,NULL,FALSE,NULL );
+      dbgsym_init( &ds,(HANDLE)0x1,tc,&opt,NULL,heap,ad->symPath,FALSE,NULL );
 
 #ifndef NO_DBGHELP
       if( ds.fSymLoadModule64 )
@@ -7443,7 +7482,8 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
       DWORD exitCode = 0;
       if( !heobSubProcess(0,&ad->pi,NULL,heap,&opt,ad->appCounterID,
             fCreateProcessW,ad->outName,ad->xmlName,ad->svgName,NULL,
-            ad->raise_alloc_q,ad->raise_alloc_a,ad->specificOptions) )
+            ad->symPath,ad->raise_alloc_q,ad->raise_alloc_a,
+            ad->specificOptions) )
       {
         printf( "$Wcan't create process for 'heob'\n" );
         TerminateProcess( ad->pi.hProcess,1 );
@@ -7638,7 +7678,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   }
   else
     ad->readPipe = inject( ad,&defopt,tc,
-        subOutName,subXmlName,subSvgName,subCurDir );
+        subOutName,subXmlName,subSvgName,subCurDir,ad->symPath );
   if( !ad->readPipe )
   {
     if( heobExit==HEOB_PROCESS_FAIL )
@@ -7663,12 +7703,23 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   {
     wchar_t *delim = strrchrW( ad->exePathW,'\\' );
     if( delim ) delim[0] = 0;
+    const wchar_t *symPath = exePath;
+    wchar_t *symPathBuf = NULL;
+    if( ad->symPath )
+    {
+      symPath = symPathBuf = HeapAlloc( heap,0,
+          2*(lstrlenW(exePath)+lstrlenW(ad->symPath)+2) );
+      lstrcpyW( symPathBuf,exePath );
+      lstrcatW( symPathBuf,L";" );
+      lstrcatW( symPathBuf,ad->symPath );
+    }
     dbgsym ds;
-    dbgsym_init( &ds,ad->pi.hProcess,tc,&opt,funcnames,heap,exePath,TRUE,
+    dbgsym_init( &ds,ad->pi.hProcess,tc,&opt,funcnames,heap,symPath,TRUE,
         RETURN_ADDRESS() );
     ds.threadInitAddr += ad->kernel32offset;
     ad->ds = &ds;
     if( delim ) delim[0] = '\\';
+    if( symPathBuf ) HeapFree( heap,0,symPathBuf );
 
 #if USE_STACKWALK
     if( opt.samplingInterval &&
