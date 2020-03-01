@@ -2360,7 +2360,8 @@ int heobSubProcess(
         opt->samplingInterval ? 2 :
 #endif
         1;
-      ADD_OPTION( " -h",handleException,defVal );
+      if( opt->handleException>=0 )
+        ADD_OPTION( " -h",handleException,defVal );
       ADD_OPTION( " -F",fullPath,0 );
       ADD_OPTION( " -m",allocMethod,0 );
       ADD_OPTION( " -l",leakDetails,1 );
@@ -2374,7 +2375,8 @@ int heobSubProcess(
       ADD_OPTION( " -n",findNearest,1 );
       ADD_OPTION( " -L",leakContents,0 );
       defVal = ( !subXmlName && subSvgName ) ? 2 : 1;
-      ADD_OPTION( " -g",groupLeaks,defVal );
+      if( opt->groupLeaks>=0 )
+        ADD_OPTION( " -g",groupLeaks,defVal );
       ADD_OPTION( " -z",minLeakSize,0 );
       ADD_OPTION( " -k",leakRecording,0 );
       ADD_OPTION( " -E",leakErrorExitCode,0 );
