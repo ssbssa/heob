@@ -167,11 +167,11 @@ typedef struct localData
 
   int recording;
 
-  wchar_t subOutName[MAX_PATH];
-  wchar_t subXmlName[MAX_PATH];
-  wchar_t subSvgName[MAX_PATH];
-  wchar_t subCurDir[MAX_PATH];
-  wchar_t subSymPath[16384];
+  wchar_t *subOutName;
+  wchar_t *subXmlName;
+  wchar_t *subSvgName;
+  wchar_t *subCurDir;
+  wchar_t *subSymPath;
 
 #if USE_STACKWALK
   HMODULE dbghelp;
@@ -354,6 +354,15 @@ static inline void set_errno( int e )
 {
   GET_REMOTEDATA( rd );
   *rd->oerrno() = e;
+}
+
+static wchar_t *wdup( const wchar_t *w,HANDLE heap )
+{
+  if( !w || !w[0] ) return( NULL );
+
+  wchar_t *wd = HeapAlloc( heap,0,2*lstrlenW(w)+2 );
+  lstrcpyW( wd,w );
+  return( wd );
 }
 
 // }}}
@@ -4624,12 +4633,7 @@ VOID CALLBACK heob( ULONG_PTR arg )
 
   RtlMoveMemory( &ld->opt,&rd->opt,sizeof(options) );
   RtlMoveMemory( &ld->globalopt,&rd->globalopt,sizeof(options) );
-  if( rd->specificOptions )
-  {
-    ld->specificOptions = HeapAlloc(
-        heap,0,2*lstrlenW(rd->specificOptions)+2 );
-    lstrcpyW( ld->specificOptions,rd->specificOptions );
-  }
+  ld->specificOptions = wdup( rd->specificOptions,heap );
   ld->appCounterID = rd->appCounterID;
   ld->slackInit64 = rd->opt.slackInit;
   ld->slackInit64 |= ld->slackInit64<<8;
@@ -4677,11 +4681,11 @@ VOID CALLBACK heob( ULONG_PTR arg )
     ld->pageAdd = 0;
   }
 
-  lstrcpyW( ld->subOutName,rd->subOutName );
-  lstrcpyW( ld->subXmlName,rd->subXmlName );
-  lstrcpyW( ld->subSvgName,rd->subSvgName );
-  lstrcpyW( ld->subCurDir,rd->subCurDir );
-  lstrcpyW( ld->subSymPath,rd->subSymPath );
+  ld->subOutName = wdup( rd->subOutName,heap );
+  ld->subXmlName = wdup( rd->subXmlName,heap );
+  ld->subSvgName = wdup( rd->subSvgName,heap );
+  ld->subCurDir = wdup( rd->subCurDir,heap );
+  ld->subSymPath = wdup( rd->subSymPath,heap );
 
   if( !ld->noCRT )
     ld->splits = HeapAlloc( heap,HEAP_ZERO_MEMORY,
