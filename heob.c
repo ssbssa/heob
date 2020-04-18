@@ -506,6 +506,14 @@ static int mmemcmp( const void *p1,const void *p2,size_t s )
 }
 #define memcmp mmemcmp
 
+static int ptrcmp( const uintptr_t *p1,const uintptr_t *p2,size_t s )
+{
+  size_t i;
+  for( i=0; i<s; i++ )
+    if( p1[i]!=p2[i] ) return( p2[i]>p1[i] ? 1 : -1 );
+  return( 0 );
+}
+
 static const void *mmemchr( const void *p,int ch,size_t s )
 {
   const unsigned char *b = p;
@@ -2705,7 +2713,8 @@ static int cmp_merge_allocation( const void *av,const void *bv )
   if( a->ft>b->ft ) return( 2 );
   if( a->ft<b->ft ) return( -2 );
 
-  int c = memcmp( a->frames,b->frames,PTRS*sizeof(void*) );
+  int c = ptrcmp( (const uintptr_t*)a->frames,
+      (const uintptr_t*)b->frames,PTRS );
   if( c ) return( c>0 ? 2 : -2 );
 
 #ifndef NO_THREADS
