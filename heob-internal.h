@@ -88,7 +88,7 @@
 #define REL_PTR( base,ofs ) ( (void*)(((PBYTE)base)+ofs) )
 
 // }}}
-// function definitions {{{
+// kernel32.dll function definitions {{{
 
 typedef DWORD WINAPI func_QueueUserAPC( PAPCFUNC,HANDLE,ULONG_PTR );
 typedef HANDLE WINAPI func_GetCurrentThread( VOID );
@@ -114,6 +114,9 @@ typedef BOOL WINAPI func_CreateProcessW(
     LPCWSTR,LPWSTR,LPSECURITY_ATTRIBUTES,LPSECURITY_ATTRIBUTES,BOOL,DWORD,
     LPVOID,LPCWSTR,LPSTARTUPINFOW,LPPROCESS_INFORMATION );
 
+// }}}
+// CRT function definitions {{{
+
 typedef void *func_malloc( size_t );
 typedef void *func_calloc( size_t,size_t );
 typedef void func_free( void* );
@@ -131,6 +134,9 @@ typedef wchar_t *func_wtempnam( wchar_t*,wchar_t* );
 typedef void func_free_dbg( void*,int );
 typedef void *func_recalloc( void*,size_t,size_t );
 typedef int *func_errno( void );
+
+// }}}
+// dbghelp.dll function definitions {{{
 
 #ifndef NO_DBGHELP
 typedef DWORD WINAPI func_SymSetOptions( DWORD );
