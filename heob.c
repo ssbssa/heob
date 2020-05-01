@@ -1198,7 +1198,14 @@ static appData *initHeob( HANDLE heap )
   ad->errorPipe = openErrorPipe( &ad->writeProcessPid );
   ad->startTicks = GetTickCount();
 #if USE_STACKWALK
-  InitializeCriticalSection( &ad->csSampling );
+  HMODULE kernel32 = GetModuleHandle( "kernel32.dll" );
+  func_InitializeCriticalSectionEx *fInitCritSecEx =
+    (func_InitializeCriticalSectionEx*)GetProcAddress(
+        kernel32,"InitializeCriticalSectionEx" );
+  if( fInitCritSecEx )
+    fInitCritSecEx( &ad->csSampling,4000,CRITICAL_SECTION_NO_DEBUG_INFO );
+  else
+    InitializeCriticalSection( &ad->csSampling );
 #endif
   return( ad );
 }

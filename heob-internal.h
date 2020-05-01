@@ -113,6 +113,8 @@ typedef BOOL WINAPI func_CreateProcessA(
 typedef BOOL WINAPI func_CreateProcessW(
     LPCWSTR,LPWSTR,LPSECURITY_ATTRIBUTES,LPSECURITY_ATTRIBUTES,BOOL,DWORD,
     LPVOID,LPCWSTR,LPSTARTUPINFOW,LPPROCESS_INFORMATION );
+typedef BOOL WINAPI func_InitializeCriticalSectionEx(
+    LPCRITICAL_SECTION,DWORD,DWORD );
 
 // }}}
 // CRT function definitions {{{

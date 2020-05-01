@@ -4695,8 +4695,6 @@ VOID CALLBACK heob( ULONG_PTR arg )
         (SPLIT_MASK+1)*sizeof(splitFreed) );
 
   // initialize critical sections {{{
-  typedef BOOL WINAPI func_InitializeCriticalSectionEx(
-      LPCRITICAL_SECTION,DWORD,DWORD );
   func_InitializeCriticalSectionEx *fInitCritSecEx =
     rd->fGetProcAddress( rd->kernel32,"InitializeCriticalSectionEx" );
   if( fInitCritSecEx )
