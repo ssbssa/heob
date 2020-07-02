@@ -122,14 +122,15 @@ typedef struct localData
   int is_cygwin;
 
   HANDLE controlPipe;
-#ifndef NO_DBGENG
   HANDLE exceptionWait;
-#endif
 #ifndef NO_DBGHELP
   HANDLE miniDumpWait;
 #endif
+#if USE_STACKWALK
   HANDLE heobProcess;
   HANDLE samplingStop;
+  int noStackWalk;
+#endif
   HMODULE heobMod;
   HMODULE kernel32;
   HMODULE msvcrt;
@@ -172,12 +173,6 @@ typedef struct localData
   wchar_t *subSvgName;
   wchar_t *subCurDir;
   wchar_t *subSymPath;
-
-#if USE_STACKWALK
-  HMODULE dbghelp;
-  stackwalkFunctions swf;
-  func_SymCleanup *fSymCleanup;
-#endif
 
   CRITICAL_SECTION csMod;
   CRITICAL_SECTION csAllocId;
@@ -254,11 +249,13 @@ static NORETURN void exitWait( UINT c,int terminate )
     LeaveCriticalSection( &rd->csWrite );
   }
 
+#if USE_STACKWALK
   if( rd->heobProcess )
   {
     CloseHandle( rd->heobProcess );
     rd->heobProcess = INVALID_HANDLE_VALUE;
   }
+#endif
 
   rd->opt.raiseException = 0;
 
@@ -2057,12 +2054,14 @@ static VOID WINAPI new_ExitProcess( UINT c )
 
   rd->exitCode = c;
 
+#if USE_STACKWALK
   if( rd->samplingStop )
   {
     SetEvent( rd->samplingStop );
     CloseHandle( rd->samplingStop );
     rd->samplingStop = NULL;
   }
+#endif
 
   EnterCriticalSection( &rd->csFreedMod );
   rd->inExit = 1;
@@ -3835,50 +3834,6 @@ DLLEXPORT VOID heob_exit( UINT c )
 // }}}
 // exception handler {{{
 
-#if USE_STACKWALK
-static int initDbghelp( void )
-{
-  GET_REMOTEDATA( rd );
-
-  if( rd->dbghelp ) return( 1 );
-
-  HMODULE symMod = rd->fLoadLibraryA( "dbghelp.dll" );
-  if( !symMod ) return( 0 );
-
-  func_SymInitialize *fSymInitialize =
-    rd->fGetProcAddress( symMod,"SymInitialize" );
-  rd->swf.fStackWalk64 = rd->fGetProcAddress( symMod,"StackWalk64" );
-  rd->fSymCleanup = rd->fGetProcAddress( symMod,"SymCleanup" );
-
-  if( !fSymInitialize || !rd->swf.fStackWalk64 || !rd->fSymCleanup )
-  {
-    rd->fFreeLibrary( symMod );
-    return( 0 );
-  }
-
-  rd->dbghelp = symMod;
-  rd->swf.fSymFunctionTableAccess64 =
-    rd->fGetProcAddress( symMod,"SymFunctionTableAccess64" );
-  rd->swf.fSymGetModuleBase64 =
-    rd->fGetProcAddress( symMod,"SymGetModuleBase64" );
-
-  fSymInitialize( GetCurrentProcess(),NULL,TRUE );
-
-  return( 1 );
-}
-
-static void freeDbghelp( void )
-{
-  GET_REMOTEDATA( rd );
-
-  if( !rd->dbghelp ) return;
-
-  rd->fSymCleanup( GetCurrentProcess() );
-  rd->fFreeLibrary( rd->dbghelp );
-  rd->dbghelp = NULL;
-}
-#endif
-
 #ifdef _WIN64
 #define csp Rsp
 #define cip Rip
@@ -3942,14 +3897,6 @@ static void stackwalk( CONTEXT *contextRecord,void **frames )
 {
   GET_REMOTEDATA( rd );
 
-  // stackwalk with dbghelp {{{
-#if USE_STACKWALK
-  if( rd->dbghelp )
-    stackwalkDbghelp( &rd->swf,&rd->opt,
-        GetCurrentProcess(),GetCurrentThread(),contextRecord,frames );
-  else
-#endif
-  // }}}
   // manual stackwalk {{{
   {
     int count = 0;
@@ -4000,12 +3947,14 @@ static LONG WINAPI exceptionWalker( PEXCEPTION_POINTERS ep )
   }
 #endif
 
+#if USE_STACKWALK
   if( ec!=EXCEPTION_BREAKPOINT && rd->samplingStop )
   {
     SetEvent( rd->samplingStop );
     CloseHandle( rd->samplingStop );
     rd->samplingStop = NULL;
   }
+#endif
 
   exceptionInfo *eiPtr = rd->ei;
 #define ei (*eiPtr)
@@ -4086,15 +4035,12 @@ static LONG WINAPI exceptionWalker( PEXCEPTION_POINTERS ep )
 #endif
 
 #if USE_STACKWALK
-  if( ec!=EXCEPTION_STACK_OVERFLOW )
-    initDbghelp();
+  if( !rd->noStackWalk )
+    DuplicateHandle( GetCurrentProcess(),GetCurrentThread(),
+        rd->heobProcess,&ei.thread,0,FALSE,DUPLICATE_SAME_ACCESS );
+  else
 #endif
-
-  stackwalk( ep->ContextRecord,ei.aa[0].frames );
-
-#if USE_STACKWALK
-  freeDbghelp();
-#endif
+    stackwalk( ep->ContextRecord,ei.aa[0].frames );
 
   RtlMoveMemory( &ei.er,ep->ExceptionRecord,sizeof(EXCEPTION_RECORD) );
   RtlMoveMemory( &ei.c,ep->ContextRecord,sizeof(CONTEXT) );
@@ -4116,16 +4062,13 @@ static LONG WINAPI exceptionWalker( PEXCEPTION_POINTERS ep )
 
 #undef ei
 
+  WaitForSingleObject( rd->exceptionWait,10000 );
+
   if( ec==EXCEPTION_BREAKPOINT )
   {
     ep->ContextRecord->cip++;
     return( EXCEPTION_CONTINUE_EXECUTION );
   }
-
-#ifndef NO_DBGENG
-  if( rd->exceptionWait )
-    WaitForSingleObject( rd->exceptionWait,1000 );
-#endif
 
   exitWait( 1,ec==EXCEPTION_STACK_OVERFLOW ? 2 : 1 );
 
@@ -4649,9 +4592,7 @@ VOID CALLBACK heob( ULONG_PTR arg )
   ld->fCreateProcessW = rd->fGetProcAddress( rd->kernel32,"CreateProcessW" );
   ld->master = rd->master;
   ld->controlPipe = rd->controlPipe;
-#ifndef NO_DBGENG
   ld->exceptionWait = rd->exceptionWait;
-#endif
 #ifndef NO_DBGHELP
   ld->miniDumpWait = rd->miniDumpWait;
 #endif
@@ -4937,6 +4878,9 @@ VOID CALLBACK heob( ULONG_PTR arg )
   }
   // }}}
 
+#if USE_STACKWALK
+  rd->noStackWalkRemote = &ld->noStackWalk;
+#endif
   rd->recordingRemote = &ld->recording;
 
   HANDLE initFinished = rd->initFinished;

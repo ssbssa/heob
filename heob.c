@@ -1150,9 +1150,7 @@ typedef struct appData
   attachedProcessInfo *api;
   wchar_t *cmdLineW;
   wchar_t *argsW;
-#ifndef NO_DBGENG
   HANDLE exceptionWait;
-#endif
 #ifndef NO_DBGHELP
   HANDLE miniDumpWait;
 #endif
@@ -1171,6 +1169,8 @@ typedef struct appData
   DWORD startTicks;
 
 #if USE_STACKWALK
+  int *noStackWalkRemote;
+
   CRITICAL_SECTION csSampling;
   HANDLE samplingInit;
   HANDLE samplingStop;
@@ -1243,9 +1243,7 @@ static NORETURN void exitHeob( appData *ad,
   if( ad->dump_mem_a ) HeapFree( heap,0,ad->dump_mem_a );
 #endif
 
-#ifndef NO_DBGENG
   if( ad->exceptionWait ) CloseHandle( ad->exceptionWait );
-#endif
 #ifndef NO_DBGHELP
   if( ad->miniDumpWait ) CloseHandle( ad->miniDumpWait );
 #endif
@@ -1423,15 +1421,12 @@ static CODE_SEG(".text$2") HANDLE inject(
       process,&data->startMain,0,FALSE,
       DUPLICATE_SAME_ACCESS );
 
-#ifndef NO_DBGENG
-  if( opt->exceptionDetails>1 )
   {
     ad->exceptionWait = CreateEvent( NULL,FALSE,FALSE,NULL );
     DuplicateHandle( GetCurrentProcess(),ad->exceptionWait,
         process,&data->exceptionWait,0,FALSE,
         DUPLICATE_SAME_ACCESS );
   }
-#endif
 
 #ifndef NO_DBGHELP
   if( opt->exceptionDetails<0 )
@@ -1444,10 +1439,10 @@ static CODE_SEG(".text$2") HANDLE inject(
 #endif
 
 #if USE_STACKWALK
+  DuplicateHandle( GetCurrentProcess(),GetCurrentProcess(),
+      process,&data->heobProcess,0,FALSE,DUPLICATE_SAME_ACCESS );
   if( opt->samplingInterval )
   {
-    DuplicateHandle( GetCurrentProcess(),GetCurrentProcess(),
-        process,&data->heobProcess,0,FALSE,DUPLICATE_SAME_ACCESS );
     ad->samplingStop = CreateEvent( NULL,TRUE,FALSE,NULL );
     DuplicateHandle( GetCurrentProcess(),ad->samplingStop,
         process,&data->samplingStop,0,FALSE,DUPLICATE_SAME_ACCESS );
@@ -1594,6 +1589,9 @@ static CODE_SEG(".text$2") HANDLE inject(
         sizeof(attachedProcessInfo),NULL );
   }
 
+#if USE_STACKWALK
+  ad->noStackWalkRemote = data->noStackWalkRemote;
+#endif
   ad->recordingRemote = data->recordingRemote;
 
   ad->kernel32offset = (size_t)data->kernel32 - (size_t)kernel32;
@@ -6213,9 +6211,18 @@ static void mainLoop( appData *ad,UINT *exitCode )
             break;
           ei->throwName[sizeof(ei->throwName)-1] = 0;
 
+#if USE_STACKWALK
+          if( ds->swf.fStackWalk64 )
+          {
+            stackwalkDbghelp( &ds->swf,opt,ad->pi.hProcess,
+                ei->thread,&ei->c,ei->aa[0].frames );
+            CloseHandle( ei->thread );
+          }
+#endif
+
 #ifndef NO_DBGENG
           size_t ip = 0;
-          if( ad->exceptionWait &&
+          if( opt->exceptionDetails>1 &&
               ei->er.ExceptionCode!=EXCEPTION_BREAKPOINT )
             ip = (size_t)ei->aa[0].frames[0] - 1;
 #endif
@@ -6229,11 +6236,7 @@ static void mainLoop( appData *ad,UINT *exitCode )
 #endif
               ei,mi_a,mi_q );
 
-#ifndef NO_DBGENG
-          if( ad->exceptionWait &&
-              ei->er.ExceptionCode!=EXCEPTION_BREAKPOINT )
-            SetEvent( ad->exceptionWait );
-#endif
+          SetEvent( ad->exceptionWait );
 
           terminated = -1;
           *ad->heobExit = HEOB_EXCEPTION;
@@ -7746,6 +7749,13 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
       heobExit = HEOB_NO_CRT;
       dbgsym_close( &ds );
       exitHeob( ad,heobExit,heobExitData,exitCode );
+    }
+
+    if( !ds.swf.fStackWalk64 )
+    {
+      int noStackWalk = 1;
+      WriteProcessMemory( ad->pi.hProcess,
+          ad->recordingRemote,&noStackWalk,sizeof(int),NULL );
     }
 #endif
 

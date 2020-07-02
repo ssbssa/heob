@@ -476,15 +476,14 @@ typedef struct remoteData
   HANDLE controlPipe;
   HANDLE initFinished;
   HANDLE startMain;
-#ifndef NO_DBGENG
   HANDLE exceptionWait;
-#endif
 #ifndef NO_DBGHELP
   HANDLE miniDumpWait;
 #endif
 #if USE_STACKWALK
   HANDLE heobProcess;
   HANDLE samplingStop;
+  int *noStackWalkRemote;
 #endif
 
   wchar_t exePath[MAX_PATH];
@@ -564,6 +563,9 @@ typedef struct
 {
   EXCEPTION_RECORD er;
   CONTEXT c;
+#if USE_STACKWALK
+  HANDLE thread;
+#endif
   allocation aa[3];
   int aq;
   int nearest;
