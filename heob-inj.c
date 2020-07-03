@@ -3893,7 +3893,7 @@ void stackwalkDbghelp( stackwalkFunctions *swf,options *opt,
 }
 #endif
 
-static void stackwalk( CONTEXT *contextRecord,void **frames )
+static void stackwalk( const CONTEXT *contextRecord,void **frames )
 {
   GET_REMOTEDATA( rd );
 
@@ -3906,6 +3906,7 @@ static void stackwalk( CONTEXT *contextRecord,void **frames )
       ULONG_PTR csp = *(ULONG_PTR*)contextRecord->csp;
       if( csp ) frames[count++] = (void*)csp;
     }
+#ifndef _WIN64
     ULONG_PTR *sp = (ULONG_PTR*)contextRecord->cfp;
     while( count<PTRS )
     {
@@ -3917,6 +3918,31 @@ static void stackwalk( CONTEXT *contextRecord,void **frames )
 
       sp = np;
     }
+#else
+    CONTEXT context;
+    RtlMoveMemory( &context,contextRecord,sizeof(CONTEXT) );
+    while( count<PTRS )
+    {
+      DWORD64 imageBase;
+      PRUNTIME_FUNCTION funcEntry =
+        RtlLookupFunctionEntry( context.Rip,&imageBase,NULL );
+      if( funcEntry )
+      {
+        PVOID handlerData;
+        DWORD64 establisherFrame;
+        RtlVirtualUnwind( UNW_FLAG_NHANDLER,imageBase,context.Rip,funcEntry,
+            &context,&handlerData,&establisherFrame,NULL );
+      }
+      else
+      {
+        context.Rip = *(PULONG64)context.Rsp;
+        context.Rsp += 8;
+      }
+      if( !context.Rip ) break;
+
+      frames[count++] = (void*)context.Rip;
+    }
+#endif
     if( count<PTRS )
       RtlZeroMemory( frames+count,(PTRS-count)*sizeof(void*) );
   }
