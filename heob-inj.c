@@ -426,7 +426,7 @@ static void writeModsFind( modInfo **p_mi_a,int *p_mi_q )
 
   fLdrUnlockLoaderLock( 0,ldrLockCookie );
 
-  if( rd->opt.exceptionDetails>2 )
+  if( rd->opt.exceptionDetails>0 && (rd->opt.exceptionDetails&4) )
   {
     int i;
     for( i=0; i<mi_q; i++ )

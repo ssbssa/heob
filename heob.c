@@ -5154,7 +5154,7 @@ static void writeException( appData *ad,textColor *tcXml,
   if( opt->exceptionDetails>0 && tc->out )
   {
     // modules {{{
-    if( opt->exceptionDetails>2 )
+    if( opt->exceptionDetails&4 )
     {
       printf( "$S  modules:\n" );
       int m;
@@ -5194,8 +5194,11 @@ static void writeException( appData *ad,textColor *tcXml,
     }
 #endif
     // }}}
+  }
 
-    // registers {{{
+  // registers {{{
+  if( opt->exceptionDetails>0 && (opt->exceptionDetails&1) && tc->out )
+  {
     printf( "$S  registers:\n" );
 #define PREG( name,reg,type,before,after ) \
     printf( before "$I" name "$N=" type after,ei->c.reg )
@@ -5257,8 +5260,8 @@ static void writeException( appData *ad,textColor *tcXml,
       PREG( "gs"    ,SegGs ,"%w","       "        ,"\n" );
 #endif
     }
-    // }}}
   }
+  // }}}
 
   printf( "$S  exception on:" );
   printThreadName( ei->aa[0].threadNum );
@@ -5765,7 +5768,8 @@ static int isMinidump( appData *ad,const wchar_t *name )
 
 #ifndef NO_DBGENG
   size_t ip = 0;
-  if( ei->aa->frames[0] && ad->opt->exceptionDetails>1 )
+  if( ei->aa->frames[0] && ad->opt->exceptionDetails>0 &&
+      (ad->opt->exceptionDetails&2) )
   {
     ip = (size_t)getDumpLoc( ad,(size_t)ei->aa->frames[0]-1,NULL );
     ad->pi.dwProcessId = GetCurrentProcessId();
@@ -6222,7 +6226,7 @@ static void mainLoop( appData *ad,UINT *exitCode )
 
 #ifndef NO_DBGENG
           size_t ip = 0;
-          if( opt->exceptionDetails>1 &&
+          if( opt->exceptionDetails>0 && (opt->exceptionDetails&2) &&
               ei->er.ExceptionCode!=EXCEPTION_BREAKPOINT )
             ip = (size_t)ei->aa[0].frames[0] - 1;
 #endif
@@ -6929,10 +6933,11 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
     printf( "             $I-2$N = write minidump\n" );
     printf( "             $I-1$N = write minidump with full memory\n" );
     printf( "              $I0$N = none\n" );
-    printf( "              $I1$N = registers\n" );
-    printf( "              $I2$N = registers / assembly instruction\n" );
-    printf( "              $I3$N ="
-        " registers / assembly instruction / modules\n" );
+    printf( "             |$I1$N = registers\n" );
+#ifndef NO_DBGENG
+    printf( "             |$I2$N = assembly instruction\n" );
+#endif
+    printf( "             |$I4$N = modules\n" );
   }
   if( fullhelp )
   {
