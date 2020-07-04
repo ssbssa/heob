@@ -4463,7 +4463,7 @@ static void setupDllMain( void )
   LIST_ENTRY *kernel32Entry = NULL;
   do
   {
-    if( entry==heobEntry )
+    if( heobEntry && entry==heobEntry )
     {
       // remove from original position
       heobEntry->Blink->Flink = heobEntry->Flink;
