@@ -5629,7 +5629,9 @@ static int isMinidump( appData *ad,const wchar_t *name )
         HeapAlloc( heap,HEAP_ZERO_MEMORY,ad->mi_q*sizeof(char*) );
   }
 
+#ifndef NO_THREADS
   int threadNum = 0;
+#endif
   if( mtl && ad->dump_mod_a )
   {
     MINIDUMP_STRING *appName = REL_PTR( dump,ad->dump_mod_a[0].ModuleNameRva );
@@ -5641,7 +5643,9 @@ static int isMinidump( appData *ad,const wchar_t *name )
     if( t<mtl->NumberOfThreads )
     {
       MINIDUMP_THREAD *thread = mtl->Threads + t;
+#ifndef NO_THREADS
       threadNum = t + 1;
+#endif
 
       addDumpMemoryLoc( ad,
           dump+thread->Stack.Memory.Rva,thread->Stack.Memory.DataSize,
@@ -5716,7 +5720,9 @@ static int isMinidump( appData *ad,const wchar_t *name )
   MINIDUMP_EXCEPTION *me = &exception->ExceptionRecord;
 
   exceptionInfo *ei = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(exceptionInfo) );
+#ifndef NO_THREADS
   ei->aa[0].threadNum = threadNum;
+#endif
   stackwalkDbghelp( &ad->ds->swf,ad->opt,ad,(HANDLE)2,context,ei->aa->frames );
   ei->aq = 1;
   RtlMoveMemory( &ei->c,context,sizeof(CONTEXT) );
