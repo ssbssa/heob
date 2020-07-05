@@ -1,0 +1,13 @@
+allocer: main()
+
+unhandled exception code: 0xPTR (ACCESS_VIOLATION)
+  exception on: '3: overflow thread'
+  read access violation at 0xPTR
+  protected area of 0xPTR (size 16, offset +20)
+  allocated on: (#2) '1: main thread'
+    [operator new[]]
+
+all threads:
+  thread: '1: main thread'
+  thread: '2: sleep thread'
+  thread: '3: overflow thread'

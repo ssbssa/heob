@@ -199,6 +199,14 @@ static DWORD WINAPI sleepThread( LPVOID arg )
 }
 
 
+static DWORD WINAPI overflowThread( LPVOID arg )
+{
+  SetThreadName( -1,"overflow thread" );
+  int *ptr = (int*)arg;
+  return( ptr[5] );
+}
+
+
 int choose( int arg )
 {
   printf( "allocer: main()\n" );
@@ -999,6 +1007,22 @@ int choose( int arg )
         for( int i=0; i<5; i++ )
           CloseHandle( threads[i] );
       }
+      break;
+
+    case 58:
+      // heap overflow in another thread
+      {
+        SetThreadName( -1,"main thread" );
+        int *ptr = new int[4];
+        DWORD threadId;
+        CreateThread( NULL,0,&sleepThread,(void*)1000,0,&threadId );
+        Sleep( 10 );
+        SetThreadName( threadId,"sleep thread" );
+        HANDLE thread = CreateThread( NULL,0,&overflowThread,ptr,0,NULL );
+        WaitForSingleObject( thread,INFINITE );
+        CloseHandle( thread );
+      }
+      break;
   }
 
   mem = (char*)realloc( mem,30 );

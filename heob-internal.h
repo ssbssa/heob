@@ -321,6 +321,8 @@ typedef LONG NTAPI func_LdrGetDllHandle(
     PWSTR,PULONG,UNICODE_STRING*,HMODULE* );
 typedef LONG NTAPI func_NtSetEvent( HANDLE,PLONG );
 typedef LONG NTAPI func_NtDelayExecution( BOOL,PLARGE_INTEGER );
+typedef LONG NTAPI func_NtGetNextThread(
+    HANDLE,HANDLE,ACCESS_MASK,ULONG,ULONG,HANDLE* );
 
 // }}}
 // disable memmove/memset {{{
@@ -484,6 +486,9 @@ typedef struct remoteData
   HANDLE heobProcess;
   HANDLE samplingStop;
   int *noStackWalkRemote;
+#endif
+#ifndef NO_THREADS
+  DWORD threadNumTlsRemote;
 #endif
 
   wchar_t exePath[MAX_PATH];

@@ -1167,6 +1167,9 @@ typedef struct appData
   HANDLE appCounterMapping;
   size_t kernel32offset;
   DWORD startTicks;
+#ifndef NO_THREADS
+  DWORD threadNumTlsRemote;
+#endif
 
 #if USE_STACKWALK
   int *noStackWalkRemote;
@@ -1593,6 +1596,9 @@ static CODE_SEG(".text$2") HANDLE inject(
   ad->noStackWalkRemote = data->noStackWalkRemote;
 #endif
   ad->recordingRemote = data->recordingRemote;
+#ifndef NO_THREADS
+  ad->threadNumTlsRemote = data->threadNumTlsRemote;
+#endif
 
   ad->kernel32offset = (size_t)data->kernel32 - (size_t)kernel32;
   // }}}
@@ -5310,6 +5316,135 @@ static void writeException( appData *ad,textColor *tcXml,
       nearBlock,blockType,mi_a,mi_q );
 }
 
+#if USE_STACKWALK
+static void printExceptionThreads( int thread_q,allocation *thread_a,
+#ifndef NO_THREADS
+    int threadName_q,char **threadName_a,
+#endif
+    appData *ad,textColor *tc,modInfo *mi_a,int mi_q )
+{
+  if( !thread_q || !thread_a ) return;
+
+  cacheSymbolData( thread_a,NULL,thread_q,mi_a,mi_q,ad->ds,1 );
+
+  printf( "\n$Iall threads:\n" );
+  int t;
+  for( t=0; t<thread_q; t++ )
+  {
+    allocation *a = &thread_a[t];
+    printf( "  $Sthread:" );
+    printThreadName( a->threadNum );
+    printStackCount( a->frames,a->frameCount,
+        mi_a,mi_q,ad->ds,FT_COUNT,0 );
+  }
+}
+
+static void writeExceptionThreads( appData *ad,textColor *tc,
+#ifndef NO_THREADS
+    int threadName_q,char **threadName_a,
+#endif
+    modInfo *mi_a,int mi_q )
+{
+  HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
+  func_NtGetNextThread *fNtGetNextThread =
+    (func_NtGetNextThread*)GetProcAddress( ntdll,"NtGetNextThread" );
+  if( !fNtGetNextThread ) return;
+
+  int thread_q = 0;
+  int thread_s = 16;
+  allocation *thread_a =
+    HeapAlloc( ad->heap,0,thread_s*sizeof(allocation) );
+  if( !thread_a ) return;
+
+#ifndef NO_THREADS
+  func_NtQueryInformationThread *fNtQueryInformationThread =
+    (func_NtQueryInformationThread*)GetProcAddress(
+        ntdll,"NtQueryInformationThread" );
+#endif
+
+  CONTEXT context;
+  HANDLE thread = NULL;
+  while( 1 )
+  {
+    HANDLE threadNext;
+    LONG status = fNtGetNextThread( ad->pi.hProcess,thread,
+        THREAD_QUERY_INFORMATION|THREAD_SUSPEND_RESUME|
+        THREAD_GET_CONTEXT,0,0,&threadNext );
+    if( thread ) CloseHandle( thread );
+    if( status ) break;
+    thread = threadNext;
+
+    if( thread_q>=thread_s )
+    {
+      thread_s += 16;
+      allocation *a = HeapReAlloc(
+          ad->heap,0,thread_a,thread_s*sizeof(allocation) );
+      if( !a )
+      {
+        CloseHandle( thread );
+        break;
+      }
+      thread_a = a;
+    }
+
+    allocation *a = &thread_a[thread_q];
+    RtlZeroMemory( a,sizeof(allocation) );
+
+    RtlZeroMemory( &context,sizeof(CONTEXT) );
+    context.ContextFlags = CONTEXT_FULL;
+
+    if( UNLIKELY(SuspendThread(thread)==(DWORD)-1) ) continue;
+
+    GetThreadContext( thread,&context );
+    stackwalkDbghelp(
+        &ad->ds->swf,ad->opt,ad->pi.hProcess,thread,&context,a->frames );
+
+    ResumeThread( thread );
+
+#ifndef NO_THREADS
+    if( fNtQueryInformationThread )
+    {
+      THREAD_BASIC_INFORMATION tbi;
+      RtlZeroMemory( &tbi,sizeof(THREAD_BASIC_INFORMATION) );
+      if( fNtQueryInformationThread(thread,
+            ThreadBasicInformation,&tbi,sizeof(tbi),NULL)==0 &&
+          (ULONG_PTR)tbi.ClientId.UniqueProcess==
+          ad->pi.dwProcessId )
+      {
+        PTEB teb = tbi.TebBaseAddress;
+        void *tlsPos = NULL;
+        DWORD tls = ad->threadNumTlsRemote;
+        if( tls<64 )
+          tlsPos = &teb->TlsSlots[tls];
+        else
+        {
+          void **exSlots;
+          if( ReadProcessMemory(ad->pi.hProcess,
+                &teb->TlsExpansionSlots,&exSlots,
+                sizeof(void**),NULL) && exSlots )
+            tlsPos = &exSlots[tls-64];
+        }
+        void *tlsValue;
+        if( tlsPos && ReadProcessMemory(ad->pi.hProcess,
+              tlsPos,&tlsValue,sizeof(void*),NULL) )
+          a->threadNum = (int)(uintptr_t)tlsValue;
+      }
+    }
+#endif
+
+    thread_q++;
+  }
+
+  printExceptionThreads( thread_q,thread_a,
+#ifndef NO_THREADS
+      threadName_q,threadName_a,
+#endif
+      ad,tc,mi_a,mi_q );
+
+  HeapFree( ad->heap,0,thread_a );
+}
+#endif
+
 // }}}
 // minidump {{{
 
@@ -5791,6 +5926,33 @@ static int isMinidump( appData *ad,const wchar_t *name )
 #endif
       ei,ad->mi_a,ad->mi_q );
 
+  if( mtl && mtl->NumberOfThreads && ad->opt->exceptionDetails>0 &&
+      (ad->opt->exceptionDetails&8) )
+  {
+    int c = mtl->NumberOfThreads;
+    allocation *aa = HeapAlloc( heap,HEAP_ZERO_MEMORY,c*sizeof(allocation) );
+
+    int t;
+    for( t=0; t<c; t++ )
+    {
+      MINIDUMP_THREAD *thread = mtl->Threads + t;
+      allocation *a = aa + t;
+      context = REL_PTR( dump,thread->ThreadContext.Rva );
+#ifndef NO_THREADS
+      a->threadNum = t + 1;
+#endif
+      stackwalkDbghelp( &ad->ds->swf,ad->opt,ad,(HANDLE)2,context,a->frames );
+    }
+
+    printExceptionThreads( c,aa,
+#ifndef NO_THREADS
+        0,NULL,
+#endif
+        ad,tc,ad->mi_a,ad->mi_q );
+
+    HeapFree( heap,0,aa );
+  }
+
   if( ad->dump_mi_map_a )
   {
     int i;
@@ -6245,6 +6407,15 @@ static void mainLoop( appData *ad,UINT *exitCode )
               ip,
 #endif
               ei,mi_a,mi_q );
+
+#if USE_STACKWALK
+          if( opt->exceptionDetails>0 && (opt->exceptionDetails&8) && tc->out )
+            writeExceptionThreads( ad,tc,
+#ifndef NO_THREADS
+                threadName_q,threadName_a,
+#endif
+                mi_a,mi_q );
+#endif
 
           SetEvent( ad->exceptionWait );
 
@@ -6944,6 +7115,9 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
     printf( "             |$I2$N = assembly instruction\n" );
 #endif
     printf( "             |$I4$N = modules\n" );
+#if USE_STACKWALK
+    printf( "             |$I8$N = all threads\n" );
+#endif
   }
   if( fullhelp )
   {

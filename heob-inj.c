@@ -4908,6 +4908,9 @@ VOID CALLBACK heob( ULONG_PTR arg )
   rd->noStackWalkRemote = &ld->noStackWalk;
 #endif
   rd->recordingRemote = &ld->recording;
+#ifndef NO_THREADS
+  rd->threadNumTlsRemote = ld->threadNumTls;
+#endif
 
   HANDLE initFinished = rd->initFinished;
   SetEvent( initFinished );
