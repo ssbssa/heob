@@ -7041,6 +7041,10 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
     printf( "              $I2$N = heob\n" );
     printf( "              $I3$N = target application and heob\n" );
   }
+  if( fullhelp )
+    printf( "    $I-w$BX$N    "
+        "forward startup info and inheritable handles [$I%d$N]\n",
+        defopt->forwardStartupInfo );
   printf( "    $I-p$BX$N    page protection [$I%d$N]\n",
       defopt->protect );
   if( fullhelp>1 )
@@ -7318,6 +7322,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
 #if USE_STACKWALK
     0,                              // sampling profiler interval
 #endif
+    0,                              // forward startup info and inheritables
   };
   // }}}
   options opt = defopt;
@@ -7456,6 +7461,10 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
 
       case 'G':
         ad->globalHotkeys = wtoi( args+2 );
+        break;
+
+      case 'w':
+        opt.forwardStartupInfo = wtoi( args+2 );
         break;
 
       case 'O':
@@ -7659,9 +7668,16 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   if( !opt.attached )
   {
     STARTUPINFOW si;
-    RtlZeroMemory( &si,sizeof(STARTUPINFO) );
+    BOOL inheritHandles = FALSE;
+    if( opt.forwardStartupInfo )
+    {
+      GetStartupInfoW( &si );
+      inheritHandles = TRUE;
+    }
+    else
+      RtlZeroMemory( &si,sizeof(STARTUPINFO) );
     si.cb = sizeof(STARTUPINFO);
-    BOOL result = CreateProcessW( NULL,args,NULL,NULL,FALSE,
+    BOOL result = CreateProcessW( NULL,args,NULL,NULL,inheritHandles,
         CREATE_SUSPENDED|((opt.newConsole&1)?CREATE_NEW_CONSOLE:0),
         NULL,NULL,&si,&ad->pi );
     if( !result )

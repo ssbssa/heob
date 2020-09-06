@@ -443,6 +443,7 @@ typedef struct
 #if USE_STACKWALK
   int samplingInterval;
 #endif
+  int forwardStartupInfo;
 }
 options;
 

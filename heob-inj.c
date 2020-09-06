@@ -2407,6 +2407,7 @@ int heobSubProcess(
       else
         ADD_OPTION( " -I",samplingInterval,0 );
 #endif
+      ADD_OPTION( " -w",forwardStartupInfo,0 );
 #undef ADD_OPTION
       int i;
       for( i=0; i<raise_alloc_q; i++ )
