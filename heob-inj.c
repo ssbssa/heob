@@ -4848,8 +4848,22 @@ VOID CALLBACK heob( ULONG_PTR arg )
         char padding5[4];
       }
       cyg_child_info_2;
+      typedef struct
+      {
+        uint32_t padding1[4];
+        unsigned short type;
+        void *padding2[9];
+        uint32_t padding3[6];
+        void *sem;
+        void *cygpid;
+        cygheap_exec_info *moreinfo;
+        int padding4[2];
+        char padding5[4];
+      }
+      cyg_child_info_3;
       cyg_child_info_1 *ci1 = (cyg_child_info_1*)startup.lpReserved2;
       cyg_child_info_2 *ci2 = (cyg_child_info_2*)startup.lpReserved2;
+      cyg_child_info_3 *ci3 = (cyg_child_info_3*)startup.lpReserved2;
       int type = 0;
       if( startup.cbReserved2>=sizeof(cyg_child_info_1) && ci1 )
         type = ci1->type;
@@ -4866,6 +4880,12 @@ VOID CALLBACK heob( ULONG_PTR arg )
       {
         argc = ci2->moreinfo->argc;
         argv = ci2->moreinfo->argv;
+      }
+      else if( (type==1 || type==2) &&
+          startup.cbReserved2==sizeof(cyg_child_info_3) && ci3->moreinfo )
+      {
+        argc = ci3->moreinfo->argc;
+        argv = ci3->moreinfo->argv;
       }
       if( argc && argv )
       {
