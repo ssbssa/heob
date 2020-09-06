@@ -264,13 +264,14 @@ int choose( int arg )
         char t[100];
         int i;
         t[0] = 0;
+        char *tc[64];
         for( i=0; i<64; i++ )
         {
-          char *tc = strdup( t );
-          sum += strlen( tc );
+          tc[i] = strdup( t );
+          sum += tc[i][0];
           strcat( t,"x" );
         }
-        mem[1] = sum;
+        mem[1] = sum + tc[0][1];
       }
       break;
 

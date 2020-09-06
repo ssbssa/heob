@@ -44,7 +44,8 @@ CFLAGS=-Wall -Wextra -Wshadow -Wwrite-strings -Werror \
 CFLAGS_HEOB=$(CPPFLAGS) $(CFLAGS) -O3 -g -DHEOB_VER="\"$(HEOB_VERSION)\"" \
 	    -ffreestanding
 LDFLAGS_HEOB=-nostdlib -lkernel32 -Wl,-dynamicbase,--build-id
-CFLAGS_TEST=$(CFLAGS) -O3 -g -D_GLIBCXX_INCLUDE_NEXT_C_HEADERS
+CFLAGS_TEST=$(CFLAGS) -O3 -g -D_GLIBCXX_INCLUDE_NEXT_C_HEADERS \
+	    -Wno-stringop-overflow
 
 
 all: heob$(BITS).exe allocer$(BITS).exe
