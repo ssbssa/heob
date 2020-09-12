@@ -4435,6 +4435,17 @@ static void setupDllMain( void )
 {
   GET_REMOTEDATA( rd );
 
+  HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
+  typedef LONG NTAPI func_LdrLockLoaderLock( ULONG,PULONG,PULONG_PTR );
+  typedef LONG NTAPI func_LdrUnlockLoaderLock( ULONG,ULONG_PTR );
+  func_LdrLockLoaderLock *fLdrLockLoaderLock =
+    rd->fGetProcAddress( ntdll,"LdrLockLoaderLock" );
+  func_LdrUnlockLoaderLock *fLdrUnlockLoaderLock =
+    rd->fGetProcAddress( ntdll,"LdrUnlockLoaderLock" );
+
+  ULONG_PTR ldrLockCookie;
+  fLdrLockLoaderLock( 0,NULL,&ldrLockCookie );
+
   PEB *peb = GET_PEB();
   PEB_LDR_DATA *ldrData = peb->Ldr;
   LIST_ENTRY *head = &ldrData->InMemoryOrderModuleList;
@@ -4488,6 +4499,8 @@ static void setupDllMain( void )
     heobEntry->Blink->Flink = heobEntry;
     heobEntry->Flink->Blink = heobEntry;
   }
+
+  fLdrUnlockLoaderLock( 0,ldrLockCookie );
 }
 
 // }}}
