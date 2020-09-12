@@ -4339,44 +4339,61 @@ static CODE_SEG(".text$5") DWORD WINAPI controlThread( LPVOID arg )
 // }}}
 // dll entry point {{{
 
-static CODE_SEG(".text$6") BOOL WINAPI dllMain(
-    HINSTANCE hinstDLL,DWORD fdwReason,LPVOID lpvReserved )
+static CODE_SEG(".text$6") void threadAttachDetach(
+    HANDLE thread,DWORD fdwReason,DWORD threadId )
 {
-  (void)hinstDLL;
-  (void)lpvReserved;
-
   GET_REMOTEDATA( rd );
 
   if( fdwReason==DLL_THREAD_ATTACH || fdwReason==DLL_PROCESS_ATTACH )
   {
-    HANDLE thread = GetCurrentThread();
-
     // ignore threads of heob {{{
-    if( !rd->fNtQueryInformationThread ) return( TRUE );
+    if( !rd->fNtQueryInformationThread ) return;
 
     uintptr_t startAddr;
     if( rd->fNtQueryInformationThread(thread,
           ThreadQuerySetWin32StartAddress,&startAddr,sizeof(uintptr_t),NULL) )
-      return( TRUE );
+      return;
 
-    if( startAddr>(uintptr_t)rd->heobMod && startAddr<(uintptr_t)&dllMain )
-      return( TRUE );
+    if( startAddr>(uintptr_t)rd->heobMod &&
+        startAddr<(uintptr_t)&threadAttachDetach )
+      return;
     // }}}
 
     // thread number {{{
 #ifndef NO_THREADS
     DWORD threadNumTls = rd->threadNumTls;
 
-    EnterCriticalSection( &rd->csThreadNum );
-
-    int threadNum = (int)(uintptr_t)TlsGetValue( threadNumTls );
-    if( !threadNum )
+    int threadNum = 0;
+    if( !threadId )
     {
-      threadNum = ++rd->threadNum;
-      TlsSetValue( threadNumTls,(void*)(uintptr_t)threadNum );
-    }
+      EnterCriticalSection( &rd->csThreadNum );
 
-    LeaveCriticalSection( &rd->csThreadNum );
+      threadNum = (int)(uintptr_t)TlsGetValue( threadNumTls );
+      if( !threadNum )
+      {
+        threadNum = ++rd->threadNum;
+        TlsSetValue( threadNumTls,(void*)(uintptr_t)threadNum );
+      }
+
+      LeaveCriticalSection( &rd->csThreadNum );
+    }
+    else
+    {
+      void **tlsSlotAddress = getTlsSlotAddress( thread,threadNumTls );
+      if( tlsSlotAddress )
+      {
+        EnterCriticalSection( &rd->csThreadNum );
+
+        threadNum = (int)(uintptr_t)*tlsSlotAddress;
+        if( !threadNum )
+        {
+          threadNum = ++rd->threadNum;
+          *tlsSlotAddress = (void*)(uintptr_t)threadNum;
+        }
+
+        LeaveCriticalSection( &rd->csThreadNum );
+      }
+    }
 #endif
     // }}}
 
@@ -4391,7 +4408,7 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
 #ifndef NO_THREADS
       tst.threadNum = threadNum;
 #endif
-      tst.threadId = GetCurrentThreadId();
+      tst.threadId = threadId ? threadId : GetCurrentThreadId();
       tst.cycleTime = 0;
 
       EnterCriticalSection( &rd->csWrite );
@@ -4415,7 +4432,7 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
       EnterCriticalSection( &rd->csWrite );
 
       int type = WRITE_REMOVE_SAMPLING_THREAD;
-      DWORD threadId = GetCurrentThreadId();
+      if( !threadId ) threadId = GetCurrentThreadId();
       DWORD written;
       WriteFile( rd->master,&type,sizeof(int),&written,NULL );
       WriteFile( rd->master,&threadId,sizeof(threadId),&written,NULL );
@@ -4427,6 +4444,15 @@ static CODE_SEG(".text$6") BOOL WINAPI dllMain(
   }
   else if( rd->opt.dlls==4 ) // DLL_PROCESS_DETACH
     writeExitData();
+}
+
+static BOOL WINAPI dllMain(
+    HINSTANCE hinstDLL,DWORD fdwReason,LPVOID lpvReserved )
+{
+  (void)hinstDLL;
+  (void)lpvReserved;
+
+  threadAttachDetach( GetCurrentThread(),fdwReason,0 );
 
   return( TRUE );
 }
@@ -4442,6 +4468,8 @@ static void setupDllMain( void )
     rd->fGetProcAddress( ntdll,"LdrLockLoaderLock" );
   func_LdrUnlockLoaderLock *fLdrUnlockLoaderLock =
     rd->fGetProcAddress( ntdll,"LdrUnlockLoaderLock" );
+  func_NtGetNextThread *fNtGetNextThread =
+    (func_NtGetNextThread*)GetProcAddress( ntdll,"NtGetNextThread" );
 
   ULONG_PTR ldrLockCookie;
   fLdrLockLoaderLock( 0,NULL,&ldrLockCookie );
@@ -4498,6 +4526,31 @@ static void setupDllMain( void )
     heobEntry->Flink = kernel32Entry->Flink;
     heobEntry->Blink->Flink = heobEntry;
     heobEntry->Flink->Blink = heobEntry;
+  }
+
+  if( fNtGetNextThread && rd->fNtQueryInformationThread )
+  {
+    HANDLE thread = NULL;
+    while( 1 )
+    {
+      HANDLE threadNext;
+      LONG status = fNtGetNextThread( GetCurrentProcess(),thread,
+          THREAD_QUERY_INFORMATION|THREAD_SUSPEND_RESUME|
+          THREAD_GET_CONTEXT,0,0,&threadNext );
+      if( thread ) CloseHandle( thread );
+      if( status ) break;
+      thread = threadNext;
+
+      THREAD_BASIC_INFORMATION tbi;
+      RtlZeroMemory( &tbi,sizeof(THREAD_BASIC_INFORMATION) );
+      if( rd->fNtQueryInformationThread(thread,
+            ThreadBasicInformation,&tbi,sizeof(tbi),NULL)==0 )
+      {
+        DWORD threadId = (DWORD)(ULONG_PTR)tbi.ClientId.UniqueThread;
+        if( threadId!=GetCurrentThreadId() )
+          threadAttachDetach( thread,DLL_THREAD_ATTACH,threadId );
+      }
+    }
   }
 
   fLdrUnlockLoaderLock( 0,ldrLockCookie );
