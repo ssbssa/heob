@@ -117,6 +117,81 @@ static DWORD WINAPI namedThread( LPVOID arg )
 }
 
 
+static void SetThreadDesc( HANDLE thread,const wchar_t *td )
+{
+  HMODULE kernel32 = GetModuleHandle( "kernel32.dll" );
+  typedef HRESULT WINAPI func_SetThreadDescription( HANDLE,PCWSTR );
+  func_SetThreadDescription *fSetThreadDescription =
+    (func_SetThreadDescription*)GetProcAddress(
+        kernel32,"SetThreadDescription" );
+  if( !fSetThreadDescription )
+  {
+    // fallback to SetThreadName()
+    HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
+    typedef enum
+    {
+      ThreadBasicInformation,
+    }
+    THREADINFOCLASS;
+    typedef LONG NTAPI func_NtQueryInformationThread(
+        HANDLE,THREADINFOCLASS,PVOID,ULONG,PULONG );
+    func_NtQueryInformationThread *fNtQueryInformationThread =
+      (func_NtQueryInformationThread*)GetProcAddress(
+          ntdll,"NtQueryInformationThread" );
+    if( fNtQueryInformationThread )
+    {
+      typedef struct _CLIENT_ID
+      {
+        PVOID UniqueProcess;
+        PVOID UniqueThread;
+      }
+      CLIENT_ID;
+      typedef DWORD KPRIORITY;
+      typedef struct _THREAD_BASIC_INFORMATION
+      {
+        LONG ExitStatus;
+        void *TebBaseAddress;
+        CLIENT_ID ClientId;
+        KAFFINITY AffinityMask;
+        KPRIORITY Priority;
+        KPRIORITY BasePriority;
+      }
+      THREAD_BASIC_INFORMATION;
+
+      THREAD_BASIC_INFORMATION tbi;
+      RtlZeroMemory( &tbi,sizeof(THREAD_BASIC_INFORMATION) );
+      if( fNtQueryInformationThread(thread,
+            ThreadBasicInformation,&tbi,sizeof(tbi),NULL)==0 )
+      {
+        DWORD threadId = (DWORD)(ULONG_PTR)tbi.ClientId.UniqueThread;
+        int len;
+        char *tn;
+        if( (len=WideCharToMultiByte(CP_ACP,0,td,-1,NULL,0,NULL,NULL))>0 &&
+            (tn=(char*)HeapAlloc(GetProcessHeap(),0,len)) )
+        {
+          WideCharToMultiByte( CP_ACP,0,td,-1,tn,len,NULL,NULL );
+          SetThreadName( threadId,tn );
+          HeapFree( GetProcessHeap(),0,tn );
+        }
+      }
+    }
+
+    return;
+  }
+
+  fSetThreadDescription( thread,td );
+}
+
+static DWORD WINAPI descThread( LPVOID arg )
+{
+  if( arg )
+    SetThreadDesc( GetCurrentThread(),L"self named thread" );
+
+  char *leak = (char*)malloc( 10+(arg?0:16) );
+  return leak[0];
+}
+
+
 static DWORD WINAPI raceThread( LPVOID arg )
 {
   char *r = NULL;
@@ -1020,6 +1095,28 @@ int choose( int arg )
         Sleep( 10 );
         SetThreadName( threadId,"sleep thread" );
         HANDLE thread = CreateThread( NULL,0,&overflowThread,ptr,0,NULL );
+        WaitForSingleObject( thread,INFINITE );
+        CloseHandle( thread );
+      }
+      break;
+
+    case 59:
+      // thread descriptions
+      {
+        SetThreadDesc( GetCurrentThread(),L"main thread" );
+        char *mainLeak = (char*)malloc( 11 );
+        mem[1] = mainLeak[0];
+
+        HANDLE thread = CreateThread(
+            NULL,0,&descThread,(void*)1,0,NULL );
+        WaitForSingleObject( thread,INFINITE );
+        CloseHandle( thread );
+
+        DWORD threadId;
+        thread = CreateThread(
+            NULL,0,&descThread,NULL,CREATE_SUSPENDED,&threadId );
+        SetThreadDesc( thread,L"remotely named thread" );
+        ResumeThread( thread );
         WaitForSingleObject( thread,INFINITE );
         CloseHandle( thread );
       }

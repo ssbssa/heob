@@ -1,0 +1,11 @@
+allocer: main()
+
+leaks:
+  32 B (#4) '3: remotely named thread'
+    [malloc]
+  16 B (#2) '1: main thread'
+    [malloc]
+  16 B (#3) '2: self named thread'
+    [malloc]
+  sum: 64 B / 3
+exit code: 59 (0xPTR)

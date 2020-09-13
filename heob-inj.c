@@ -82,6 +82,7 @@ typedef struct localData
 
 #ifndef NO_THREADS
   func_RaiseException *fRaiseException;
+  func_GetThreadDescription *fGetThreadDescription;
 #endif
   func_NtQueryInformationThread *fNtQueryInformationThread;
 
@@ -365,6 +366,10 @@ static wchar_t *wdup( const wchar_t *w,HANDLE heap )
 // }}}
 // send module information {{{
 
+#ifndef NO_THREADS
+static void writeThreadDescs( void );
+#endif
+
 static void writeModsFind( modInfo **p_mi_a,int *p_mi_q )
 {
   GET_REMOTEDATA( rd );
@@ -453,6 +458,10 @@ static void writeModsFind( modInfo **p_mi_a,int *p_mi_q )
 
   *p_mi_q = mi_q;
   *p_mi_a = mi_a;
+
+#ifndef NO_THREADS
+  writeThreadDescs();
+#endif
 }
 
 static void writeModsSend( modInfo *mi_a,int mi_q )
@@ -2215,6 +2224,54 @@ static void sendThreadName( int threadNum,const wchar_t *name )
   WriteFile( rd->master,name,len*2,&written,NULL );
 
   LeaveCriticalSection( &rd->csWrite );
+}
+
+static int sendThreadDescription( HANDLE thread,int threadNum )
+{
+  GET_REMOTEDATA( rd );
+
+  PWSTR wc;
+  if( !SUCCEEDED(rd->fGetThreadDescription(thread,&wc)) ) return( 0 );
+
+  if( wc && wc[0] ) sendThreadName( threadNum,wc );
+
+  LocalFree( wc );
+
+  return( 1 );
+}
+
+static void writeThreadDescs( void )
+{
+  GET_REMOTEDATA( rd );
+
+  if( !rd->fGetThreadDescription || !rd->fNtQueryInformationThread ) return;
+
+  HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
+  func_NtGetNextThread *fNtGetNextThread =
+    (func_NtGetNextThread*)GetProcAddress( ntdll,"NtGetNextThread" );
+  if( !fNtGetNextThread ) return;
+
+  HANDLE thread = NULL;
+  DWORD threadNumTls = rd->threadNumTls;
+  while( 1 )
+  {
+    HANDLE threadNext;
+    LONG status = fNtGetNextThread( GetCurrentProcess(),thread,
+        THREAD_QUERY_INFORMATION,0,0,&threadNext );
+    if( thread ) CloseHandle( thread );
+    if( status ) break;
+    thread = threadNext;
+
+    void **tlsSlotAddress = getTlsSlotAddress( thread,threadNumTls );
+    if( tlsSlotAddress )
+    {
+      EnterCriticalSection( &rd->csThreadNum );
+      int threadNum = (int)(uintptr_t)*tlsSlotAddress;
+      LeaveCriticalSection( &rd->csThreadNum );
+      if( threadNum )
+        sendThreadDescription( thread,threadNum );
+    }
+  }
 }
 
 #pragma pack(push,8)
@@ -4458,6 +4515,17 @@ static CODE_SEG(".text$6") void threadAttachDetach(
     }
 #endif
     // }}}
+
+    // thread description {{{
+#ifndef NO_THREADS
+    if( rd->fGetThreadDescription )
+    {
+      int threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
+      if( threadNum )
+        sendThreadDescription( thread,threadNum );
+    }
+#endif
+    // }}}
   }
   else if( rd->opt.dlls==4 ) // DLL_PROCESS_DETACH
     writeExitData();
@@ -4700,6 +4768,10 @@ VOID CALLBACK heob( ULONG_PTR arg )
   ld->fTerminateProcess =
     rd->fGetProcAddress( rd->kernel32,"TerminateProcess" );
   ld->fCreateProcessW = rd->fGetProcAddress( rd->kernel32,"CreateProcessW" );
+#ifndef NO_THREADS
+  ld->fGetThreadDescription =
+    rd->fGetProcAddress( rd->kernel32,"GetThreadDescription" );
+#endif
   ld->master = rd->master;
   ld->controlPipe = rd->controlPipe;
   ld->exceptionWait = rd->exceptionWait;

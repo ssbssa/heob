@@ -115,6 +115,7 @@ typedef BOOL WINAPI func_CreateProcessW(
     LPVOID,LPCWSTR,LPSTARTUPINFOW,LPPROCESS_INFORMATION );
 typedef BOOL WINAPI func_InitializeCriticalSectionEx(
     LPCRITICAL_SECTION,DWORD,DWORD );
+typedef HRESULT WINAPI func_GetThreadDescription( HANDLE,PWSTR* );
 
 // }}}
 // CRT function definitions {{{
