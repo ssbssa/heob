@@ -2170,7 +2170,7 @@ static BOOL WINAPI new_TerminateProcess( HANDLE p,UINT c )
 }
 
 // }}}
-// replacement for RaiseException {{{
+// thread name {{{
 
 #ifndef NO_THREADS
 static void **getTlsSlotAddress( HANDLE thread,DWORD tls )
@@ -2198,6 +2198,23 @@ static void **getTlsSlotAddress( HANDLE thread,DWORD tls )
   }
 
   return( NULL );
+}
+
+static void sendThreadName( int threadNum,const wchar_t *name )
+{
+  GET_REMOTEDATA( rd );
+
+  EnterCriticalSection( &rd->csWrite );
+
+  int type = WRITE_THREAD_NAME;
+  DWORD written;
+  WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+  WriteFile( rd->master,&threadNum,sizeof(int),&written,NULL );
+  int len = lstrlenW( name );
+  WriteFile( rd->master,&len,sizeof(int),&written,NULL );
+  WriteFile( rd->master,name,len*2,&written,NULL );
+
+  LeaveCriticalSection( &rd->csWrite );
 }
 
 #pragma pack(push,8)
@@ -2256,17 +2273,17 @@ static VOID WINAPI new_RaiseException(
 
       if( threadNum )
       {
-        EnterCriticalSection( &rd->csWrite );
+        int len;
+        wchar_t *wc;
+        if( (len=MultiByteToWideChar(CP_ACP,0,tni->szName,-1,NULL,0))>0 &&
+            (wc=HeapAlloc(rd->heap,0,len*2)) )
+        {
+          MultiByteToWideChar( CP_ACP,0,tni->szName,-1,wc,len );
 
-        int type = WRITE_THREAD_NAME;
-        DWORD written;
-        WriteFile( rd->master,&type,sizeof(int),&written,NULL );
-        WriteFile( rd->master,&threadNum,sizeof(int),&written,NULL );
-        int len = lstrlen( tni->szName );
-        WriteFile( rd->master,&len,sizeof(int),&written,NULL );
-        WriteFile( rd->master,tni->szName,len,&written,NULL );
+          sendThreadName( threadNum,wc );
 
-        LeaveCriticalSection( &rd->csWrite );
+          HeapFree( rd->heap,0,wc );
+        }
       }
     }
   }
