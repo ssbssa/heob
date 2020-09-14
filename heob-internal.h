@@ -193,6 +193,7 @@ OBJECT_INFORMATION_CLASS;
 
 typedef enum
 {
+  ProcessBasicInformation=0,
   ProcessImageFileName=27,
 }
 PROCESSINFOCLASS;
@@ -270,13 +271,32 @@ LDR_DATA_TABLE_ENTRY, *PLDR_DATA_TABLE_ENTRY;
 
 typedef struct
 {
-  DWORD Reserved1[5];
+  USHORT Flags;
+  USHORT Length;
+  ULONG TimeStamp;
+  UNICODE_STRING DosPath;
+}
+RTL_DRIVE_LETTER_CURDIR;
+
+typedef struct
+{
+  ULONG MaximumLength;
+  ULONG Length;
+  DWORD Reserved1[3];
   PVOID Reserved2[4];
   UNICODE_STRING CurrentDirectory;
   PVOID CurrentDirectoryHandle;
   UNICODE_STRING DllPath;
   UNICODE_STRING ImagePathName;
   UNICODE_STRING CommandLine;
+  PVOID Reserved3;
+  ULONG Reserved4[9];
+  UNICODE_STRING Reserved5[4];
+  RTL_DRIVE_LETTER_CURDIR CurrentDirectories[32];
+  UINT_PTR Reserved6[2];
+  PVOID Reserved7;
+  ULONG Reserved8;
+  ULONG LoaderThreads;
 }
 RTL_USER_PROCESS_PARAMETERS;
 
@@ -287,6 +307,16 @@ typedef struct _PEB
   RTL_USER_PROCESS_PARAMETERS *ProcessParameters;
 }
 PEB, *PPEB;
+
+typedef struct _PROCESS_BASIC_INFORMATION
+{
+  PVOID Reserved1;
+  PPEB PebBaseAddress;
+  PVOID Reserved2[2];
+  ULONG_PTR UniqueProcessId;
+  PVOID Reserved3;
+}
+PROCESS_BASIC_INFORMATION;
 
 typedef struct _CLIENT_ID
 {
@@ -324,6 +354,8 @@ typedef LONG NTAPI func_NtSetEvent( HANDLE,PLONG );
 typedef LONG NTAPI func_NtDelayExecution( BOOL,PLARGE_INTEGER );
 typedef LONG NTAPI func_NtGetNextThread(
     HANDLE,HANDLE,ACCESS_MASK,ULONG,ULONG,HANDLE* );
+
+typedef LONG NTAPI func_RtlGetVersion( PRTL_OSVERSIONINFOW );
 
 // }}}
 // disable memmove/memset {{{
@@ -445,6 +477,7 @@ typedef struct
   int samplingInterval;
 #endif
   int forwardStartupInfo;
+  int disableParallelLoading;
 }
 options;
 

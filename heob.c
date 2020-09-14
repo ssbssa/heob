@@ -3803,6 +3803,10 @@ static wchar_t *readOption( wchar_t *args,appData *ad,HANDLE heap )
       break;
 #endif
 
+    case 'T':
+      opt->disableParallelLoading = wtoi( args+2 );
+      break;
+
     default:
       return( NULL );
   }
@@ -7098,9 +7102,13 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
     printf( "              $I3$N = target application and heob\n" );
   }
   if( fullhelp )
+  {
     printf( "    $I-w$BX$N    "
         "forward startup info and inheritable handles [$I%d$N]\n",
         defopt->forwardStartupInfo );
+    printf( "    $I-T$BX$N    disable parallel dll loading [$I%d$N]\n",
+        defopt->disableParallelLoading );
+  }
   printf( "    $I-p$BX$N    page protection [$I%d$N]\n",
       defopt->protect );
   if( fullhelp>1 )
@@ -7379,6 +7387,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     0,                              // sampling profiler interval
 #endif
     0,                              // forward startup info and inheritables
+    0,                              // disable parallel dll loading
   };
   // }}}
   options opt = defopt;
@@ -7779,6 +7788,40 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   else if( ad->ppid )
     opt.newConsole = 0;
   // }}}
+
+  if( opt.disableParallelLoading )
+  {
+    func_RtlGetVersion *fRtlGetVersion =
+      (func_RtlGetVersion*)GetProcAddress( ntdll,"RtlGetVersion" );
+    RTL_OSVERSIONINFOW osversion;
+    osversion.dwOSVersionInfoSize = sizeof(osversion);
+    if( fRtlGetVersion && !fRtlGetVersion(&osversion) &&
+        osversion.dwMajorVersion>=10 )
+    {
+      func_NtQueryInformationProcess *fNtQueryInformationProcess =
+        (func_NtQueryInformationProcess*)GetProcAddress(
+            ntdll,"NtQueryInformationProcess" );
+      PROCESS_BASIC_INFORMATION pbi;
+      ULONG len;
+      if( fNtQueryInformationProcess &&
+          !fNtQueryInformationProcess(ad->pi.hProcess,ProcessBasicInformation,
+            &pbi,sizeof(pbi),&len) )
+      {
+        PEB *peb = pbi.PebBaseAddress;
+        RTL_USER_PROCESS_PARAMETERS *rupp;
+        ULONG loaderThreads;
+        if( ReadProcessMemory(ad->pi.hProcess,&peb->ProcessParameters,
+              &rupp,sizeof(rupp),NULL) &&
+            ReadProcessMemory(ad->pi.hProcess,&rupp->LoaderThreads,
+              &loaderThreads,sizeof(loaderThreads),NULL) )
+        {
+          loaderThreads = 1;
+          WriteProcessMemory( ad->pi.hProcess,&rupp->LoaderThreads,
+              &loaderThreads,sizeof(loaderThreads),NULL );
+        }
+      }
+    }
+  }
 
   // executable name {{{
   wchar_t *exePath = ad->exePathW;
