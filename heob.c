@@ -5597,6 +5597,26 @@ static BOOL WINAPI symbolCallback( HANDLE process,
   return( FALSE );
 }
 
+#ifndef NO_THREADS
+#include <pshpack4.h>
+
+typedef struct _MD_THREAD_NAME
+{
+  ULONG32 ThreadId;
+  RVA64 ThreadNameRva;
+}
+MD_THREAD_NAME;
+
+typedef struct _MD_THREAD_NAME_LIST
+{
+  ULONG32 NumberOfThreadNames;
+  MD_THREAD_NAME ThreadNames[0];
+}
+MD_THREAD_NAME_LIST;
+
+#include <poppack.h>
+#endif
+
 static int isMinidump( appData *ad,const wchar_t *name )
 {
   if( ad->pi.hProcess || !name ) return( 0 );
@@ -5669,6 +5689,9 @@ static int isMinidump( appData *ad,const wchar_t *name )
   MINIDUMP_THREAD_LIST *mtl = NULL;
   MINIDUMP_MISC_INFO *misc = NULL;
   MINIDUMP_EXCEPTION_STREAM *exception = NULL;
+#ifndef NO_THREADS
+  MD_THREAD_NAME_LIST *threadNames = NULL;
+#endif
 
   MINIDUMP_HEADER *header = REL_PTR( dump,0 );
   MINIDUMP_DIRECTORY *dir = REL_PTR( dump,header->StreamDirectoryRva );
@@ -5695,6 +5718,11 @@ static int isMinidump( appData *ad,const wchar_t *name )
       case ExceptionStream:
         exception = REL_PTR( dump,dir[s].Location.Rva );
         break;
+#ifndef NO_THREADS
+      case 24: // ThreadNamesStream
+        threadNames = REL_PTR( dump,dir[s].Location.Rva );
+        break;
+#endif
     }
   }
 
@@ -5766,6 +5794,31 @@ static int isMinidump( appData *ad,const wchar_t *name )
 
 #ifndef NO_THREADS
   int threadNum = 0;
+  int threadName_q = 0;
+  wchar_t **threadName_a = NULL;
+  if( mtl && mtl->NumberOfThreads &&
+      threadNames && threadNames->NumberOfThreadNames )
+  {
+    threadName_q = mtl->NumberOfThreads;
+    threadName_a = HeapAlloc(
+        heap,HEAP_ZERO_MEMORY,threadName_q*sizeof(wchar_t*) );
+    uint32_t numberOfThreadNames = threadNames->NumberOfThreadNames;
+    uint32_t t;
+    for( t=0; t<mtl->NumberOfThreads; t++ )
+    {
+      uint32_t threadId = mtl->Threads[t].ThreadId;
+      uint32_t n;
+      for( n=0; n<numberOfThreadNames; n++ )
+      {
+        MD_THREAD_NAME *threadName = threadNames->ThreadNames + n;
+        if( threadName->ThreadId!=threadId ) continue;
+
+        MINIDUMP_STRING *tn = REL_PTR( dump,threadName->ThreadNameRva );
+        threadName_a[t] = tn->Buffer;
+        break;
+      }
+    }
+  }
 #endif
   if( mtl && ad->dump_mod_a )
   {
@@ -5919,7 +5972,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
 
   writeException( ad,NULL,
 #ifndef NO_THREADS
-      0,NULL,
+      threadName_q,threadName_a,
 #endif
 #ifndef NO_DBGENG
       ip,
@@ -5946,7 +5999,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
 
     printExceptionThreads( c,aa,
 #ifndef NO_THREADS
-        0,NULL,
+        threadName_q,threadName_a,
 #endif
         ad,tc,ad->mi_a,ad->mi_q );
 
@@ -5965,6 +6018,9 @@ static int isMinidump( appData *ad,const wchar_t *name )
   UnmapViewOfFile( dump );
   dbgsym_close( &ds );
   HeapFree( heap,0,ei );
+#ifndef NO_THREADS
+  if( threadName_a ) HeapFree( heap,0,threadName_a );
+#endif
 
   return( 1 );
 }
