@@ -2598,6 +2598,7 @@ static char *undecorateVCsymbol( dbgsym *ds,char *decorName )
 typedef struct threadInfo
 {
   wchar_t *name;
+  DWORD id;
 }
 threadInfo;
 
@@ -2608,7 +2609,10 @@ static void printThreadName( int threadNum,
 
   if( threadNum>0 && threadNum<=threadName_q &&
       threadName_a[threadNum-1].name )
-    printf( " $S'%d: %S'\n",threadNum,threadName_a[threadNum-1].name );
+    printf( " $S'%d [%u]: %S'\n",threadNum,threadName_a[threadNum-1].id,
+        threadName_a[threadNum-1].name );
+  else if( threadNum>0 && threadNum<=threadName_q )
+    printf( " $S'%d [%u]'\n",threadNum,threadName_a[threadNum-1].id );
   else if( threadNum>1 )
     printf( " $S'%d'\n",threadNum );
   else
@@ -4624,8 +4628,12 @@ static void locSvg( textColor *tc,uintptr_t addr,int useAddr,
 #ifndef NO_THREADS
   if( threadNum>0 && threadNum<=threadName_q &&
       threadName_a[threadNum-1].name )
-    printf( " heobThread=\"thread %d: %S\"",
-        threadNum,threadName_a[threadNum-1].name );
+    printf( " heobThread=\"thread %d [%u]: %S\"",
+        threadNum,threadName_a[threadNum-1].id,
+        threadName_a[threadNum-1].name );
+  else if( threadNum>0 && threadNum<=threadName_q )
+    printf( " heobThread=\"thread %d [%u]\"",
+        threadNum,threadName_a[threadNum-1].id );
   else if( threadNum )
     printf( " heobThread=\"thread %d\"",threadNum );
 #endif
@@ -5810,17 +5818,18 @@ static int isMinidump( appData *ad,const wchar_t *name )
   int threadNum = 0;
   int threadName_q = 0;
   threadInfo *threadName_a = NULL;
-  if( mtl && mtl->NumberOfThreads &&
-      threadNames && threadNames->NumberOfThreadNames )
+  if( mtl && mtl->NumberOfThreads )
   {
     threadName_q = mtl->NumberOfThreads;
     threadName_a = HeapAlloc(
         heap,HEAP_ZERO_MEMORY,threadName_q*sizeof(threadInfo) );
-    uint32_t numberOfThreadNames = threadNames->NumberOfThreadNames;
+    uint32_t numberOfThreadNames =
+      threadNames ? threadNames->NumberOfThreadNames : 0;
     uint32_t t;
     for( t=0; t<mtl->NumberOfThreads; t++ )
     {
       uint32_t threadId = mtl->Threads[t].ThreadId;
+      threadName_a[t].id = threadId;
       uint32_t n;
       for( n=0; n<numberOfThreadNames; n++ )
       {
@@ -6723,6 +6732,7 @@ static void mainLoop( appData *ad,UINT *exitCode )
 
 #ifndef NO_THREADS
       case WRITE_THREAD_NAME:
+      case WRITE_THREAD_ID:
         {
           int threadNum;
           if( !readFile(readPipe,&threadNum,sizeof(int),&ov) )
@@ -6743,15 +6753,25 @@ static void mainLoop( appData *ad,UINT *exitCode )
             threadName_q = tnq;
           }
 
-          int len;
-          if( !readFile(readPipe,&len,sizeof(int),&ov) )
-            break;
-          if( threadName_a[threadNum-1].name )
-            HeapFree( heap,0,threadName_a[threadNum-1].name );
-          threadName_a[threadNum-1].name =
-            HeapAlloc( heap,HEAP_ZERO_MEMORY,(len+1)*2 );
-          if( !readFile(readPipe,threadName_a[threadNum-1].name,len*2,&ov) )
-            break;
+          if( type==WRITE_THREAD_NAME )
+          {
+            int len;
+            if( !readFile(readPipe,&len,sizeof(int),&ov) )
+              break;
+            if( threadName_a[threadNum-1].name )
+              HeapFree( heap,0,threadName_a[threadNum-1].name );
+            threadName_a[threadNum-1].name =
+              HeapAlloc( heap,HEAP_ZERO_MEMORY,(len+1)*2 );
+            if( !readFile(readPipe,threadName_a[threadNum-1].name,len*2,&ov) )
+              break;
+          }
+          else
+          {
+            DWORD threadId;
+            if( !readFile(readPipe,&threadId,sizeof(DWORD),&ov) )
+              break;
+            threadName_a[threadNum-1].id = threadId;
+          }
         }
         break;
 #endif

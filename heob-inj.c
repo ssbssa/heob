@@ -4469,6 +4469,21 @@ static CODE_SEG(".text$6") void threadAttachDetach(
         LeaveCriticalSection( &rd->csThreadNum );
       }
     }
+
+    if( threadNum )
+    {
+      if( !threadId ) threadId = GetCurrentThreadId();
+
+      EnterCriticalSection( &rd->csWrite );
+
+      int type = WRITE_THREAD_ID;
+      DWORD written;
+      WriteFile( rd->master,&type,sizeof(int),&written,NULL );
+      WriteFile( rd->master,&threadNum,sizeof(int),&written,NULL );
+      WriteFile( rd->master,&threadId,sizeof(DWORD),&written,NULL );
+
+      LeaveCriticalSection( &rd->csWrite );
+    }
 #endif
     // }}}
 
