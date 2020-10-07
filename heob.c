@@ -6461,6 +6461,7 @@ static void mainLoop( appData *ad,UINT *exitCode )
           if( !readFile(readPipe,ei,sizeof(exceptionInfo),&ov) )
             break;
           ei->throwName[sizeof(ei->throwName)-1] = 0;
+          if( ei->aq<1 || ei->aq>3 ) ei->aq = 1;
 
 #if USE_STACKWALK
           if( ds->swf.fStackWalk64 )
