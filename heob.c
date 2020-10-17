@@ -5620,7 +5620,7 @@ static BOOL WINAPI symbolCallback( HANDLE process,
 }
 
 #ifndef NO_THREADS
-#include <pshpack4.h>
+#pragma pack(push,4)
 
 typedef struct _MD_THREAD_NAME
 {
@@ -5636,7 +5636,7 @@ typedef struct _MD_THREAD_NAME_LIST
 }
 MD_THREAD_NAME_LIST;
 
-#include <poppack.h>
+#pragma pack(pop)
 #endif
 
 static int isMinidump( appData *ad,const wchar_t *name )
