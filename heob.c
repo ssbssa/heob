@@ -7842,7 +7842,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
         RTL_USER_PROCESS_PARAMETERS *rupp;
         ULONG loaderThreads;
         if( ReadProcessMemory(ad->pi.hProcess,&peb->ProcessParameters,
-              &rupp,sizeof(rupp),NULL) &&
+              &rupp,sizeof(RTL_USER_PROCESS_PARAMETERS*),NULL) &&
             ReadProcessMemory(ad->pi.hProcess,&rupp->LoaderThreads,
               &loaderThreads,sizeof(loaderThreads),NULL) )
         {
