@@ -44,5 +44,5 @@ goto eof
 :eof
 
 @echo off 
-pause
+IF %0 == "%~0"  pause
 
