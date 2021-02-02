@@ -42,3 +42,7 @@ goto eof
 :error
 
 :eof
+
+@echo off 
+pause
+
