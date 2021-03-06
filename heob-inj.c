@@ -1,5 +1,5 @@
 
-//          Copyright Hannes Domani 2014 - 2020.
+//          Copyright Hannes Domani 2014 - 2021.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -86,6 +86,7 @@ typedef struct localData
 #endif
   func_NtQueryInformationThread *fNtQueryInformationThread;
 
+  func_signal *fsignal;
   func_malloc *fmalloc;
   func_calloc *fcalloc;
   func_free *ffree;
@@ -1228,6 +1229,19 @@ static NOINLINE void trackAllocFailure(
     else if( (s) && (m) ) \
       trackAllocFailure( s,m,at,ft,RETURN_ADDRESS() ); \
   } while( 0 )
+
+// }}}
+// replacement for signal {{{
+
+void *new_signal( int sig,void (*func)(int) )
+{
+  GET_REMOTEDATA( rd );
+
+  if( rd->opt.handleException && sig==11 ) // SIGSEGV
+    return( (void*)0 ); // SIG_DFL
+
+  return( rd->fsignal(sig,func) );
+}
 
 // }}}
 // replacements for memory allocation tracking {{{
@@ -3507,6 +3521,8 @@ static void replaceModFuncs( void )
 #define REP_FUNC_(func) \
   REP_FUNC_N(func, "_" #func)
   replaceData rep[] = {
+    // needs to be first, for handleException==2
+    REP_FUNC(signal),
     REP_FUNC(malloc),
     REP_FUNC(calloc),
     REP_FUNC(free),
@@ -3626,6 +3642,8 @@ static void replaceModFuncs( void )
         rd->owtempnam = rd->fGetProcAddress( dll_msvcrt,"_wtempnam" );
       }
     }
+    else if( rd->opt.handleException==2 )
+      replaceFuncs( mod,rep,1,NULL,0,NULL );
 
     // global data sections {{{
     if( dll_msvcrt )

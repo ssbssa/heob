@@ -1,5 +1,5 @@
 
-//          Copyright Hannes Domani 2014 - 2020.
+//          Copyright Hannes Domani 2014 - 2021.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -120,6 +120,7 @@ typedef HRESULT WINAPI func_GetThreadDescription( HANDLE,PWSTR* );
 // }}}
 // CRT function definitions {{{
 
+typedef void *func_signal( int,void(*)(int) );
 typedef void *func_malloc( size_t );
 typedef void *func_calloc( size_t,size_t );
 typedef void func_free( void* );
