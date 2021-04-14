@@ -1,5 +1,5 @@
 
-//          Copyright Hannes Domani 2014 - 2020.
+//          Copyright Hannes Domani 2014 - 2021.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
@@ -880,13 +880,16 @@ static void checkOutputVariant( textColor *tc,HANDLE out,
       size_t l1 = sizeof(namedPipe)/2 - 1;
       wchar_t toMaster[] = L"-to-master";
       size_t l2 = sizeof(toMaster)/2 - 1;
+      wchar_t toMaster2[] = L"-to-master-nat";
+      size_t l3 = sizeof(toMaster2)/2 - 1;
       wchar_t html[] = L".html";
       size_t hl = sizeof(html)/2 - 1;
       wchar_t deviceNull[] = L"\\Device\\Null";
       size_t dnl = sizeof(deviceNull)/2 - 1;
       if( (size_t)oni->Name.Length/2>l1+l2 &&
           !memcmp(oni->Name.Buffer,namedPipe,l1*2) &&
-          !memcmp(oni->Name.Buffer+(oni->Name.Length/2-l2),toMaster,l2*2) )
+          (!memcmp(oni->Name.Buffer+(oni->Name.Length/2-l2),toMaster,l2*2) ||
+           !memcmp(oni->Name.Buffer+(oni->Name.Length/2-l3),toMaster2,l3*2)) )
       {
         // terminal emulator
         setTextColorTerminal( tc );
