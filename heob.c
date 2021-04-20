@@ -431,6 +431,15 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
 }
 #define printf(...) mprintf(tc,__VA_ARGS__)
 
+static FILETIME secondsToFiletime( DWORD seconds )
+{
+  ULONGLONG ll = UInt32x32To64( seconds,10000000 ) + 116444736000000000ULL;
+  FILETIME ft;
+  ft.dwLowDateTime = (DWORD)ll;
+  ft.dwHighDateTime = (DWORD)( ll>>32 );
+  return( ft );
+}
+
 #ifndef NO_DBGENG
 static NOINLINE char *mstrchr( const char *s,char c )
 {
@@ -5197,6 +5206,8 @@ static void writeException( appData *ad,textColor *tcXml,
           printf( " [$I%u.%u.%u.%u$N]",
               mi->versionMS>>16,mi->versionMS&0xffff,
               mi->versionLS>>16,mi->versionLS&0xffff );
+        FILETIME ft = secondsToFiletime( mi->timestamp );
+        printf( " [%x: $S%T$N]",mi->timestamp,&ft );
         printf( "\n" );
       }
     }
@@ -5806,6 +5817,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
       modInfo *mi = ad->mi_a + m;
       mi->base = (size_t)mod->BaseOfImage;
       mi->size = mod->SizeOfImage;
+      mi->timestamp = mod->TimeDateStamp;
       mi->versionMS = mod->VersionInfo.dwFileVersionMS;
       mi->versionLS = mod->VersionInfo.dwFileVersionLS;
       lstrcpynW( mi->path,moduleName->Buffer,MAX_PATH );
@@ -5911,11 +5923,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
       printf( "$Iuser CPU time:   $N%t\n",misc->ProcessUserTime*1000 );
       printf( "$Ikernel CPU time: $N%t\n",misc->ProcessKernelTime*1000 );
 
-      LONGLONG ll = Int32x32To64( misc->ProcessCreateTime,10000000 ) +
-        116444736000000000LL;
-      FILETIME ft;
-      ft.dwLowDateTime = (DWORD)ll;
-      ft.dwHighDateTime = (DWORD)( ll>>32 );
+      FILETIME ft = secondsToFiletime( misc->ProcessCreateTime );
       printf( "$Iprocess creation time:  $N%T\n",&ft );
 
       if( wfad.ftLastWriteTime.dwLowDateTime ||

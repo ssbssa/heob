@@ -418,6 +418,7 @@ static void writeModsFind( modInfo **p_mi_a,int *p_mi_q )
       modInfo *mi = mi_a + mi_q;
       mi->base = (size_t)ldrEntry->DllBase;
       mi->size = ldrEntry->SizeOfImage;
+      mi->timestamp = ldrEntry->TimeDateStamp;
       int count = ldrEntry->FullDllName.Length/2;
       if( count>0 && count<MAX_PATH )
       {
