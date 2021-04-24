@@ -45,6 +45,7 @@ CFLAGS_HEOB=$(CPPFLAGS) $(CFLAGS) -O3 -g -DHEOB_VER="\"$(HEOB_VERSION)\"" \
 	    -ffreestanding
 LDFLAGS_HEOB=-nostdlib -lkernel32 -Wl,-dynamicbase,--build-id
 CFLAGS_TEST=$(CFLAGS) -O3 -g -D_GLIBCXX_INCLUDE_NEXT_C_HEADERS \
+	    -D__USE_MINGW_ANSI_STDIO=0 \
 	    -Wno-stringop-overflow
 
 
