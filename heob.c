@@ -5138,6 +5138,24 @@ static DWORD unexpectedEnd( appData *ad,textColor *tcXml,int *errorWritten )
 // }}}
 // exception {{{
 
+static void writeModules( textColor *tc,modInfo *mi_a,int mi_q )
+{
+  printf( "$S  modules:\n" );
+  int m;
+  for( m=0; m<mi_q; m++ )
+  {
+    modInfo *mi = mi_a + m;
+    printf( "    %X   %S",mi->base,mi->path );
+    if( mi->versionMS || mi->versionLS )
+      printf( " [$I%u.%u.%u.%u$N]",
+          mi->versionMS>>16,mi->versionMS&0xffff,
+          mi->versionLS>>16,mi->versionLS&0xffff );
+    FILETIME ft = secondsToFiletime( mi->timestamp );
+    printf( " [%x: $S%T$N]",mi->timestamp,&ft );
+    printf( "\n" );
+  }
+}
+
 static void writeException( appData *ad,textColor *tcXml,
 #ifndef NO_THREADS
     int threadName_q,threadInfo *threadName_a,
@@ -5195,22 +5213,7 @@ static void writeException( appData *ad,textColor *tcXml,
   {
     // modules {{{
     if( opt->exceptionDetails&4 )
-    {
-      printf( "$S  modules:\n" );
-      int m;
-      for( m=0; m<mi_q; m++ )
-      {
-        modInfo *mi = mi_a + m;
-        printf( "    %X   %S",mi->base,mi->path );
-        if( mi->versionMS || mi->versionLS )
-          printf( " [$I%u.%u.%u.%u$N]",
-              mi->versionMS>>16,mi->versionMS&0xffff,
-              mi->versionLS>>16,mi->versionLS&0xffff );
-        FILETIME ft = secondsToFiletime( mi->timestamp );
-        printf( " [%x: $S%T$N]",mi->timestamp,&ft );
-        printf( "\n" );
-      }
-    }
+      writeModules( tc,mi_a,mi_q );
     // }}}
 
     // assembly instruction {{{
@@ -5763,12 +5766,13 @@ static int isMinidump( appData *ad,const wchar_t *name )
     }
   }
 
-  if( !exception || exception->ThreadContext.DataSize!=sizeof(CONTEXT) )
+  if( !mtl->NumberOfThreads ||
+      mtl->Threads[0].ThreadContext.DataSize!=sizeof(CONTEXT) )
   {
-    if( !exception )
-      printf( "$Wminidump doesn't contain exception information stream\n" );
+    if( !mtl->NumberOfThreads )
+      printf( "$Wminidump doesn't contain any threads\n" );
     else
-      printf( "$Wminidump exception context size mismatch\n" );
+      printf( "$Wminidump thread context size mismatch\n" );
     UnmapViewOfFile( dump );
     dbgsym_close( &ds );
     return( 1 );
@@ -5864,15 +5868,20 @@ static int isMinidump( appData *ad,const wchar_t *name )
     MINIDUMP_STRING *appName = REL_PTR( dump,ad->dump_mod_a[0].ModuleNameRva );
     printf( "\n$Iapplication: $N%S\n",appName->Buffer );
 
-    uint32_t t;
-    for( t=0; t<mtl->NumberOfThreads &&
-        mtl->Threads[t].ThreadId!=exception->ThreadId; t++ );
-    if( t<mtl->NumberOfThreads )
-    {
-      MINIDUMP_THREAD *thread = mtl->Threads + t;
 #ifndef NO_THREADS
-      threadNum = t + 1;
+    if( exception )
+    {
+      uint32_t t;
+      for( t=0; t<mtl->NumberOfThreads &&
+          mtl->Threads[t].ThreadId!=exception->ThreadId; t++ );
+      if( t<mtl->NumberOfThreads )
+        threadNum = t + 1;
+    }
 #endif
+
+    if( mtl->NumberOfThreads )
+    {
+      MINIDUMP_THREAD *thread = mtl->Threads;
 
       addDumpMemoryLoc( ad,
           dump+thread->Stack.Memory.Rva,thread->Stack.Memory.DataSize,
@@ -5939,80 +5948,94 @@ static int isMinidump( appData *ad,const wchar_t *name )
   if( fSymRegisterCallback64 )
     fSymRegisterCallback64( ds.process,symbolCallback,0 );
 
-  CONTEXT *context = REL_PTR( dump,exception->ThreadContext.Rva );
-  MINIDUMP_EXCEPTION *me = &exception->ExceptionRecord;
-
-  exceptionInfo *ei = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(exceptionInfo) );
-#ifndef NO_THREADS
-  ei->aa[0].threadNum = threadNum;
-#endif
-  stackwalkDbghelp( &ad->ds->swf,ad->opt,ad,(HANDLE)2,context,ei->aa->frames );
-  ei->aq = 1;
-  RtlMoveMemory( &ei->c,context,sizeof(CONTEXT) );
-#ifndef _WIN64
-  ei->er.ExceptionCode = me->ExceptionCode;
-  ei->er.ExceptionFlags = me->ExceptionFlags;
-  ei->er.ExceptionRecord = (EXCEPTION_RECORD*)(DWORD)me->ExceptionRecord;
-  ei->er.ExceptionAddress = (PVOID)(DWORD)me->ExceptionAddress;
-  ei->er.NumberParameters = me->NumberParameters;
-  int j;
-  for( j=0; j<EXCEPTION_MAXIMUM_PARAMETERS; j++ )
-    ei->er.ExceptionInformation[j] = (ULONG_PTR)me->ExceptionInformation[j];
-#else
-  RtlMoveMemory( &ei->er,me,sizeof(MINIDUMP_EXCEPTION) );
-#endif
-
-  // VC c++ exception {{{
-  if( me->ExceptionCode==EXCEPTION_VC_CPP_EXCEPTION &&
-      me->NumberParameters==THROW_ARGS )
+  if( exception )
   {
-    const DWORD *ptr = (DWORD*)ei->er.ExceptionInformation[2];
-#ifdef _WIN64
-    char *mod = (char*)ei->er.ExceptionInformation[3];
+    CONTEXT *context = REL_PTR( dump,exception->ThreadContext.Rva );
+    MINIDUMP_EXCEPTION *me = &exception->ExceptionRecord;
+
+    exceptionInfo *ei =
+      HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(exceptionInfo) );
+#ifndef NO_THREADS
+    ei->aa[0].threadNum = threadNum;
 #endif
-    size_t maxSize;
-    ptr = getDumpLoc( ad,(size_t)ptr,&maxSize );
-    if( ptr && maxSize>=4*sizeof(DWORD) )
+    stackwalkDbghelp(
+        &ad->ds->swf,ad->opt,ad,(HANDLE)2,context,ei->aa->frames );
+    ei->aq = 1;
+    RtlMoveMemory( &ei->c,context,sizeof(CONTEXT) );
+#ifndef _WIN64
+    ei->er.ExceptionCode = me->ExceptionCode;
+    ei->er.ExceptionFlags = me->ExceptionFlags;
+    ei->er.ExceptionRecord = (EXCEPTION_RECORD*)(DWORD)me->ExceptionRecord;
+    ei->er.ExceptionAddress = (PVOID)(DWORD)me->ExceptionAddress;
+    ei->er.NumberParameters = me->NumberParameters;
+    int j;
+    for( j=0; j<EXCEPTION_MAXIMUM_PARAMETERS; j++ )
+      ei->er.ExceptionInformation[j] = (ULONG_PTR)me->ExceptionInformation[j];
+#else
+    RtlMoveMemory( &ei->er,me,sizeof(MINIDUMP_EXCEPTION) );
+#endif
+
+    // VC c++ exception {{{
+    if( me->ExceptionCode==EXCEPTION_VC_CPP_EXCEPTION &&
+        me->NumberParameters==THROW_ARGS )
     {
-      ptr = getDumpLoc( ad,CALC_THROW_ARG(mod,ptr[3]),&maxSize );
-      if( ptr && maxSize>=2*sizeof(DWORD) )
+      const DWORD *ptr = (DWORD*)ei->er.ExceptionInformation[2];
+#ifdef _WIN64
+      char *mod = (char*)ei->er.ExceptionInformation[3];
+#endif
+      size_t maxSize;
+      ptr = getDumpLoc( ad,(size_t)ptr,&maxSize );
+      if( ptr && maxSize>=4*sizeof(DWORD) )
       {
-        ptr = getDumpLoc( ad,CALC_THROW_ARG(mod,ptr[1]),&maxSize );
+        ptr = getDumpLoc( ad,CALC_THROW_ARG(mod,ptr[3]),&maxSize );
         if( ptr && maxSize>=2*sizeof(DWORD) )
         {
-          ptr = getDumpLoc( ad,
-              CALC_THROW_ARG(mod,ptr[1])+2*sizeof(void*),&maxSize );
-          if( ptr && maxSize )
+          ptr = getDumpLoc( ad,CALC_THROW_ARG(mod,ptr[1]),&maxSize );
+          if( ptr && maxSize>=2*sizeof(DWORD) )
           {
-            if( maxSize>=sizeof(ei->throwName) )
-              maxSize = sizeof(ei->throwName) - 1;
-            RtlMoveMemory( ei->throwName,ptr,maxSize );
-            ei->throwName[maxSize] = 0;
+            ptr = getDumpLoc( ad,
+                CALC_THROW_ARG(mod,ptr[1])+2*sizeof(void*),&maxSize );
+            if( ptr && maxSize )
+            {
+              if( maxSize>=sizeof(ei->throwName) )
+                maxSize = sizeof(ei->throwName) - 1;
+              RtlMoveMemory( ei->throwName,ptr,maxSize );
+              ei->throwName[maxSize] = 0;
+            }
           }
         }
       }
     }
-  }
-  // }}}
+    // }}}
 
 #ifndef NO_DBGENG
-  size_t ip = 0;
-  if( ei->aa->frames[0] && ad->opt->exceptionDetails>0 &&
-      (ad->opt->exceptionDetails&2) )
-  {
-    ip = (size_t)getDumpLoc( ad,(size_t)ei->aa->frames[0]-1,NULL );
-    ad->pi.dwProcessId = GetCurrentProcessId();
-  }
+    size_t ip = 0;
+    if( ei->aa->frames[0] && ad->opt->exceptionDetails>0 &&
+        (ad->opt->exceptionDetails&2) )
+    {
+      ip = (size_t)getDumpLoc( ad,(size_t)ei->aa->frames[0]-1,NULL );
+      ad->pi.dwProcessId = GetCurrentProcessId();
+    }
 #endif
 
-  writeException( ad,NULL,
+    writeException( ad,NULL,
 #ifndef NO_THREADS
-      threadName_q,threadName_a,
+        threadName_q,threadName_a,
 #endif
 #ifndef NO_DBGENG
-      ip,
+        ip,
 #endif
-      ei,ad->mi_a,ad->mi_q );
+        ei,ad->mi_a,ad->mi_q );
+    HeapFree( heap,0,ei );
+  }
+  else if( ad->opt->exceptionDetails&4 )
+  {
+    printf( "\n" );
+    writeModules( tc,ad->mi_a,ad->mi_q );
+  }
+
+  if( !exception )
+    printf( "\n$Wminidump doesn't contain exception information stream\n" );
 
   if( mtl && mtl->NumberOfThreads && ad->opt->exceptionDetails>0 &&
       (ad->opt->exceptionDetails&8) )
@@ -6025,7 +6048,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
     {
       MINIDUMP_THREAD *thread = mtl->Threads + t;
       allocation *a = aa + t;
-      context = REL_PTR( dump,thread->ThreadContext.Rva );
+      CONTEXT *context = REL_PTR( dump,thread->ThreadContext.Rva );
 #ifndef NO_THREADS
       a->threadNum = t + 1;
 #endif
@@ -6052,7 +6075,6 @@ static int isMinidump( appData *ad,const wchar_t *name )
 
   UnmapViewOfFile( dump );
   dbgsym_close( &ds );
-  HeapFree( heap,0,ei );
 #ifndef NO_THREADS
   if( threadName_a ) HeapFree( heap,0,threadName_a );
 #endif
