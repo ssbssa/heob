@@ -299,7 +299,7 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
           // }}}
           // time {{{
 
-        case 't': // milliseconds
+        case 'm': // milliseconds
           {
             DWORD ticks = va_arg( vl,DWORD );
             unsigned milli = ticks%1000;
@@ -319,6 +319,33 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
               milli/100+'0',(milli/10)%10+'0',milli%10+'0',
             };
             tc->fWriteText( tc,timestr,15 );
+          }
+          break;
+
+        case 't': // seconds
+          {
+            DWORD ticks = va_arg( vl,DWORD );
+            unsigned sec = ticks%60;
+            ticks /= 60;
+            unsigned min = ticks%60;
+            ticks /= 60;
+            unsigned hour = ticks%24;
+            ticks /= 24;
+            unsigned day = ticks;
+            if( day )
+            {
+              char str[32];
+              char *end = str + sizeof(str);
+              (--end)[0] = ':';
+              char *start = num2str( end,day,0 );
+              tc->fWriteText( tc,start,end+1-start );
+            }
+            char timestr[8] = {
+              hour/10+'0',hour%10+'0',':',
+              min /10+'0',min %10+'0',':',
+              sec /10+'0',sec %10+'0',
+            };
+            tc->fWriteText( tc,timestr,8 );
           }
           break;
 
@@ -4274,7 +4301,7 @@ static textColor *writeXmlHeader( appData *ad )
   printf( "</args>\n\n" );
 
   printf( "<status>\n  <state>RUNNING</state>\n"
-      "  <time>%t</time>\n</status>\n\n",
+      "  <time>%m</time>\n</status>\n\n",
       GetTickCount()-ad->startTicks );
 
   return( tc );
@@ -4285,7 +4312,7 @@ static void writeXmlFooter( textColor *tc,appData *ad )
   if( !tc ) return;
 
   printf( "<status>\n  <state>FINISHED</state>\n"
-      "  <time>%t</time>\n</status>\n\n",
+      "  <time>%m</time>\n</status>\n\n",
       GetTickCount()-ad->startTicks );
 
   printf( "</valgrindoutput>\n" );
@@ -5925,8 +5952,8 @@ static int isMinidump( appData *ad,const wchar_t *name )
       printf( "$IPID: $N%u\n",misc->ProcessId );
     if( misc && misc->Flags1&MINIDUMP_MISC1_PROCESS_TIMES )
     {
-      printf( "$Iuser CPU time:   $N%t\n",misc->ProcessUserTime*1000 );
-      printf( "$Ikernel CPU time: $N%t\n",misc->ProcessKernelTime*1000 );
+      printf( "$Iuser CPU time:   $N%t\n",misc->ProcessUserTime );
+      printf( "$Ikernel CPU time: $N%t\n",misc->ProcessKernelTime );
 
       FILETIME ft = secondsToFiletime( misc->ProcessCreateTime );
       printf( "$Iprocess creation time: $N%T\n",&ft );
