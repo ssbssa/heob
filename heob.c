@@ -5695,10 +5695,6 @@ static int isMinidump( appData *ad,const wchar_t *name )
     return( 0 );
   }
 
-  WIN32_FILE_ATTRIBUTE_DATA wfad;
-  if( !GetFileAttributesExW(name,GetFileExInfoStandard,&wfad) )
-    RtlZeroMemory( &wfad,sizeof(wfad) );
-
   size_t size;
   const char *dump = mapOfFile( name,&size );
   if( nameCopy ) HeapFree( heap,0,nameCopy );
@@ -5933,11 +5929,10 @@ static int isMinidump( appData *ad,const wchar_t *name )
       printf( "$Ikernel CPU time: $N%t\n",misc->ProcessKernelTime*1000 );
 
       FILETIME ft = secondsToFiletime( misc->ProcessCreateTime );
-      printf( "$Iprocess creation time:  $N%T\n",&ft );
+      printf( "$Iprocess creation time: $N%T\n",&ft );
 
-      if( wfad.ftLastWriteTime.dwLowDateTime ||
-          wfad.ftLastWriteTime.dwHighDateTime )
-        printf( "$Iminidump modified time: $N%T\n",&wfad.ftLastWriteTime );
+      ft = secondsToFiletime( header->TimeDateStamp );
+      printf( "$Iminidump timestamp:    $N%T\n",&ft );
     }
   }
 
