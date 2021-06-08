@@ -5981,7 +5981,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
     ei->aa[0].threadNum = threadNum;
 #endif
     stackwalkDbghelp(
-        &ad->ds->swf,ad->opt,ad,(HANDLE)2,context,ei->aa->frames );
+        &ad->ds->swf,ad->opt,ds.process,(HANDLE)2,context,ei->aa->frames );
     ei->aq = 1;
     RtlMoveMemory( &ei->c,context,sizeof(CONTEXT) );
 #ifndef _WIN64
