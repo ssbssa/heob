@@ -5803,10 +5803,10 @@ static int isMinidump( appData *ad,const wchar_t *name )
     }
   }
 
-  if( !mtl->NumberOfThreads ||
+  if( !mtl || !mtl->NumberOfThreads ||
       mtl->Threads[0].ThreadContext.DataSize!=sizeof(CONTEXT) )
   {
-    if( !mtl->NumberOfThreads )
+    if( !mtl || !mtl->NumberOfThreads )
       printf( "$Wminidump doesn't contain any threads\n" );
     else
       printf( "$Wminidump thread context size mismatch\n" );
