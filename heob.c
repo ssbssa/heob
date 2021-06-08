@@ -1228,6 +1228,7 @@ typedef struct appData
   dump_memory_loc *dump_mem_a;
   int dump_mem_q;
   const char **dump_mi_map_a;
+  unsigned char *dump_file_found_a;
   MINIDUMP_MODULE *dump_mod_a;
 #endif
 }
@@ -5560,6 +5561,29 @@ static const void *getDumpLoc( appData *ad,size_t address,size_t *size )
   return( NULL );
 }
 
+static BOOL findExecutable( appData *ad,int m )
+{
+  dbgsym *ds = ad->ds;
+  if( !ds->fSymFindFileInPathW ) return( FALSE );
+
+  if( ad->dump_file_found_a && ad->dump_file_found_a[m] )
+    return( ad->dump_file_found_a[m]>1 );
+
+  wchar_t *filename = ad->mi_a[m].path;
+  BOOL ret = ds->fSymFindFileInPathW( ds->process,NULL,filename,
+      &ad->dump_mod_a[m].TimeDateStamp,ad->dump_mod_a[m].SizeOfImage,
+      0,SSRVOPT_DWORDPTR,ds->absPath,NULL,NULL );
+  if( ad->dump_file_found_a )
+    ad->dump_file_found_a[m] = ret ? 2 : 1;
+  if( ret )
+  {
+    lstrcpynW( filename,ds->absPath,MAX_PATH );
+    return( TRUE );
+  }
+
+  return( FALSE );
+}
+
 static BOOL WINAPI readDumpMemory( HANDLE process,
     DWORD64 address,PVOID buffer,DWORD size,LPDWORD bytesRead )
 {
@@ -5585,6 +5609,8 @@ static BOOL WINAPI readDumpMemory( HANDLE process,
       continue;
 
     if( ad->dump_mi_map_a[i] ) break;
+
+    findExecutable( ad,i );
 
     const char *map = mapOfFile( ad->mi_a[i].path,NULL );
     if( !map )
@@ -5637,8 +5663,6 @@ static BOOL WINAPI symbolCallback( HANDLE process,
     case CBA_DEFERRED_SYMBOL_LOAD_START:
       {
         appData *ad = process;
-        dbgsym *ds = ad->ds;
-        if( !ds->fSymFindFileInPathW ) return( FALSE );
 
         IMAGEHLP_DEFERRED_SYMBOL_LOAD64 *symload =
           (IMAGEHLP_DEFERRED_SYMBOL_LOAD64*)(size_t)data;
@@ -5647,17 +5671,7 @@ static BOOL WINAPI symbolCallback( HANDLE process,
           if( ad->dump_mod_a[m].BaseOfImage==symload->BaseOfImage ) break;
         if( m==ad->mi_q ) return( FALSE );
 
-        wchar_t *filename = ad->mi_a[m].path;
-        BOOL ret = ds->fSymFindFileInPathW( ds->process,NULL,filename,
-            &ad->dump_mod_a[m].TimeDateStamp,ad->dump_mod_a[m].SizeOfImage,
-            0,SSRVOPT_DWORDPTR,ds->absPath,NULL,NULL );
-        if( ret )
-        {
-          lstrcpynW( filename,ds->absPath,MAX_PATH );
-          return( TRUE );
-        }
-
-        return( FALSE );
+        return( findExecutable(ad,m) );
       }
   }
 
@@ -5853,8 +5867,11 @@ static int isMinidump( appData *ad,const wchar_t *name )
         dbgsym_loadmodule( &ds,mi->path,mi->base,(DWORD)mi->size );
     }
     if( ad->mi_q )
+    {
       ad->dump_mi_map_a =
         HeapAlloc( heap,HEAP_ZERO_MEMORY,ad->mi_q*sizeof(char*) );
+      ad->dump_file_found_a = HeapAlloc( heap,HEAP_ZERO_MEMORY,ad->mi_q );
+    }
   }
 
 #ifndef NO_THREADS
@@ -6094,6 +6111,8 @@ static int isMinidump( appData *ad,const wchar_t *name )
         UnmapViewOfFile( ad->dump_mi_map_a[i] );
     HeapFree( heap,0,(void*)ad->dump_mi_map_a );
   }
+  if( ad->dump_file_found_a )
+    HeapFree( heap,0,ad->dump_file_found_a );
 
   UnmapViewOfFile( dump );
   dbgsym_close( &ds );
