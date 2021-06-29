@@ -1,0 +1,19 @@
+/*
+  light scheme example
+
+  copy CSS file to same folder where the leaks HTML file is
+*/
+
+body {
+  color: black;
+  background-color: white;
+}
+.ok { color: green; }
+.section { color: darkcyan; }
+.info { color: blue; }
+.warn { color: red; }
+
+.base {
+  color: black;
+  background-color: #eee;
+}
