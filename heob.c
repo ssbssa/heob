@@ -964,6 +964,7 @@ static void checkOutputVariant( textColor *tc,HANDLE out,
             ".warn { color:red; }\n"
             ".base { color:black; background-color:grey; }\n"
             "</style>\n"
+            "<link rel=\"stylesheet\" href=\"leaks.css\">\n"
             "<title>%S%sheob %s</title>\n"
             "</head><body>\n"
             "<h3>%S</h3>\n"
