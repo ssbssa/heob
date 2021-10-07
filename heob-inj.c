@@ -3689,7 +3689,7 @@ static allocation *heob_find_allocation_a( uintptr_t addr,allocation *aa )
 {
   GET_REMOTEDATA( rd );
 
-  if( !rd->opt.protect ) return( NULL );
+  if( !rd->splits ) return( NULL );
 
   int protect = rd->opt.protect;
   size_t sizeAdd = rd->pageSize*rd->pageAdd;
@@ -3714,10 +3714,15 @@ static allocation *heob_find_allocation_a( uintptr_t addr,allocation *aa )
         blockStart = ptr - ( ptr%pageSize );
         blockEnd = ptr + size + sizeAdd;
       }
-      else
+      else if( protect==2 )
       {
         blockStart = ptr - sizeAdd;
         blockEnd = ptr + ( size?(size-1)/pageSize+1:0 )*pageSize;
+      }
+      else
+      {
+        blockStart = ptr;
+        blockEnd = ptr + size;
       }
 
       if( addr>=blockStart && addr<blockEnd )
