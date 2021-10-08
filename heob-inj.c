@@ -3940,6 +3940,48 @@ DLLEXPORT size_t heob_raise_free( uintptr_t addr )
   return( a.id );
 }
 
+DLLEXPORT size_t heob_find_reference( uintptr_t ptr )
+{
+  GET_REMOTEDATA( rd );
+
+  if( !rd->splits ) return( 0 );
+
+  allocation aa;
+
+  int i,j;
+  for( j=0; j<=SPLIT_MASK; j++ )
+  {
+    splitAllocation *sa = rd->splits + j;
+
+    EnterCriticalSection( &sa->cs );
+
+    allocation *alloc_a = sa->alloc_a;
+    int alloc_q = sa->alloc_q;
+    for( i=0; i<alloc_q; i++ )
+    {
+      allocation *a = alloc_a + i;
+      size_t s = a->size;
+
+      uintptr_t *refP = a->ptr;
+      size_t refS = s/sizeof(void*);
+      size_t k;
+      for( k=0; k<refS; k++ )
+      {
+        if( refP[k]!=ptr ) continue;
+
+        RtlMoveMemory( &aa,a,sizeof(allocation) );
+        LeaveCriticalSection( &sa->cs );
+        writeAllocs( &aa,1,WRITE_REFERENCE );
+        return( aa.id );
+      }
+    }
+
+    LeaveCriticalSection( &sa->cs );
+  }
+
+  return( 0 );
+}
+
 DLLEXPORT VOID heob_exit( UINT c )
 {
   new_ExitProcess( c );

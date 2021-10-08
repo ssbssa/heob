@@ -1138,6 +1138,24 @@ int choose( int arg )
         }
       }
       break;
+
+    case 61:
+      // find reference in another allocated block
+      {
+        HMODULE heob = GetModuleHandle( "heob" BITS ".exe" );
+        func_heob_raise_free *heob_find_reference =
+          heob ? (func_heob_raise_free*)GetProcAddress(
+              heob,"heob_find_reference" ) : NULL;
+        if( heob_find_reference )
+        {
+          char **mem_ref = (char**)calloc( sizeof(char*),2 );
+          mem_ref[1] = mem;
+          heob_find_reference( mem );
+          do_nothing( mem_ref );
+          free( mem_ref );
+        }
+      }
+      break;
   }
 
   mem = (char*)realloc( mem,30 );

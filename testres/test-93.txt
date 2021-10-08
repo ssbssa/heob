@@ -1,0 +1,8 @@
+allocer: main()
+
+address referenced by block 0xPTR (size 16):
+  allocated on: (#2)
+    [calloc]
+
+no leaks found
+exit code: 61 (0xPTR)

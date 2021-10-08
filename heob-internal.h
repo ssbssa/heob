@@ -595,6 +595,7 @@ enum
 #ifndef NO_DBGHELP
   WRITE_CRASHDUMP,
 #endif
+  WRITE_REFERENCE,
 };
 
 typedef struct

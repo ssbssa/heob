@@ -7082,6 +7082,23 @@ static void mainLoop( appData *ad,UINT *exitCode )
 #endif
 
         // }}}
+        // reference {{{
+
+      case WRITE_REFERENCE:
+        {
+          if( !readFile(readPipe,aa,sizeof(allocation),&ov) )
+            break;
+
+          cacheSymbolData( aa,NULL,1,mi_a,mi_q,ds,1 );
+
+          printf( "\n$Iaddress referenced by block %p (size %U):",
+              aa->ptr,aa->size );
+          printThreadName( aa->threadNum );
+          printAllocatedFreed( aa,0,mi_a,mi_q,ds );
+        }
+        break;
+
+        // }}}
     }
 
 #if USE_STACKWALK
