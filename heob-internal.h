@@ -434,7 +434,8 @@ typedef struct
   union {
     struct {
       allocType at : 4;
-      int recording : 4;
+      unsigned recording : 1;
+      unsigned unusedBits : 3;
       leakType lt : 8;
       funcType ft : 8;
       funcType ftFreed : 8;
