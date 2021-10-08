@@ -435,7 +435,8 @@ typedef struct
     struct {
       allocType at : 4;
       unsigned recording : 1;
-      unsigned unusedBits : 3;
+      unsigned raiseFree : 1;
+      unsigned unusedBits : 2;
       leakType lt : 8;
       funcType ft : 8;
       funcType ftFreed : 8;

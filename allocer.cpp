@@ -219,6 +219,7 @@ typedef struct
 } heob_allocation;
 
 typedef heob_allocation *func_heob_find( void* );
+typedef size_t func_heob_raise_free( void* );
 
 func_heob_find *heob_find_allocation;
 func_heob_find *heob_find_freed;
@@ -1119,6 +1120,22 @@ int choose( int arg )
         ResumeThread( thread );
         WaitForSingleObject( thread,INFINITE );
         CloseHandle( thread );
+      }
+      break;
+
+    case 60:
+      // raise exception on free
+      {
+        HMODULE heob = GetModuleHandle( "heob" BITS ".exe" );
+        func_heob_raise_free *heob_raise_free =
+          heob ? (func_heob_raise_free*)GetProcAddress(
+              heob,"heob_raise_free" ) : NULL;
+        if( heob_raise_free )
+        {
+          size_t n = heob_raise_free( mem );
+          printf( "heob_raise_free() found allocation %u\n",(unsigned)n );
+          fflush( stdout );
+        }
       }
       break;
   }

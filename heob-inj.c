@@ -666,6 +666,9 @@ static NOINLINE int trackFree(
           DebugBreak();
       }
 
+      if( UNLIKELY(fa.raiseFree) && !failed_realloc )
+        DebugBreak();
+
       // freed memory information {{{
       if( rd->opt.protectFree && !failed_realloc )
       {
@@ -1096,6 +1099,7 @@ static NOINLINE void trackAllocSuccess(
     a.size = alloc_size;
     a.at = at;
     a.recording = rd->recording;
+    a.raiseFree = 0;
     a.lt = LT_LOST;
     a.ft = ft;
     a.ftFreed = FT_COUNT; // is < FT_COUNT while realloc() is called
@@ -3685,7 +3689,8 @@ static void replaceModFuncs( void )
 // }}}
 // exported functions for debugger {{{
 
-static allocation *heob_find_allocation_a( uintptr_t addr,allocation *aa )
+static allocation *heob_find_allocation_a( uintptr_t addr,allocation *aa,
+    int raiseFree )
 {
   GET_REMOTEDATA( rd );
 
@@ -3728,6 +3733,7 @@ static allocation *heob_find_allocation_a( uintptr_t addr,allocation *aa )
       if( addr>=blockStart && addr<blockEnd )
       {
         RtlMoveMemory( aa,a,sizeof(allocation) );
+        if( raiseFree>=0 ) a->raiseFree = raiseFree;
         LeaveCriticalSection( &sa->cs );
         return( aa );
       }
@@ -3743,7 +3749,7 @@ DLLEXPORT allocation *heob_find_allocation( uintptr_t addr )
 {
   GET_REMOTEDATA( rd );
 
-  return( heob_find_allocation_a(addr,&rd->ei->aa[0]) );
+  return( heob_find_allocation_a(addr,&rd->ei->aa[0],-1) );
 }
 
 static allocation *heob_find_freed_a( uintptr_t addr,allocation *aa )
@@ -3927,6 +3933,13 @@ DLLEXPORT allocation *heob_find_nearest_freed( uintptr_t addr )
   return( heob_find_nearest_freed_a(addr,&rd->ei->aa[1]) );
 }
 
+DLLEXPORT size_t heob_raise_free( uintptr_t addr )
+{
+  allocation a;
+  if( !heob_find_allocation_a(addr,&a,1) ) return( 0 );
+  return( a.id );
+}
+
 DLLEXPORT VOID heob_exit( UINT c )
 {
   new_ExitProcess( c );
@@ -4095,7 +4108,7 @@ static LONG WINAPI exceptionWalker( PEXCEPTION_POINTERS ep )
   {
     uintptr_t addr = ep->ExceptionRecord->ExceptionInformation[1];
 
-    allocation *a = heob_find_allocation_a( addr,&ei.aa[1] );
+    allocation *a = heob_find_allocation_a( addr,&ei.aa[1],-1 );
     if( a )
     {
       ei.aq++;

@@ -1,0 +1,8 @@
+allocer: main()
+heob_raise_free() found allocation 1
+
+unhandled exception code: 0xPTR (BREAKPOINT)
+  exception on:
+
+no leaks found
+exit code: 60 (0xPTR)
