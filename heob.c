@@ -5476,7 +5476,7 @@ static void writeExceptionThreads( appData *ad,textColor *tc,
       RtlZeroMemory( &tbi,sizeof(THREAD_BASIC_INFORMATION) );
       if( fNtQueryInformationThread(thread,
             ThreadBasicInformation,&tbi,sizeof(tbi),NULL)==0 &&
-          tbi.TebBaseAddress &&
+          (size_t)tbi.TebBaseAddress>0x2000 &&
           (ULONG_PTR)tbi.ClientId.UniqueProcess==
           ad->pi.dwProcessId )
       {

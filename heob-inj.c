@@ -2209,7 +2209,7 @@ static void **getTlsSlotAddress( HANDLE thread,DWORD tls )
   RtlZeroMemory( &tbi,sizeof(THREAD_BASIC_INFORMATION) );
   if( rd->fNtQueryInformationThread(thread,
         ThreadBasicInformation,&tbi,sizeof(tbi),NULL)==0 &&
-      tbi.TebBaseAddress &&
+      (size_t)tbi.TebBaseAddress>0x2000 &&
       (ULONG_PTR)tbi.ClientId.UniqueProcess==GetCurrentProcessId() )
   {
     PTEB teb = tbi.TebBaseAddress;
