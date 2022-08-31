@@ -3667,10 +3667,14 @@ static DWORD WINAPI samplingThread( LPVOID arg )
 // }}}
 // information of attached process {{{
 
+static int isConsoleOwner( void );
+
 static void printAttachedProcessInfo( appData *ad,textColor *tc )
 {
   attachedProcessInfo *api = ad->api;
   if( !api ) return;
+  if( tc->fTextColor==&TextColorConsole && isConsoleOwner() )
+    printf( "\n$Iheob command line: $N%S\n",ad->cmdLineW );
   printf( "\n$Iapplication: $N%S\n",ad->exePathW );
   if( api->type>=0 && api->type<=3 )
   {
