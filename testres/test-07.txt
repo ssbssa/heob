@@ -33,5 +33,5 @@ leaks:
     [strdup]
   4 B * 4 = 16 B (#2)
     [strdup]
-  sum: 2176 B / 64
+  sum: 2.125 KiB / 64
 exit code: 4 (0xPTR)

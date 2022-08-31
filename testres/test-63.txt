@@ -5,5 +5,5 @@ leaks:
     [calloc]
   52 B (#5)
     [operator new[]]
-  sum: 1108 B / 10
+  sum: 1.082 KiB / 10
 exit code: 1 (0xPTR)

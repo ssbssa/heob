@@ -98,18 +98,26 @@ wchar_t *num2hexstrW( wchar_t *str,UINT64 arg,int count )
   return( str );
 }
 
-static NOINLINE char *num2str( char *start,uintptr_t arg,int minus )
+static char *num2commastr( char *start,uintptr_t arg,int minus,int comma )
 {
   if( !arg )
     (--start)[0] = '0';
+  int c = 0;
   while( arg )
   {
     (--start)[0] = arg%10 + '0';
     arg /= 10;
+    if( ++c==comma )
+      (--start)[0] = '.';
   }
   if( minus )
     (--start)[0] = '-';
   return( start );
+}
+
+static NOINLINE char *num2str( char *start,uintptr_t arg,int minus )
+{
+  return( num2commastr(start,arg,minus,0) );
 }
 
 NOINLINE wchar_t *num2strW( wchar_t *start,uintptr_t arg,int minus )
@@ -403,6 +411,44 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
           format = ptr + 1;
           ptr += 2;
           continue;
+
+          // }}}
+          // bytes {{{
+
+        case 'B': // size_t
+          {
+            size_t arg = va_arg( vl,size_t );
+            if( arg<1024 )
+            {
+              char str[32];
+              char *end = str + sizeof(str) - 8;
+              char *start = num2str( end,arg,0 );
+              end++[0] = ' ';
+              end++[0] = 'B';
+              tc->fWriteText( tc,start,end-start );
+              break;
+            }
+            int unit = 0;
+            while( arg>=1048576 )
+            {
+              arg >>= 10;
+              unit++;
+            }
+            arg *= 1000;
+            arg >>= 10;
+            const char *units = "KMGTPE";
+            char str[32];
+            char *end = str + sizeof(str) - 8;
+            char *start = num2commastr( end,arg,0,3 );
+            if( end-start>5 ) end = start + 5;
+            if( end[-1]=='.' ) end--;
+            end++[0] = ' ';
+            end++[0] = units[unit];
+            end++[0] = 'i';
+            end++[0] = 'B';
+            tc->fWriteText( tc,start,end-start );
+            break;
+          }
 
           // }}}
       }
@@ -3110,9 +3156,9 @@ static void printStackGroup( stackGroup *sg,
       int indent = stackIndent + ( allocCount>1 );
       if( !sampling )
       {
-        printf( "%E$W%U B ",indent,a->size );
+        printf( "%E$W%B ",indent,a->size );
         if( a->count>1 )
-          printf( "* %d = %U B ",a->count,combSize );
+          printf( "* %d = %B ",a->count,combSize );
       }
       else
         printf( "%E$W%d sample%s ",indent,a->count,a->count>1?"s":NULL );
@@ -3176,7 +3222,7 @@ static void printStackGroup( stackGroup *sg,
   {
     int indent = stackIndent;
     if( !sampling )
-      printf( "%i$Wsum: %U B / %d\n",indent,sg->allocSumSize,sg->allocSum );
+      printf( "%i$Wsum: %B / %d\n",indent,sg->allocSumSize,sg->allocSum );
     else
       printf( "%i$Wsum: %d sample%s\n",
           indent,sg->allocSum,sg->allocSum>1?"s":NULL );
@@ -3529,7 +3575,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
 #endif
             content_ptrs,mi_a,mi_q,ds,sampling );
       if( !sampling )
-        printf( "  $Wsum: %U B / %d\n",sg->allocSumSize,sg->allocSum );
+        printf( "  $Wsum: %B / %d\n",sg->allocSumSize,sg->allocSum );
       else
         printf( "  $Wsum: %d sample%s\n",
             sg->allocSum,sg->allocSum>1?"s":NULL );
