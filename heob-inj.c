@@ -4257,6 +4257,14 @@ static LONG WINAPI exceptionWalker( PEXCEPTION_POINTERS ep )
   return( EXCEPTION_EXECUTE_HANDLER );
 }
 
+static LONG WINAPI heapCorruption( PEXCEPTION_POINTERS ep )
+{
+  if( ep->ExceptionRecord->ExceptionCode!=0xC0000374 )
+    return( EXCEPTION_CONTINUE_SEARCH );
+
+  return( exceptionWalker(ep) );
+}
+
 // }}}
 // get type/path of standard device {{{
 
@@ -5028,6 +5036,7 @@ VOID CALLBACK heob( ULONG_PTR arg )
     func_SetUnhandledExceptionFilter *fSetUnhandledExceptionFilter =
       rd->fGetProcAddress( rd->kernel32,"SetUnhandledExceptionFilter" );
     fSetUnhandledExceptionFilter( &exceptionWalker );
+    AddVectoredExceptionHandler( 1,&heapCorruption );
 
     void *fp = fSetUnhandledExceptionFilter;
 #ifndef _WIN64

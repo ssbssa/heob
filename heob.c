@@ -5206,6 +5206,7 @@ static void writeException( appData *ad,textColor *tcXml,
   {
 #define EXCEPTION_FATAL_APP_EXIT STATUS_FATAL_APP_EXIT
 #define EXCEPTION_ASSERTION_FAILURE STATUS_ASSERTION_FAILURE
+#define EXCEPTION_HEAP_CORRUPTION 0xC0000374
 #define EX_DESC( name ) \
     case EXCEPTION_##name: \
                            desc = " (" #name ")"; break
@@ -5233,6 +5234,7 @@ static void writeException( appData *ad,textColor *tcXml,
     EX_DESC( FATAL_APP_EXIT );
     EX_DESC( ASSERTION_FAILURE );
     EX_DESC( VC_CPP_EXCEPTION );
+    EX_DESC( HEAP_CORRUPTION );
   }
   printf( "\n$Wunhandled exception code: %x%s\n",
       ei->er.ExceptionCode,desc );
