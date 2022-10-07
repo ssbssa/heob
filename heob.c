@@ -4392,7 +4392,9 @@ static void writeXmlAllocatedFreed( textColor *tc,dbgsym *ds,
 
 static void writeXmlException( textColor *tc,dbgsym *ds,
     exceptionInfo *ei,const char *desc,char *addr,const char *violationType,
-    const char *nearBlock,const char *blockType,modInfo *mi_a,int mi_q )
+    const char *nearBlock,const char *blockType,
+    unsigned int ff,const char *ff_desc,
+    modInfo *mi_a,int mi_q )
 {
   if( !tc ) return;
 
@@ -4427,6 +4429,12 @@ static void writeXmlException( textColor *tc,dbgsym *ds,
     printf( "  <stack>\n" );
     printf( "  </stack>\n" );
     writeXmlAllocatedFreed( tc,ds,&ei->aa[1],ei->aq>2,mi_a,mi_q );
+  }
+  else if( ff_desc )
+  {
+    printf( "  <auxwhat>fast fail code: %x (%s)</auxwhat>\n",ff,ff_desc );
+    printf( "  <stack>\n" );
+    printf( "  </stack>\n" );
   }
   else if( ei->throwName[0] )
   {
@@ -5235,6 +5243,80 @@ static void writeModules( textColor *tc,modInfo *mi_a,int mi_q )
   }
 }
 
+// fast fail codes {{{
+enum
+{
+  FF_LEGACY_GS_VIOLATION              =0,
+  FF_VTGUARD_CHECK_FAILURE            =1,
+  FF_STACK_COOKIE_CHECK_FAILURE       =2,
+  FF_CORRUPT_LIST_ENTRY               =3,
+  FF_INCORRECT_STACK                  =4,
+  FF_INVALID_ARG                      =5,
+  FF_GS_COOKIE_INIT                   =6,
+  FF_FATAL_APP_EXIT                   =7,
+  FF_RANGE_CHECK_FAILURE              =8,
+  FF_UNSAFE_REGISTRY_ACCESS           =9,
+  FF_GUARD_ICALL_CHECK_FAILURE        =10,
+  FF_GUARD_WRITE_CHECK_FAILURE        =11,
+  FF_INVALID_FIBER_SWITCH             =12,
+  FF_INVALID_SET_OF_CONTEXT           =13,
+  FF_INVALID_REFERENCE_COUNT          =14,
+  FF_INVALID_JUMP_BUFFER              =18,
+  FF_MRDATA_MODIFIED                  =19,
+  FF_CERTIFICATION_FAILURE            =20,
+  FF_INVALID_EXCEPTION_CHAIN          =21,
+  FF_CRYPTO_LIBRARY                   =22,
+  FF_INVALID_CALL_IN_DLL_CALLOUT      =23,
+  FF_INVALID_IMAGE_BASE               =24,
+  FF_DLOAD_PROTECTION_FAILURE         =25,
+  FF_UNSAFE_EXTENSION_CALL            =26,
+  FF_DEPRECATED_SERVICE_INVOKED       =27,
+  FF_INVALID_BUFFER_ACCESS            =28,
+  FF_INVALID_BALANCED_TREE            =29,
+  FF_INVALID_NEXT_THREAD              =30,
+  FF_GUARD_ICALL_CHECK_SUPPRESSED     =31,
+  FF_APCS_DISABLED                    =32,
+  FF_INVALID_IDLE_STATE               =33,
+  FF_MRDATA_PROTECTION_FAILURE        =34,
+  FF_UNEXPECTED_HEAP_EXCEPTION        =35,
+  FF_INVALID_LOCK_STATE               =36,
+  FF_GUARD_JUMPTABLE                  =37,
+  FF_INVALID_LONGJUMP_TARGET          =38,
+  FF_INVALID_DISPATCH_CONTEXT         =39,
+  FF_INVALID_THREAD                   =40,
+  FF_INVALID_SYSCALL_NUMBER           =41,
+  FF_INVALID_FILE_OPERATION           =42,
+  FF_LPAC_ACCESS_DENIED               =43,
+  FF_GUARD_SS_FAILURE                 =44,
+  FF_LOADER_CONTINUITY_FAILURE        =45,
+  FF_GUARD_EXPORT_SUPPRESSION_FAILURE =46,
+  FF_INVALID_CONTROL_STACK            =47,
+  FF_SET_CONTEXT_DENIED               =48,
+  FF_INVALID_IAT                      =49,
+  FF_HEAP_METADATA_CORRUPTION         =50,
+  FF_PAYLOAD_RESTRICTION_VIOLATION    =51,
+  FF_LOW_LABEL_ACCESS_DENIED          =52,
+  FF_ENCLAVE_CALL_FAILURE             =53,
+  FF_UNHANDLED_LSS_EXCEPTON           =54,
+  FF_ADMINLESS_ACCESS_DENIED          =55,
+  FF_UNEXPECTED_CALL                  =56,
+  FF_CONTROL_INVALID_RETURN_ADDRESS   =57,
+  FF_UNEXPECTED_HOST_BEHAVIOR         =58,
+  FF_FLAGS_CORRUPTION                 =59,
+  FF_VEH_CORRUPTION                   =60,
+  FF_ETW_CORRUPTION                   =61,
+  FF_RIO_ABORT                        =62,
+  FF_INVALID_PFN                      =63,
+  FF_GUARD_ICALL_CHECK_FAILURE_XFG    =64,
+  FF_CAST_GUARD                       =65,
+  FF_HOST_VISIBILITY_CHANGE           =66,
+  FF_KERNEL_CET_SHADOW_STACK_ASSIST   =67,
+  FF_PATCH_CALLBACK_FAILED            =68,
+  FF_NTDLL_PATCH_FAILED               =69,
+  FF_INVALID_FLS_DATA                 =70,
+};
+// }}}
+
 static void writeException( appData *ad,textColor *tcXml,
 #ifndef NO_THREADS
     int threadName_q,threadInfo *threadName_a,
@@ -5257,6 +5339,7 @@ static void writeException( appData *ad,textColor *tcXml,
 #define EXCEPTION_FATAL_APP_EXIT STATUS_FATAL_APP_EXIT
 #define EXCEPTION_ASSERTION_FAILURE STATUS_ASSERTION_FAILURE
 #define EXCEPTION_HEAP_CORRUPTION 0xC0000374
+#define EXCEPTION_STACK_BUFFER_OVERRUN STATUS_STACK_BUFFER_OVERRUN
 #define EX_DESC( name ) \
     case EXCEPTION_##name: \
                            desc = " (" #name ")"; break
@@ -5285,6 +5368,7 @@ static void writeException( appData *ad,textColor *tcXml,
     EX_DESC( ASSERTION_FAILURE );
     EX_DESC( VC_CPP_EXCEPTION );
     EX_DESC( HEAP_CORRUPTION );
+    EX_DESC( STACK_BUFFER_OVERRUN );
   }
   printf( "\n$Wunhandled exception code: %x%s\n",
       ei->er.ExceptionCode,desc );
@@ -5398,6 +5482,8 @@ static void writeException( appData *ad,textColor *tcXml,
   const char *violationType = NULL;
   const char *nearBlock = NULL;
   const char *blockType = NULL;
+  unsigned int ff = 0;
+  const char *ff_desc = NULL;
   // access violation {{{
   if( ei->er.ExceptionCode==EXCEPTION_ACCESS_VIOLATION &&
       ei->er.NumberParameters==2 )
@@ -5424,6 +5510,94 @@ static void writeException( appData *ad,textColor *tcXml,
     }
   }
   // }}}
+  // fast fail exception {{{
+  else if( ei->er.ExceptionCode==STATUS_STACK_BUFFER_OVERRUN &&
+      ei->er.NumberParameters==1
+#ifdef _WIN64
+      && ei->er.ExceptionInformation[0]<0x100000000
+#endif
+      )
+  {
+    ff = (unsigned int)ei->er.ExceptionInformation[0];
+    printf( "$I  fast fail code: %x",ff );
+    switch( ff )
+    {
+#define FF_DESC( name ) \
+      case FF_##name: \
+                      ff_desc = #name; break
+      FF_DESC( LEGACY_GS_VIOLATION );
+      FF_DESC( VTGUARD_CHECK_FAILURE );
+      FF_DESC( STACK_COOKIE_CHECK_FAILURE );
+      FF_DESC( CORRUPT_LIST_ENTRY );
+      FF_DESC( INCORRECT_STACK );
+      FF_DESC( INVALID_ARG );
+      FF_DESC( GS_COOKIE_INIT );
+      FF_DESC( FATAL_APP_EXIT );
+      FF_DESC( RANGE_CHECK_FAILURE );
+      FF_DESC( UNSAFE_REGISTRY_ACCESS );
+      FF_DESC( GUARD_ICALL_CHECK_FAILURE );
+      FF_DESC( GUARD_WRITE_CHECK_FAILURE );
+      FF_DESC( INVALID_FIBER_SWITCH );
+      FF_DESC( INVALID_SET_OF_CONTEXT );
+      FF_DESC( INVALID_REFERENCE_COUNT );
+      FF_DESC( INVALID_JUMP_BUFFER );
+      FF_DESC( MRDATA_MODIFIED );
+      FF_DESC( CERTIFICATION_FAILURE );
+      FF_DESC( INVALID_EXCEPTION_CHAIN );
+      FF_DESC( CRYPTO_LIBRARY );
+      FF_DESC( INVALID_CALL_IN_DLL_CALLOUT );
+      FF_DESC( INVALID_IMAGE_BASE );
+      FF_DESC( DLOAD_PROTECTION_FAILURE );
+      FF_DESC( UNSAFE_EXTENSION_CALL );
+      FF_DESC( DEPRECATED_SERVICE_INVOKED );
+      FF_DESC( INVALID_BUFFER_ACCESS );
+      FF_DESC( INVALID_BALANCED_TREE );
+      FF_DESC( INVALID_NEXT_THREAD );
+      FF_DESC( GUARD_ICALL_CHECK_SUPPRESSED );
+      FF_DESC( APCS_DISABLED );
+      FF_DESC( INVALID_IDLE_STATE );
+      FF_DESC( MRDATA_PROTECTION_FAILURE );
+      FF_DESC( UNEXPECTED_HEAP_EXCEPTION );
+      FF_DESC( INVALID_LOCK_STATE );
+      FF_DESC( GUARD_JUMPTABLE );
+      FF_DESC( INVALID_LONGJUMP_TARGET );
+      FF_DESC( INVALID_DISPATCH_CONTEXT );
+      FF_DESC( INVALID_THREAD );
+      FF_DESC( INVALID_SYSCALL_NUMBER );
+      FF_DESC( INVALID_FILE_OPERATION );
+      FF_DESC( LPAC_ACCESS_DENIED );
+      FF_DESC( GUARD_SS_FAILURE );
+      FF_DESC( LOADER_CONTINUITY_FAILURE );
+      FF_DESC( GUARD_EXPORT_SUPPRESSION_FAILURE );
+      FF_DESC( INVALID_CONTROL_STACK );
+      FF_DESC( SET_CONTEXT_DENIED );
+      FF_DESC( INVALID_IAT );
+      FF_DESC( HEAP_METADATA_CORRUPTION );
+      FF_DESC( PAYLOAD_RESTRICTION_VIOLATION );
+      FF_DESC( LOW_LABEL_ACCESS_DENIED );
+      FF_DESC( ENCLAVE_CALL_FAILURE );
+      FF_DESC( UNHANDLED_LSS_EXCEPTON );
+      FF_DESC( ADMINLESS_ACCESS_DENIED );
+      FF_DESC( UNEXPECTED_CALL );
+      FF_DESC( CONTROL_INVALID_RETURN_ADDRESS );
+      FF_DESC( UNEXPECTED_HOST_BEHAVIOR );
+      FF_DESC( FLAGS_CORRUPTION );
+      FF_DESC( VEH_CORRUPTION );
+      FF_DESC( ETW_CORRUPTION );
+      FF_DESC( RIO_ABORT );
+      FF_DESC( INVALID_PFN );
+      FF_DESC( GUARD_ICALL_CHECK_FAILURE_XFG );
+      FF_DESC( CAST_GUARD );
+      FF_DESC( HOST_VISIBILITY_CHANGE );
+      FF_DESC( KERNEL_CET_SHADOW_STACK_ASSIST );
+      FF_DESC( PATCH_CALLBACK_FAILED );
+      FF_DESC( NTDLL_PATCH_FAILED );
+      FF_DESC( INVALID_FLS_DATA );
+    }
+    if( ff_desc ) printf( " (%s)",ff_desc );
+    printf( "\n" );
+  }
+  // }}}
   // VC c++ exception {{{
   else if( ei->throwName[0] )
   {
@@ -5433,7 +5607,7 @@ static void writeException( appData *ad,textColor *tcXml,
   // }}}
 
   writeXmlException( tcXml,ds,ei,desc,addr,violationType,
-      nearBlock,blockType,mi_a,mi_q );
+      nearBlock,blockType,ff,ff_desc,mi_a,mi_q );
 }
 
 #if USE_STACKWALK
