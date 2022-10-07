@@ -5147,6 +5147,10 @@ static int checkModule( appData *ad,textColor *tc,textColor *tcXml,int level,
   return( 1 );
 }
 
+#ifndef STATUS_INVALID_IMAGE_FORMAT
+#define STATUS_INVALID_IMAGE_FORMAT 0xC000007B
+#endif
+
 static DWORD unexpectedEnd( appData *ad,textColor *tcXml,int *errorWritten )
 {
   *errorWritten = 0;
@@ -5155,7 +5159,8 @@ static DWORD unexpectedEnd( appData *ad,textColor *tcXml,int *errorWritten )
   if( !GetExitCodeProcess(ad->pi.hProcess,&ec) ) ec = 0;
 
   if( ec!=STATUS_DLL_NOT_FOUND && ec!=STATUS_ORDINAL_NOT_FOUND &&
-      ec!=STATUS_ENTRYPOINT_NOT_FOUND && ec!=STATUS_DLL_INIT_FAILED )
+      ec!=STATUS_ENTRYPOINT_NOT_FOUND && ec!=STATUS_DLL_INIT_FAILED &&
+      ec!=STATUS_INVALID_IMAGE_FORMAT )
     return( ec );
 
   *errorWritten = 1;
@@ -5194,6 +5199,7 @@ static DWORD unexpectedEnd( appData *ad,textColor *tcXml,int *errorWritten )
     ec==STATUS_DLL_NOT_FOUND ? "DLL_NOT_FOUND" :
     ec==STATUS_ORDINAL_NOT_FOUND ? "ORDINAL_NOT_FOUND" :
     ec==STATUS_ENTRYPOINT_NOT_FOUND ? "ENTRYPOINT_NOT_FOUND" :
+    ec==STATUS_INVALID_IMAGE_FORMAT ? "INVALID_IMAGE_FORMAT" :
     "DLL_INIT_FAILED";
   printf( "\n$Sdll loading failure on process startup (%s):\n",ecStr );
 
