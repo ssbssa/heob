@@ -41,7 +41,7 @@ endif
 CFLAGS=-Wall -Wextra -Wshadow -Wwrite-strings -Werror \
        -Wno-cast-function-type \
        -fno-omit-frame-pointer -fno-optimize-sibling-calls
-CFLAGS_HEOB=$(CPPFLAGS) $(CFLAGS) -O3 -g -DHEOB_VER="\"$(HEOB_VERSION)\"" \
+CFLAGS_HEOB=$(CPPFLAGS) $(CFLAGS) -O3 -g3 -DHEOB_VER="\"$(HEOB_VERSION)\"" \
 	    -ffreestanding
 LDFLAGS_HEOB=-nostdlib -lkernel32 -Wl,-dynamicbase,--build-id
 CFLAGS_TEST=$(CFLAGS) -O3 -g -D_GLIBCXX_INCLUDE_NEXT_C_HEADERS \
