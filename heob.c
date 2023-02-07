@@ -5999,6 +5999,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
   MINIDUMP_THREAD_LIST *mtl = NULL;
   MINIDUMP_MISC_INFO *misc = NULL;
   MINIDUMP_EXCEPTION_STREAM *exception = NULL;
+  MINIDUMP_SYSTEM_INFO *system = NULL;
 #ifndef NO_THREADS
   MD_THREAD_NAME_LIST *threadNames = NULL;
 #endif
@@ -6028,6 +6029,9 @@ static int isMinidump( appData *ad,const wchar_t *name )
       case ExceptionStream:
         exception = REL_PTR( dump,dir[s].Location.Rva );
         break;
+      case SystemInfoStream:
+        system = REL_PTR( dump,dir[s].Location.Rva );
+        break;
 #ifndef NO_THREADS
       case 24: // ThreadNamesStream
         threadNames = REL_PTR( dump,dir[s].Location.Rva );
@@ -6036,13 +6040,33 @@ static int isMinidump( appData *ad,const wchar_t *name )
     }
   }
 
+  if( !system || system->PlatformId!=VER_PLATFORM_WIN32_NT ||
+      system->ProcessorArchitecture!=
+#ifndef _WIN64
+      PROCESSOR_ARCHITECTURE_INTEL
+#else
+      PROCESSOR_ARCHITECTURE_AMD64
+#endif
+    )
+  {
+    if( !system )
+      printf( "$Wminidump doesn't contain system info stream\n" );
+    else if( system->PlatformId!=VER_PLATFORM_WIN32_NT )
+      printf( "$Wminidump is from a different platform\n" );
+    else
+      printf( "$Wminidump is from a different processor architecture\n" );
+    UnmapViewOfFile( dump );
+    dbgsym_close( &ds );
+    return( 1 );
+  }
+
   if( !mtl || !mtl->NumberOfThreads ||
-      mtl->Threads[0].ThreadContext.DataSize!=sizeof(CONTEXT) )
+      mtl->Threads[0].ThreadContext.DataSize<sizeof(CONTEXT) )
   {
     if( !mtl || !mtl->NumberOfThreads )
       printf( "$Wminidump doesn't contain any threads\n" );
     else
-      printf( "$Wminidump thread context size mismatch\n" );
+      printf( "$Wminidump thread context size is too small\n" );
     UnmapViewOfFile( dump );
     dbgsym_close( &ds );
     return( 1 );
