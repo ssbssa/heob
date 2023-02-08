@@ -5646,6 +5646,9 @@ static void writeExceptionThreads( appData *ad,textColor *tc,
 #endif
     modInfo *mi_a,int mi_q )
 {
+  if( !ad->ds->swf.fStackWalk64 )
+    return;
+
   HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
   func_NtGetNextThread *fNtGetNextThread =
     (func_NtGetNextThread*)GetProcAddress( ntdll,"NtGetNextThread" );
