@@ -5703,8 +5703,6 @@ static void writeExceptionThreads( appData *ad,textColor *tc,
     stackwalkDbghelp(
         &ad->ds->swf,ad->opt,ad->pi.hProcess,thread,&context,a->frames );
 
-    ResumeThread( thread );
-
 #ifndef NO_THREADS
     if( fNtQueryInformationThread )
     {
@@ -5736,6 +5734,8 @@ static void writeExceptionThreads( appData *ad,textColor *tc,
       }
     }
 #endif
+
+    ResumeThread( thread );
 
     thread_q++;
   }
