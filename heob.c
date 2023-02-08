@@ -7468,12 +7468,13 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
       printf( "     %i   "
           "$I%%c$N = counter (enables child process injection)",1 );
     printf( "\n" );
-    printf( "    $I-v$BX$N    svg output" );
-    if( fullhelp>1 )
-      printf( "     %i",1 );
-    printf( "\n" );
-    printf( "    $I-y$BX$N    symbol path\n" );
   }
+  printf( "    $I-v$BX$N    svg output" );
+  if( fullhelp>1 )
+    printf( "     %i",1 );
+  printf( "\n" );
+  if( fullhelp )
+    printf( "    $I-y$BX$N    symbol path\n" );
   printf( "    $I-P$BX$N    show process ID and wait [$I%d$N]\n",
       defopt->pid );
   printf( "    $I-c$BX$N    create new console [$I%d$N]\n",
@@ -7503,8 +7504,9 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
   }
   printf( "    $I-f$BX$N    freed memory protection [$I%d$N]\n",
       defopt->protectFree );
-  printf( "    $I-d$BX$N    monitor dlls [$I%d$N]\n",
-      defopt->dlls );
+  if( fullhelp )
+    printf( "    $I-d$BX$N    monitor dlls [$I%d$N]\n",
+        defopt->dlls );
   if( fullhelp>1 )
   {
     printf( "              $I0$N = off\n" );
@@ -7542,11 +7544,14 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
     printf( "              $I1$N = on\n" );
     printf( "              $I2$N = only\n" );
   }
-  printf( "    $I-R$BX$N    "
-      "raise breakpoint exception on allocation # [$I%d$N]\n",
-      0 );
-  printf( "    $I-r$BX$N    raise breakpoint exception on error [$I%d$N]\n",
-      defopt->raiseException );
+  if( fullhelp )
+  {
+    printf( "    $I-R$BX$N    "
+        "raise breakpoint exception on allocation # [$I%d$N]\n",
+        0 );
+    printf( "    $I-r$BX$N    raise breakpoint exception on error [$I%d$N]\n",
+        defopt->raiseException );
+  }
   if( fullhelp>1 )
   {
     printf( "              $I0$N = off\n" );
@@ -7554,9 +7559,8 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
     printf( "              $I2$N = on,"
         " mismatching allocation/release method\n" );
   }
-  if( fullhelp )
-    printf( "    $I-D$BX$N    show exception details [$I%d$N]\n",
-        defopt->exceptionDetails );
+  printf( "    $I-D$BX$N    show exception details [$I%d$N]\n",
+      defopt->exceptionDetails );
   if( fullhelp>1 )
   {
     printf( "             $I-2$N = write minidump\n" );
@@ -7612,8 +7616,9 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
     printf( "              $I5$N ="
         " fuzzy detect leak types (show reachable)\n" );
   }
-  printf( "    $I-z$BX$N    minimum leak size [$I%U$N]\n",
-      defopt->minLeakSize );
+  if( fullhelp )
+    printf( "    $I-z$BX$N    minimum leak size [$I%U$N]\n",
+        defopt->minLeakSize );
   printf( "    $I-k$BX$N    control leak recording [$I%d$N]\n",
       defopt->leakRecording );
   if( fullhelp>1 )
@@ -7632,10 +7637,10 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
     printf( "              $ICtrl$N+$IAlt$N+$IC$N = clear\n" );
     printf( "              $ICtrl$N+$IAlt$N+$IS$N = show\n" );
   }
-  printf( "    $I-L$BX$N    show leak contents [$I%d$N]\n",
-      defopt->leakContents );
   if( fullhelp )
   {
+    printf( "    $I-L$BX$N    show leak contents [$I%d$N]\n",
+        defopt->leakContents );
     printf( "    $I-C$BX$N    show source code [$I%d$N]\n",
         defopt->sourceCode );
     printf( "    $I-e$BX$N    show exit trace [$I%d$N]\n",
@@ -7652,9 +7657,8 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
         " only keep output files with leaks or errors\n" );
   }
 #if USE_STACKWALK
-  if( fullhelp )
-    printf( "    $I-I$BX$N    sampling profiler interval [$I%d$N]\n",
-        defopt->samplingInterval );
+  printf( "    $I-I$BX$N    sampling profiler interval [$I%d$N]\n",
+      defopt->samplingInterval );
   if( fullhelp>1 )
   {
     printf( "             <$I0$N = only main thread\n" );
