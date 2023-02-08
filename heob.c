@@ -390,7 +390,8 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
             DWORD e = va_arg( vl,DWORD );
             wchar_t *s = NULL;
             FormatMessageW(
-                FORMAT_MESSAGE_ALLOCATE_BUFFER|FORMAT_MESSAGE_FROM_SYSTEM,
+                FORMAT_MESSAGE_ALLOCATE_BUFFER|FORMAT_MESSAGE_FROM_SYSTEM|
+                FORMAT_MESSAGE_IGNORE_INSERTS,
                 NULL,e,MAKELANGID(LANG_NEUTRAL,SUBLANG_DEFAULT),
                 (LPWSTR)&s,0,NULL );
             if( s && s[0] )
