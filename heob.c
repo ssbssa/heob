@@ -8439,7 +8439,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     {
       int noStackWalk = 1;
       WriteProcessMemory( ad->pi.hProcess,
-          ad->recordingRemote,&noStackWalk,sizeof(int),NULL );
+          ad->noStackWalkRemote,&noStackWalk,sizeof(int),NULL );
     }
 #endif
 
