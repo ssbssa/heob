@@ -87,6 +87,18 @@
 
 #define REL_PTR( base,ofs ) ( (void*)(((PBYTE)base)+ofs) )
 
+#ifndef _WIN64
+#define csp Esp
+#define cip Eip
+#define cfp Ebp
+#define MACH_TYPE IMAGE_FILE_MACHINE_I386
+#else
+#define csp Rsp
+#define cip Rip
+#define cfp Rbp
+#define MACH_TYPE IMAGE_FILE_MACHINE_AMD64
+#endif
+
 // }}}
 // kernel32.dll function definitions {{{
 

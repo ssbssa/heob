@@ -3284,12 +3284,6 @@ static size_t protect_msize( void *b )
 // }}}
 // function replacement {{{
 
-#ifdef _WIN64
-#define MACH_TYPE IMAGE_FILE_MACHINE_AMD64
-#else
-#define MACH_TYPE IMAGE_FILE_MACHINE_I386
-#endif
-
 typedef struct
 {
   const char *funcName;
@@ -3992,16 +3986,6 @@ DLLEXPORT VOID heob_exit( UINT c )
 
 // }}}
 // exception handler {{{
-
-#ifdef _WIN64
-#define csp Rsp
-#define cip Rip
-#define cfp Rbp
-#else
-#define csp Esp
-#define cip Eip
-#define cfp Ebp
-#endif
 
 #if USE_STACKWALK
 void stackwalkDbghelp( stackwalkFunctions *swf,options *opt,
