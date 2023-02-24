@@ -234,6 +234,16 @@ static localData g_ld;
 #define GET_REMOTEDATA( ld ) localData *ld = &g_ld
 
 // }}}
+// function prototypes {{{
+
+static void addModule( HMODULE mod );
+static void replaceModFuncs( void );
+
+#ifndef NO_THREADS
+static void writeThreadDescs( void );
+#endif
+
+// }}}
 // process exit {{{
 
 static NORETURN void exitWait( UINT c,int terminate )
@@ -366,10 +376,6 @@ static wchar_t *wdup( const wchar_t *w,HANDLE heap )
 
 // }}}
 // send module information {{{
-
-#ifndef NO_THREADS
-static void writeThreadDescs( void );
-#endif
 
 static void writeModsFind( modInfo **p_mi_a,int *p_mi_q )
 {
@@ -2623,9 +2629,6 @@ BOOL WINAPI new_CreateProcessW(
 
 // }}}
 // replacements for LoadLibrary/FreeLibrary {{{
-
-static void addModule( HMODULE mod );
-static void replaceModFuncs( void );
 
 static void addLoadedModule( HMODULE mod )
 {
