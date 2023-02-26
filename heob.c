@@ -1738,6 +1738,10 @@ typedef struct stackSourceLocation
 }
 stackSourceLocation;
 
+#ifdef NO_DBGHELP
+#define MAX_SYM_NAME 2000
+#endif
+
 typedef struct dbgsym
 {
   HANDLE process;
@@ -1762,6 +1766,8 @@ typedef struct dbgsym
   IMAGEHLP_LINE64 *il;
   IMAGEHLP_LINEW64 *ilW;
   SYMBOL_INFO *si;
+#endif
+#if !defined(NO_DBGHELP) || !defined(NO_DWARFSTACK)
   char *undname;
 #endif
 #ifndef NO_DWARFSTACK
@@ -1909,7 +1915,6 @@ static void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
     ds->il = HeapAlloc( heap,0,sizeof(IMAGEHLP_LINE64) );
     ds->ilW = HeapAlloc( heap,0,sizeof(IMAGEHLP_LINEW64) );
     ds->si = HeapAlloc( heap,0,sizeof(SYMBOL_INFO)+MAX_SYM_NAME );
-    ds->undname = HeapAlloc( heap,0,MAX_SYM_NAME+1 );
 
     if( fSymSetOptions )
       fSymSetOptions( SYMOPT_LOAD_LINES|SYMOPT_DEFERRED_LOADS );
@@ -1941,6 +1946,10 @@ static void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
 #else
   (void)dbgPath;
   (void)invade;
+#endif
+
+#if !defined(NO_DBGHELP) || !defined(NO_DWARFSTACK)
+  ds->undname = HeapAlloc( heap,0,MAX_SYM_NAME+1 );
 #endif
 
 #ifndef NO_DWARFSTACK
@@ -2036,6 +2045,9 @@ static void dbgsym_close( dbgsym *ds )
   if( ds->il ) HeapFree( heap,0,ds->il );
   if( ds->ilW ) HeapFree( heap,0,ds->ilW );
   if( ds->si ) HeapFree( heap,0,ds->si );
+#endif
+
+#if !defined(NO_DBGHELP) || !defined(NO_DWARFSTACK)
   if( ds->undname ) HeapFree( heap,0,ds->undname );
 #endif
 
@@ -2160,28 +2172,35 @@ static void locFuncCache(
       {
         si->Name[MAX_SYM_NAME] = 0;
         funcname = si->Name;
-
-        if( lineno==DWST_NO_DBG_SYM )
-        {
-          if( si->Name[0]=='?' && ds->fUnDecorateSymbolName &&
-              ds->fUnDecorateSymbolName(si->Name,
-                ds->undname,MAX_SYM_NAME,UNDNAME_NO_MS_KEYWORDS) )
-          {
-            ds->undname[MAX_SYM_NAME] = 0;
-            funcname = ds->undname;
-          }
-#ifndef NO_DWARFSTACK
-          else if( si->Name[0]=='_' && si->Name[1]=='Z' && ds->fdwstDemangle &&
-              ds->fdwstDemangle(si->Name,ds->undname,MAX_SYM_NAME) )
-          {
-            ds->undname[MAX_SYM_NAME] = 0;
-            funcname = ds->undname;
-          }
-#endif
-        }
       }
     }
     // }}}
+  }
+#endif
+  // }}}
+
+  // demangle function name {{{
+#if !defined(NO_DBGHELP) || !defined(NO_DWARFSTACK)
+  if( lineno==DWST_NO_DBG_SYM && funcname )
+  {
+    if( 0 );
+#ifndef NO_DBGHELP
+    else if( funcname[0]=='?' && ds->fUnDecorateSymbolName &&
+        ds->fUnDecorateSymbolName(funcname,
+          ds->undname,MAX_SYM_NAME,UNDNAME_NO_MS_KEYWORDS) )
+    {
+      ds->undname[MAX_SYM_NAME] = 0;
+      funcname = ds->undname;
+    }
+#endif
+#ifndef NO_DWARFSTACK
+    else if( funcname[0]=='_' && funcname[1]=='Z' && ds->fdwstDemangle &&
+        ds->fdwstDemangle(funcname,ds->undname,MAX_SYM_NAME) )
+    {
+      ds->undname[MAX_SYM_NAME] = 0;
+      funcname = ds->undname;
+    }
+#endif
   }
 #endif
   // }}}
