@@ -2253,7 +2253,8 @@ static void locFuncCache(
 #ifndef NO_DBGHELP
     else if( funcname[0]=='?' && ds->fUnDecorateSymbolName &&
         ds->fUnDecorateSymbolName(funcname,
-          ds->undname,MAX_SYM_NAME,UNDNAME_NO_MS_KEYWORDS) )
+          ds->undname,MAX_SYM_NAME,UNDNAME_NO_MS_KEYWORDS|
+          UNDNAME_NO_ACCESS_SPECIFIERS|UNDNAME_NO_MEMBER_TYPE) )
     {
       ds->undname[MAX_SYM_NAME] = 0;
       funcname = ds->undname;
