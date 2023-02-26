@@ -1791,6 +1791,8 @@ typedef struct dbgsym
   int func_q;
   wchar_t **file_a;
   int file_q;
+  modInfo *currentModule;
+  HMODULE currentModuleLoaded;
 }
 dbgsym;
 
@@ -2078,6 +2080,52 @@ static int cmp_ptr( const void *av,const void *bv )
   return( *a>*b ? 1 : ( *a<*b ? -1 : 0 ) );
 }
 
+static const char *thunkedFunctionNameByAddress(
+    HMODULE mod,uintptr_t base,uintptr_t addr,const char *funcname )
+{
+  PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)mod;
+  PIMAGE_NT_HEADERS inh = (PIMAGE_NT_HEADERS)REL_PTR( idh,idh->e_lfanew );
+  PIMAGE_DATA_DIRECTORY idd =
+    &inh->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+  if( !idd->Size ) return( funcname );
+
+  PIMAGE_EXPORT_DIRECTORY ied =
+    (PIMAGE_EXPORT_DIRECTORY)REL_PTR( idh,idd->VirtualAddress );
+  DWORD number = ied->NumberOfNames;
+  DWORD *names = (DWORD*)REL_PTR( idh,ied->AddressOfNames );
+  WORD *ords = (WORD*)REL_PTR( idh,ied->AddressOfNameOrdinals );
+  DWORD *funcs = (DWORD*)REL_PTR( idh,ied->AddressOfFunctions );
+  DWORD i;
+  uintptr_t nearestFuncAddr = 0;
+  int nearestIsThunk = 0;
+  uintptr_t relocation = base - (uintptr_t)idh;
+  for( i=0; i<number; i++ )
+  {
+    const unsigned char *expFunc = REL_PTR( idh,funcs[ords[i]] );
+    int isThunk = 0;
+    if( expFunc[0]==0xe9 )
+    {
+      // follow jump thunk
+      expFunc = expFunc + 5 + *(uint32_t*)(expFunc+1);
+      isThunk = 1;
+    }
+
+    uintptr_t expFuncAddr = (uintptr_t)expFunc + relocation;
+    if( addr>=expFuncAddr && (expFuncAddr>nearestFuncAddr ||
+          // if there are both thunk and non-thunk exports to the same
+          // address, then the thunk one is probably actually a
+          // sibling call, so prefer the other one
+          (expFuncAddr==nearestFuncAddr && !isThunk && nearestIsThunk)) )
+    {
+      nearestFuncAddr = expFuncAddr;
+      nearestIsThunk = isThunk;
+      funcname = REL_PTR( idh,names[i] );
+    }
+  }
+
+  return( funcname );
+}
+
 static void locFuncCache(
     uint64_t addr,const wchar_t *filename,int lineno,const char *funcname,
     void *context,int columnno )
@@ -2086,6 +2134,8 @@ static void locFuncCache(
 
   dbgsym *ds = context;
   uintptr_t printAddr = (uintptr_t)addr;
+
+  int checkExportTable = 1;
 
   // MSVC debug info {{{
 #ifndef NO_DBGHELP
@@ -2172,11 +2222,27 @@ static void locFuncCache(
       {
         si->Name[MAX_SYM_NAME] = 0;
         funcname = si->Name;
+        if( !(si->Flags&SYMFLAG_EXPORT) ) checkExportTable = 0;
       }
     }
     // }}}
   }
 #endif
+  // }}}
+
+  // look for exported function, and follow jump thunks {{{
+  if( lineno==DWST_NO_DBG_SYM && checkExportTable && ds->currentModule )
+  {
+    if( !ds->currentModuleLoaded )
+      ds->currentModuleLoaded = LoadLibraryExW(
+          ds->currentModule->path,NULL,DONT_RESOLVE_DLL_REFERENCES );
+    if( !ds->currentModuleLoaded )
+      // don't try to load this module again
+      ds->currentModule = NULL;
+    else
+      funcname = thunkedFunctionNameByAddress( ds->currentModuleLoaded,
+          ds->currentModule->base,(uintptr_t)addr,funcname );
+  }
   // }}}
 
   // demangle function name {{{
@@ -2356,6 +2422,9 @@ static void cacheSymbolData(
     for( l=j+1; l<fc && frames[l]>=mi->base &&
         frames[l]<mi->base+mi->size; l++ );
 
+    ds->currentModule = mi;
+    ds->currentModuleLoaded = NULL;
+
     // GCC debug info {{{
 #ifndef NO_DWARFSTACK
     if( ds->fdwstOfFileW )
@@ -2375,6 +2444,10 @@ static void cacheSymbolData(
       for( i=j; i<l; i++ )
         locFuncCache( frames[i],mi->path,DWST_NO_DBG_SYM,NULL,ds,0 );
     }
+
+    ds->currentModule = NULL;
+    if( ds->currentModuleLoaded )
+      FreeLibrary( ds->currentModuleLoaded );
 
     j = l - 1;
   }
