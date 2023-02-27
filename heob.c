@@ -2231,7 +2231,7 @@ static void locFuncCache(
   // }}}
 
   // look for exported function, and follow jump thunks {{{
-  if( lineno==DWST_NO_DBG_SYM && checkExportTable && ds->currentModule )
+  if( lineno<=DWST_NO_DBG_SYM && checkExportTable && ds->currentModule )
   {
     if( !ds->currentModuleLoaded )
       ds->currentModuleLoaded = LoadLibraryExW(
@@ -2247,7 +2247,7 @@ static void locFuncCache(
 
   // demangle function name {{{
 #if !defined(NO_DBGHELP) || !defined(NO_DWARFSTACK)
-  if( lineno==DWST_NO_DBG_SYM && funcname )
+  if( lineno<=DWST_NO_DBG_SYM && funcname )
   {
     if( 0 );
 #ifndef NO_DBGHELP
