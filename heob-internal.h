@@ -695,20 +695,6 @@ static inline int mul_overflow( size_t n,size_t s,size_t *res )
   return( 0 );
 }
 
-#if USE_STACKWALK
-typedef struct
-{
-  func_StackWalk64 *fStackWalk64;
-  PFUNCTION_TABLE_ACCESS_ROUTINE64 fSymFunctionTableAccess64;
-  PGET_MODULE_BASE_ROUTINE64 fSymGetModuleBase64;
-  PREAD_PROCESS_MEMORY_ROUTINE64 fReadProcessMemory;
-}
-stackwalkFunctions;
-
-void stackwalkDbghelp( stackwalkFunctions *swf,options *opt,
-    HANDLE process,HANDLE thread,CONTEXT *contextRecord,void **frames );
-#endif
-
 // }}}
 
 // vim:fdm=marker

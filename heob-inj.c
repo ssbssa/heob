@@ -3987,55 +3987,6 @@ DLLEXPORT VOID heob_exit( UINT c )
 // }}}
 // exception handler {{{
 
-#if USE_STACKWALK
-void stackwalkDbghelp( stackwalkFunctions *swf,options *opt,
-    HANDLE process,HANDLE thread,CONTEXT *contextRecord,void **frames )
-{
-  int useSp = opt->useSp;
-
-  CONTEXT context;
-  RtlMoveMemory( &context,contextRecord,sizeof(CONTEXT) );
-
-  STACKFRAME64 stack;
-  RtlZeroMemory( &stack,sizeof(STACKFRAME64) );
-  stack.AddrPC.Offset = context.cip;
-  stack.AddrPC.Mode = AddrModeFlat;
-  stack.AddrStack.Offset = context.csp;
-  stack.AddrStack.Mode = AddrModeFlat;
-  stack.AddrFrame.Offset = context.cfp;
-  stack.AddrFrame.Mode = AddrModeFlat;
-
-  func_StackWalk64 *fStackWalk64 = swf->fStackWalk64;
-  PREAD_PROCESS_MEMORY_ROUTINE64 fReadProcessMemory = swf->fReadProcessMemory;
-  PFUNCTION_TABLE_ACCESS_ROUTINE64 fSymFunctionTableAccess64 =
-    swf->fSymFunctionTableAccess64;
-  PGET_MODULE_BASE_ROUTINE64 fSymGetModuleBase64 =
-    swf->fSymGetModuleBase64;
-
-  int count = 0;
-  while( count<PTRS )
-  {
-    if( !fStackWalk64(MACH_TYPE,process,thread,&stack,&context,
-          fReadProcessMemory,fSymFunctionTableAccess64,fSymGetModuleBase64,
-          NULL) )
-      break;
-
-    uintptr_t frame = (uintptr_t)stack.AddrPC.Offset;
-    if( !count ) frame++;
-    else if( !frame ) break;
-    frames[count++] = (void*)frame;
-
-    if( count==1 && useSp )
-    {
-      ULONG_PTR csp = *(ULONG_PTR*)contextRecord->csp;
-      if( csp ) frames[count++] = (void*)csp;
-    }
-  }
-  if( count<PTRS )
-    RtlZeroMemory( frames+count,(PTRS-count)*sizeof(void*) );
-}
-#endif
-
 static void stackwalk( const CONTEXT *contextRecord,void **frames )
 {
   GET_REMOTEDATA( rd );
