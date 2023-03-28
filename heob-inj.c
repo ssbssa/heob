@@ -1244,7 +1244,7 @@ static NOINLINE void trackAllocFailure(
 // }}}
 // replacement for signal {{{
 
-void *new_signal( int sig,void (*func)(int) )
+static void *new_signal( int sig,void (*func)(int) )
 {
   GET_REMOTEDATA( rd );
 
@@ -2569,7 +2569,7 @@ int heobSubProcess(
   return( withHeob );
 }
 
-BOOL WINAPI new_CreateProcessA(
+static BOOL WINAPI new_CreateProcessA(
     LPCSTR applicationName,LPSTR commandLine,
     LPSECURITY_ATTRIBUTES processAttributes,
     LPSECURITY_ATTRIBUTES threadAttributes,BOOL inheritHandles,
@@ -2598,7 +2598,7 @@ BOOL WINAPI new_CreateProcessA(
   return( 1 );
 }
 
-BOOL WINAPI new_CreateProcessW(
+static BOOL WINAPI new_CreateProcessW(
     LPCWSTR applicationName,LPWSTR commandLine,
     LPSECURITY_ATTRIBUTES processAttributes,
     LPSECURITY_ATTRIBUTES threadAttributes,BOOL inheritHandles,
