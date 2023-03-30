@@ -1819,11 +1819,9 @@ static BOOL WINAPI readProcessMemory( HANDLE process,
   return( TRUE );
 }
 
-static void stackwalkDbghelp( stackwalkFunctions *swf,options *opt,
+static void stackwalkDbghelp( stackwalkFunctions *swf,int useSp,
     HANDLE process,HANDLE thread,const CONTEXT *contextRecord,void **frames )
 {
-  int useSp = opt->useSp;
-
   CONTEXT context;
   RtlMoveMemory( &context,contextRecord,sizeof(CONTEXT) );
 
@@ -3856,7 +3854,7 @@ static DWORD WINAPI samplingThread( LPVOID arg )
       if( UNLIKELY(SuspendThread(thread)==(DWORD)-1) ) continue;
 
       GetThreadContext( thread,&context );
-      stackwalkDbghelp( swf,opt,process,thread,&context,a->frames );
+      stackwalkDbghelp( swf,0,process,thread,&context,a->frames );
 
       if( fQueryThreadCycleTime )
       {
@@ -5868,7 +5866,7 @@ static void writeExceptionThreads( appData *ad,textColor *tc,
 
     GetThreadContext( thread,&context );
     stackwalkDbghelp(
-        &ad->ds->swf,ad->opt,ad->pi.hProcess,thread,&context,a->frames );
+        &ad->ds->swf,0,ad->pi.hProcess,thread,&context,a->frames );
 
 #ifndef NO_THREADS
     if( fNtQueryInformationThread )
@@ -6425,8 +6423,8 @@ static int isMinidump( appData *ad,const wchar_t *name )
 #ifndef NO_THREADS
     ei->aa[0].threadNum = threadNum;
 #endif
-    stackwalkDbghelp(
-        &ad->ds->swf,ad->opt,ds.process,(HANDLE)2,context,ei->aa->frames );
+    stackwalkDbghelp( &ad->ds->swf,ad->opt->useSp,
+        ds.process,(HANDLE)2,context,ei->aa->frames );
     ei->aq = 1;
     RtlMoveMemory( &ei->c,context,sizeof(CONTEXT) );
 #ifndef _WIN64
@@ -6519,7 +6517,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
 #ifndef NO_THREADS
       a->threadNum = t + 1;
 #endif
-      stackwalkDbghelp( &ad->ds->swf,ad->opt,ad,(HANDLE)2,context,a->frames );
+      stackwalkDbghelp( &ad->ds->swf,0,ad,(HANDLE)2,context,a->frames );
     }
 
     printExceptionThreads( c,aa,
@@ -6969,7 +6967,7 @@ static void mainLoop( appData *ad,UINT *exitCode )
 #if USE_STACKWALK
           if( ds->swf.fStackWalk64 )
           {
-            stackwalkDbghelp( &ds->swf,opt,ad->pi.hProcess,
+            stackwalkDbghelp( &ds->swf,opt->useSp,ad->pi.hProcess,
                 ei->thread,&ei->c,ei->aa[0].frames );
             CloseHandle( ei->thread );
           }
