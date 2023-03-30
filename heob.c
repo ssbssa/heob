@@ -1808,6 +1808,17 @@ typedef struct dbgsym
 dbgsym;
 
 #if USE_STACKWALK
+static BOOL WINAPI readProcessMemory( HANDLE process,
+    DWORD64 address,PVOID buffer,DWORD size,LPDWORD bytesRead )
+{
+  SIZE_T br = 0;
+  if( !ReadProcessMemory(process,(LPCVOID)(SIZE_T)address,buffer,size,&br) )
+    return( FALSE );
+
+  *bytesRead = (DWORD)br;
+  return( TRUE );
+}
+
 static void stackwalkDbghelp( stackwalkFunctions *swf,options *opt,
     HANDLE process,HANDLE thread,const CONTEXT *contextRecord,void **frames )
 {
@@ -1847,8 +1858,11 @@ static void stackwalkDbghelp( stackwalkFunctions *swf,options *opt,
 
     if( count==1 && useSp )
     {
-      ULONG_PTR csp = *(ULONG_PTR*)contextRecord->csp;
-      if( csp ) frames[count++] = (void*)csp;
+      ULONG_PTR csp = contextRecord->csp;
+      ULONG_PTR ptr;
+      DWORD br;
+      if( fReadProcessMemory(process,csp,&ptr,sizeof(ptr),&br) && ptr )
+        frames[count++] = (void*)ptr;
     }
   }
   if( count<PTRS )
@@ -1967,7 +1981,7 @@ static void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
     ds->swf.fSymGetModuleBase64 =
       (PGET_MODULE_BASE_ROUTINE64)GetProcAddress(
           ds->symMod,"SymGetModuleBase64" );
-    ds->swf.fReadProcessMemory = NULL;
+    ds->swf.fReadProcessMemory = &readProcessMemory;
     ds->fSymFindFileInPathW =
       (func_SymFindFileInPathW*)GetProcAddress(
           ds->symMod,"SymFindFileInPathW" );
