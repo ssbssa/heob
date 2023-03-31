@@ -6209,8 +6209,28 @@ static int isMinidump( appData *ad,const wchar_t *name )
     }
   }
 
+  USHORT arch = system ? system->ProcessorArchitecture : 0;
+#ifndef _WIN64
+  unsigned wow64_ofs = 0;
+  if( arch==PROCESSOR_ARCHITECTURE_AMD64 )
+  {
+    unsigned m;
+    for( m=1; m<mods->NumberOfModules; m++ )
+    {
+      if( mods->Modules[m].BaseOfImage==mods->Modules[0].BaseOfImage )
+      {
+        // if the main executable is twice in the list, then this was
+        // actually a wow64 process, and the 32bit modules start here
+        wow64_ofs = m;
+        arch = PROCESSOR_ARCHITECTURE_INTEL;
+        break;
+      }
+    }
+  }
+#endif
+
   if( !system || system->PlatformId!=VER_PLATFORM_WIN32_NT ||
-      system->ProcessorArchitecture!=
+      arch!=
 #ifndef _WIN64
       PROCESSOR_ARCHITECTURE_INTEL
 #else
@@ -6270,15 +6290,18 @@ static int isMinidump( appData *ad,const wchar_t *name )
   if( mods && mods->NumberOfModules )
   {
     ad->dump_mod_a = mods->Modules;
-
     ad->mi_q = mods->NumberOfModules;
+#ifndef _WIN64
+    ad->dump_mod_a += wow64_ofs;
+    ad->mi_q -= wow64_ofs;
+#endif
     ad->mi_a = HeapAlloc( heap,0,ad->mi_q*sizeof(modInfo) );
     if( !ad->mi_a ) ad->mi_q = 0;
 
     int m;
     for( m=0; m<ad->mi_q; m++ )
     {
-      MINIDUMP_MODULE *mod = mods->Modules + m;
+      MINIDUMP_MODULE *mod = ad->dump_mod_a + m;
       MINIDUMP_STRING *moduleName = REL_PTR( dump,mod->ModuleNameRva );
 
       modInfo *mi = ad->mi_a + m;
@@ -6353,8 +6376,14 @@ static int isMinidump( appData *ad,const wchar_t *name )
           dump+thread->Stack.Memory.Rva,thread->Stack.Memory.DataSize,
           (size_t)thread->Stack.StartOfMemoryRange );
 
+      size_t teb_ptr = (size_t)thread->Teb;
+#ifndef _WIN64
+      if( wow64_ofs )
+        // the 32bit TEB is exactly 2 pages after the 64bit TEB
+        teb_ptr += 0x2000;
+#endif
       size_t maxSize;
-      const TEB *teb = getDumpLoc( ad,(size_t)thread->Teb,&maxSize );
+      const TEB *teb = getDumpLoc( ad,teb_ptr,&maxSize );
       if( teb && maxSize>=sizeof(TEB) )
       {
         const PEB *peb = getDumpLoc( ad,(size_t)teb->Peb,&maxSize );
@@ -6513,10 +6542,30 @@ static int isMinidump( appData *ad,const wchar_t *name )
     {
       MINIDUMP_THREAD *thread = mtl->Threads + t;
       allocation *a = aa + t;
-      CONTEXT *context = REL_PTR( dump,thread->ThreadContext.Rva );
+      const CONTEXT *context = REL_PTR( dump,thread->ThreadContext.Rva );
 #ifndef NO_THREADS
       a->threadNum = t + 1;
 #endif
+
+#ifndef _WIN64
+      if( wow64_ofs )
+      {
+        // the location of the 32bit CONTEXT is in teb->TlsSlots[1] of
+        // the 64bit TEB (TlsSlots[1] is at a 657*8 bytes offset), plus 4
+        size_t maxSize;
+        const uint64_t *teb = getDumpLoc( ad,(size_t)thread->Teb,&maxSize );
+        const unsigned tlsslots_1_idx = 657;
+        if( teb && maxSize>=(tlsslots_1_idx+1)*8 &&
+            teb[tlsslots_1_idx] && teb[tlsslots_1_idx]<0x100000000-4 )
+        {
+          const CONTEXT *wow64_context = getDumpLoc(
+              ad,(size_t)teb[tlsslots_1_idx]+4,&maxSize );
+          if( wow64_context && maxSize>=sizeof(CONTEXT) )
+            context = wow64_context;
+        }
+      }
+#endif
+
       stackwalkDbghelp( &ad->ds->swf,0,ad,(HANDLE)2,context,a->frames );
     }
 
