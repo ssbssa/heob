@@ -5523,7 +5523,42 @@ static void writeException( appData *ad,textColor *tcXml,
   options *opt = ds->opt;
   textColor *tc = ad->tcOut;
 
-  cacheSymbolData( ei->aa,NULL,ei->aq,mi_a,mi_q,ds,1 );
+  allocation *cache_aa = ei->aa;
+  int cache_aq = ei->aq;
+
+  // float exception {{{
+#ifndef _WIN64
+  void *flt_error_offset = NULL;
+  if( ei->er.ExceptionCode>=EXCEPTION_FLT_DENORMAL_OPERAND &&
+      ei->er.ExceptionCode<=EXCEPTION_FLT_UNDERFLOW )
+    flt_error_offset = (void*)ei->c.FloatSave.ErrorOffset;
+  if( flt_error_offset && cache_aq==3 )
+  {
+    allocation *aa = HeapAlloc(
+        ad->heap,HEAP_ZERO_MEMORY,4*sizeof(allocation) );
+    if( aa )
+    {
+      cache_aa = aa;
+      cache_aq = 4;
+      RtlMoveMemory( cache_aa,ei->aa,3*sizeof(allocation) );
+      cache_aa[3].frames[0] = (void*)( (uintptr_t)flt_error_offset+1 );
+    }
+  }
+  else if( flt_error_offset && cache_aq<3 )
+  {
+    cache_aa[cache_aq].frames[0] = (void*)( (uintptr_t)flt_error_offset+1 );
+    cache_aa[cache_aq].frames[1] = 0;
+    cache_aq++;
+  }
+#endif
+  // }}}
+
+  cacheSymbolData( cache_aa,NULL,cache_aq,mi_a,mi_q,ds,1 );
+
+#ifndef _WIN64
+  if( cache_aq==4 )
+    HeapFree( ad->heap,0,cache_aa );
+#endif
 
   // exception code {{{
   const char *desc = NULL;
@@ -5787,6 +5822,25 @@ static void writeException( appData *ad,textColor *tcXml,
     char *throwName = undecorateVCsymbol( ds,ei->throwName );
     printf( "$I  VC c++ exception: $N%s\n",throwName );
   }
+  // }}}
+  // float exception {{{
+#ifndef _WIN64
+  else if( flt_error_offset )
+  {
+    printf( "$S  float exception on:\n" );
+#ifndef NO_DBGENG
+    if( opt->exceptionDetails>0 && (opt->exceptionDetails&2) )
+    {
+      size_t ip = (size_t)flt_error_offset;
+      if( convert_address )
+        ip = (size_t)convert_address( ad,ip,NULL );
+      if( ip )
+        printDisassembler( tc,NULL,ad->pi.dwProcessId,ip,ad->heap );
+    }
+#endif
+    printStackCount( &flt_error_offset,1,mi_a,mi_q,ds,FT_COUNT,0 );
+  }
+#endif
   // }}}
 
   writeXmlException( tcXml,ds,ei,desc,addr,violationType,

@@ -12,6 +12,7 @@
 #include <direct.h>
 #include <conio.h>
 #include <fcntl.h>
+#include <float.h>
 
 
 #if defined(__GNUC__) && __GNUC__>=7
@@ -1154,6 +1155,18 @@ int choose( int arg )
           do_nothing( mem_ref );
           free( mem_ref );
         }
+      }
+      break;
+
+    case 62:
+      // float exception
+      {
+        unsigned int bits = _EM_ZERODIVIDE;
+        _clearfp();
+        _controlfp_s( 0,~bits,bits );
+
+        float inf = 1./0.;
+        printf( "inf = %f\n",inf );
       }
       break;
   }
