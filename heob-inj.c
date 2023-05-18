@@ -599,11 +599,20 @@ static NOINLINE int trackFree(
   if( free_ptr )
   {
     GET_REMOTEDATA( rd );
+    size_t freeSize = -1;
+
+#ifndef NO_THREADS
+    int threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
+    if( UNLIKELY(!threadNum) && rd->inExit )
+    {
+      TlsSetValue( rd->freeSizeTls,(void*)freeSize );
+      return( ret );
+    }
+#endif
 
     allocation fa;
     int splitIdx = (((uintptr_t)free_ptr)>>rd->ptrShift)&SPLIT_MASK;
     splitAllocation *sa = rd->splits + splitIdx;
-    size_t freeSize = -1;
 
     EnterCriticalSection( &sa->cs );
 
@@ -661,7 +670,7 @@ static NOINLINE int trackFree(
         aa[1].lt = LT_LOST;
         aa[1].ft = ft;
 #ifndef NO_THREADS
-        aa[1].threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
+        aa[1].threadNum = threadNum;
 #endif
 
         writeAllocs( aa,2,WRITE_FREE_WHILE_REALLOC );
@@ -679,9 +688,6 @@ static NOINLINE int trackFree(
       if( rd->opt.protectFree && !failed_realloc )
       {
         fa.ftFreed = ft;
-#ifndef NO_THREADS
-        int threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
-#endif
 
         splitFreed *sf = rd->freeds + splitIdx;
 
@@ -720,7 +726,7 @@ static NOINLINE int trackFree(
         aa[1].lt = LT_LOST;
         aa[1].ft = ft;
 #ifndef NO_THREADS
-        aa[1].threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
+        aa[1].threadNum = threadNum;
 #endif
 
         writeAllocs( aa,2,WRITE_WRONG_DEALLOC );
@@ -762,7 +768,7 @@ static NOINLINE int trackFree(
         CAPTURE_STACK_TRACE( 2,PTRS,aa[0].frames,caller,rd->maxStackFrames );
         aa[0].ft = ft;
 #ifndef NO_THREADS
-        aa[0].threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
+        aa[0].threadNum = threadNum;
 #endif
 
         RtlMoveMemory( &aa[1],&fa,sizeof(allocation) );
@@ -797,7 +803,7 @@ static NOINLINE int trackFree(
           CAPTURE_STACK_TRACE( 2,PTRS,aa[0].frames,caller,rd->maxStackFrames );
           aa[0].ft = ft;
 #ifndef NO_THREADS
-          aa[0].threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
+          aa[0].threadNum = threadNum;
 #endif
 
           aa[2].ft = aa[1].ftFreed;
@@ -830,7 +836,7 @@ static NOINLINE int trackFree(
         aa->lt = LT_LOST;
         aa->ft = ft;
 #ifndef NO_THREADS
-        aa->threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
+        aa->threadNum = threadNum;
 #endif
 
         CAPTURE_STACK_TRACE( 2,PTRS,aa->frames,caller,rd->maxStackFrames );
@@ -1096,6 +1102,12 @@ static NOINLINE void trackAllocSuccess(
 {
   GET_REMOTEDATA( rd );
 
+#ifndef NO_THREADS
+  int threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
+  if( UNLIKELY(!threadNum) && rd->inExit )
+    return;
+#endif
+
   {
     uintptr_t align = rd->opt.align;
     alloc_size += ( align - (alloc_size%align) )%align;
@@ -1111,7 +1123,7 @@ static NOINLINE void trackAllocSuccess(
     a.ftFreed = FT_COUNT; // is < FT_COUNT while realloc() is called
     a.id = IL_INC( (IL_INT*)&rd->cur_id );
 #ifndef NO_THREADS
-    a.threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
+    a.threadNum = threadNum;
 #endif
 
     CAPTURE_STACK_TRACE( 2,PTRS,a.frames,caller,rd->maxStackFrames );
@@ -1167,6 +1179,12 @@ static NOINLINE void trackAllocFailure(
 {
   GET_REMOTEDATA( rd );
 
+#ifndef NO_THREADS
+  int threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
+  if( UNLIKELY(!threadNum) && rd->inExit )
+    return;
+#endif
+
   {
     allocation a;
     a.ptr = NULL;
@@ -1176,7 +1194,7 @@ static NOINLINE void trackAllocFailure(
     a.ft = ft;
     a.id = IL_INC( (IL_INT*)&rd->cur_id );
 #ifndef NO_THREADS
-    a.threadNum = (int)(uintptr_t)TlsGetValue( rd->threadNumTls );
+    a.threadNum = threadNum;
 #endif
 
     CAPTURE_STACK_TRACE( 2,PTRS,a.frames,caller,rd->maxStackFrames );
