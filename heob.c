@@ -5494,7 +5494,7 @@ static void writeException( appData *ad,textColor *tcXml,
     int threadName_q,threadInfo *threadName_a,
 #endif
 #ifndef NO_DBGENG
-    size_t ip,
+    const void *convert_address(appData*,size_t,size_t*),
 #endif
     exceptionInfo *ei,modInfo *mi_a,int mi_q )
 {
@@ -5555,6 +5555,12 @@ static void writeException( appData *ad,textColor *tcXml,
 
     // assembly instruction {{{
 #ifndef NO_DBGENG
+    size_t ip = 0;
+    if( ei->aa[0].frames[0] && (opt->exceptionDetails&2) &&
+        ei->er.ExceptionCode!=EXCEPTION_BREAKPOINT )
+      ip = (size_t)ei->aa[0].frames[0];
+    if( ip && convert_address )
+      ip = (size_t)convert_address( ad,ip,NULL );
     if( ip )
     {
       HANDLE heap = ad->heap;
@@ -6502,22 +6508,14 @@ static int isMinidump( appData *ad,const wchar_t *name )
     }
     // }}}
 
-#ifndef NO_DBGENG
-    size_t ip = 0;
-    if( ei->aa->frames[0] && ad->opt->exceptionDetails>0 &&
-        (ad->opt->exceptionDetails&2) )
-    {
-      ip = (size_t)getDumpLoc( ad,(size_t)ei->aa->frames[0]-1,NULL );
-      ad->pi.dwProcessId = GetCurrentProcessId();
-    }
-#endif
+    ad->pi.dwProcessId = GetCurrentProcessId();
 
     writeException( ad,NULL,
 #ifndef NO_THREADS
         threadName_q,threadName_a,
 #endif
 #ifndef NO_DBGENG
-        ip,
+        getDumpLoc,
 #endif
         ei,ad->mi_a,ad->mi_q );
     HeapFree( heap,0,ei );
@@ -7022,19 +7020,12 @@ static void mainLoop( appData *ad,UINT *exitCode )
           }
 #endif
 
-#ifndef NO_DBGENG
-          size_t ip = 0;
-          if( opt->exceptionDetails>0 && (opt->exceptionDetails&2) &&
-              ei->er.ExceptionCode!=EXCEPTION_BREAKPOINT )
-            ip = (size_t)ei->aa[0].frames[0] - 1;
-#endif
-
           writeException( ad,tcXml,
 #ifndef NO_THREADS
               threadName_q,threadName_a,
 #endif
 #ifndef NO_DBGENG
-              ip,
+              NULL,
 #endif
               ei,mi_a,mi_q );
 
