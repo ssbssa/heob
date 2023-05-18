@@ -4284,6 +4284,27 @@ static char *disassemble( DWORD pid,size_t addr,HANDLE heap )
   if( dbgeng ) FreeLibrary( dbgeng );
   return( dis );
 }
+
+static void printDisassembler( textColor *tc,const char *header,
+    DWORD pid,size_t addr,HANDLE heap )
+{
+  char *dis = disassemble( pid,addr,heap );
+  if( !dis ) return;
+
+  if( header )
+    printf( header );
+
+  char *space = strchr( dis,' ' );
+  if( space ) space[0] = 0;
+  printf( "    $O%s",dis );
+  if( space )
+  {
+    space[0] = ' ';
+    printf( "$N%s",space );
+  }
+  printf( "\n" );
+  HeapFree( heap,0,dis );
+}
 #endif
 
 // }}}
@@ -5562,24 +5583,8 @@ static void writeException( appData *ad,textColor *tcXml,
     if( ip && convert_address )
       ip = (size_t)convert_address( ad,ip,NULL );
     if( ip )
-    {
-      HANDLE heap = ad->heap;
-      char *dis = disassemble( ad->pi.dwProcessId,ip,heap );
-      if( dis )
-      {
-        printf( "$S  assembly instruction:\n" );
-        char *space = strchr( dis,' ' );
-        if( space ) space[0] = 0;
-        printf( "    $O%s",dis );
-        if( space )
-        {
-          space[0] = ' ';
-          printf( "$N%s",space );
-        }
-        printf( "\n" );
-        HeapFree( heap,0,dis );
-      }
-    }
+      printDisassembler( tc,"$S  assembly instruction:\n",
+          ad->pi.dwProcessId,ip,ad->heap );
 #endif
     // }}}
   }
