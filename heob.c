@@ -5695,7 +5695,9 @@ static void writeException( appData *ad,textColor *tcXml,
   unsigned int ff = 0;
   const char *ff_desc = NULL;
   // access violation {{{
-  if( ei->er.ExceptionCode==EXCEPTION_ACCESS_VIOLATION &&
+  if( (ei->er.ExceptionCode==EXCEPTION_ACCESS_VIOLATION ||
+        ei->er.ExceptionCode==EXCEPTION_IN_PAGE_ERROR ||
+        ei->er.ExceptionCode==EXCEPTION_STACK_OVERFLOW) &&
       ei->er.NumberParameters==2 )
   {
     ULONG_PTR flag = ei->er.ExceptionInformation[0];
