@@ -5702,8 +5702,9 @@ static void writeException( appData *ad,textColor *tcXml,
   {
     ULONG_PTR flag = ei->er.ExceptionInformation[0];
     addr = (char*)ei->er.ExceptionInformation[1];
-    violationType = flag==8 ? "data execution prevention" :
-      ( flag ? "write access" : "read access" );
+    violationType =
+      flag==EXCEPTION_EXECUTE_FAULT ? "data execution prevention" :
+      ( flag==EXCEPTION_WRITE_FAULT ? "write access" : "read access" );
     printf( "$W  %s violation at %p\n",violationType,addr );
 
     if( ei->aq>1 )
