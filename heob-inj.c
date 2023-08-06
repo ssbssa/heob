@@ -4213,12 +4213,16 @@ static LONG WINAPI exceptionWalker( PEXCEPTION_POINTERS ep )
   return( EXCEPTION_EXECUTE_HANDLER );
 }
 
-static LONG WINAPI heapCorruption( PEXCEPTION_POINTERS ep )
+static LONG WINAPI vectoredExceptionHandler( PEXCEPTION_POINTERS ep )
 {
-  if( ep->ExceptionRecord->ExceptionCode!=EXCEPTION_HEAP_CORRUPTION )
-    return( EXCEPTION_CONTINUE_SEARCH );
+  EXCEPTION_RECORD *er = ep->ExceptionRecord;
+  if( er->ExceptionCode==EXCEPTION_HEAP_CORRUPTION ||
+      (er->ExceptionCode==EXCEPTION_ACCESS_VIOLATION &&
+       er->NumberParameters==2 &&
+       er->ExceptionInformation[0]==EXCEPTION_EXECUTE_FAULT) )
+    return( exceptionWalker(ep) );
 
-  return( exceptionWalker(ep) );
+  return( EXCEPTION_CONTINUE_SEARCH );
 }
 
 // }}}
@@ -4992,7 +4996,7 @@ VOID CALLBACK heob( ULONG_PTR arg )
     func_SetUnhandledExceptionFilter *fSetUnhandledExceptionFilter =
       rd->fGetProcAddress( rd->kernel32,"SetUnhandledExceptionFilter" );
     fSetUnhandledExceptionFilter( &exceptionWalker );
-    AddVectoredExceptionHandler( 1,&heapCorruption );
+    AddVectoredExceptionHandler( 1,&vectoredExceptionHandler );
 
     void *fp = fSetUnhandledExceptionFilter;
 #ifndef _WIN64
