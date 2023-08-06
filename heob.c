@@ -5334,10 +5334,6 @@ static int checkModule( appData *ad,textColor *tc,textColor *tcXml,int level,
   return( 1 );
 }
 
-#ifndef STATUS_INVALID_IMAGE_FORMAT
-#define STATUS_INVALID_IMAGE_FORMAT 0xC000007B
-#endif
-
 static DWORD unexpectedEnd( appData *ad,textColor *tcXml,int *errorWritten )
 {
   *errorWritten = 0;
@@ -5564,10 +5560,6 @@ static void writeException( appData *ad,textColor *tcXml,
   const char *desc = NULL;
   switch( ei->er.ExceptionCode )
   {
-#define EXCEPTION_FATAL_APP_EXIT STATUS_FATAL_APP_EXIT
-#define EXCEPTION_ASSERTION_FAILURE STATUS_ASSERTION_FAILURE
-#define EXCEPTION_HEAP_CORRUPTION 0xC0000374
-#define EXCEPTION_STACK_BUFFER_OVERRUN STATUS_STACK_BUFFER_OVERRUN
 #define EX_DESC( name ) \
     case EXCEPTION_##name: \
                            desc = " (" #name ")"; break

@@ -4215,7 +4215,7 @@ static LONG WINAPI exceptionWalker( PEXCEPTION_POINTERS ep )
 
 static LONG WINAPI heapCorruption( PEXCEPTION_POINTERS ep )
 {
-  if( ep->ExceptionRecord->ExceptionCode!=0xC0000374 )
+  if( ep->ExceptionRecord->ExceptionCode!=EXCEPTION_HEAP_CORRUPTION )
     return( EXCEPTION_CONTINUE_SEARCH );
 
   return( exceptionWalker(ep) );
