@@ -5334,6 +5334,24 @@ static int checkModule( appData *ad,textColor *tc,textColor *tcXml,int level,
   return( 1 );
 }
 
+static void differentThreadExitCode( appData *ad,DWORD exitCode )
+{
+  DWORD threadExitCode;
+  if( WaitForSingleObject(ad->pi.hThread,1000)!=WAIT_OBJECT_0 ||
+      !GetExitCodeThread(ad->pi.hThread,&threadExitCode) ||
+      threadExitCode==exitCode )
+    return;
+
+  textColor *tc = ad->tcOut;
+
+  if( threadExitCode==STATUS_THREAD_IS_TERMINATING )
+    printf( "$Wthread exit code: %x (THREAD_IS_TERMINATING)\n",
+        threadExitCode );
+  else
+    printf( "$Wthread exit code: %u (%x)\n",threadExitCode,threadExitCode );
+
+}
+
 static DWORD unexpectedEnd( appData *ad,textColor *tcXml,int *errorWritten )
 {
   *errorWritten = 0;
@@ -5344,7 +5362,10 @@ static DWORD unexpectedEnd( appData *ad,textColor *tcXml,int *errorWritten )
   if( ec!=STATUS_DLL_NOT_FOUND && ec!=STATUS_ORDINAL_NOT_FOUND &&
       ec!=STATUS_ENTRYPOINT_NOT_FOUND && ec!=STATUS_DLL_INIT_FAILED &&
       ec!=STATUS_INVALID_IMAGE_FORMAT )
+  {
+    differentThreadExitCode( ad,ec );
     return( ec );
+  }
 
   *errorWritten = 1;
 
@@ -7408,6 +7429,8 @@ static void mainLoop( appData *ad,UINT *exitCode )
           printf( "$Sexit code: %u (%x)\n",*exitCode,*exitCode );
         else
           printf( "\n$Stermination code: %u (%x)\n",*exitCode,*exitCode );
+
+        differentThreadExitCode( ad,*exitCode );
 
         *ad->heobExitData = *exitCode;
         if( opt->leakErrorExitCode )

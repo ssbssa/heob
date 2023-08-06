@@ -32,6 +32,7 @@ extern "C" __declspec(dllimport) int *dll_arr( void );
 extern "C" __declspec(dllimport) DWORD dll_thread_id( void );
 extern "C" __declspec(dllimport) void do_nothing( void* );
 extern "C" __declspec(dllimport) char *dll_static_char( void );
+extern "C" __declspec(dllimport) void dll_enter_critical_section( void );
 
 
 static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
@@ -281,6 +282,13 @@ static DWORD WINAPI overflowThread( LPVOID arg )
   SetThreadName( -1,"overflow thread" );
   int *ptr = (int*)arg;
   return( ptr[5] );
+}
+
+
+static DWORD WINAPI abandonCriticalSectionThread( LPVOID )
+{
+  dll_enter_critical_section();
+  return( 0 );
 }
 
 
@@ -1167,6 +1175,16 @@ int choose( int arg )
 
         float inf = 1./0.;
         printf( "inf = %f\n",inf );
+      }
+      break;
+
+    case 63:
+      // abandon critical section
+      {
+        HANDLE thread = CreateThread(
+            NULL,0,&abandonCriticalSectionThread,NULL,0,NULL );
+        WaitForSingleObject( thread,INFINITE );
+        CloseHandle( thread );
       }
       break;
   }

@@ -52,6 +52,12 @@ extern "C" __declspec(dllexport) char *dll_static_char( void )
   return( dll_text );
 }
 
+static CRITICAL_SECTION cs;
+extern "C" __declspec(dllexport) void dll_enter_critical_section( void )
+{
+  EnterCriticalSection( &cs );
+}
+
 extern "C" BOOL WINAPI DllMain(
     HINSTANCE hinstDLL,DWORD fdwReason,LPVOID lpvReserved )
 {
@@ -64,10 +70,15 @@ extern "C" BOOL WINAPI DllMain(
     one_int = new int;
     arr_int = new int[50];
     thread_id = GetCurrentThreadId();
+    InitializeCriticalSection( &cs );
   }
 
   if( fdwReason==DLL_PROCESS_DETACH )
+  {
+    EnterCriticalSection( &cs );
     free( allocated );
+    LeaveCriticalSection( &cs );
+  }
 
   return( TRUE );
 }

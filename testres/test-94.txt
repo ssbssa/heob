@@ -1,0 +1,4 @@
+allocer: main()
+
+exit code: 63 (0xPTR)
+thread exit code: 0xPTR (THREAD_IS_TERMINATING)
