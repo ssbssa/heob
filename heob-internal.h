@@ -17,6 +17,8 @@
 #include <intrin.h>
 #endif
 
+#include <stddef.h>
+
 // }}}
 // defines {{{
 
@@ -58,15 +60,15 @@
 #ifndef _WIN64
 #define IL_INT LONG
 #define IL_INC(var) InterlockedIncrement(var)
-#define GET_PEB() ((PEB*)__readfsdword(0x30))
-#define GET_LAST_ERROR() __readfsdword(0x34)
-#define SET_LAST_ERROR(e) __writefsdword(0x34,e)
+#define GET_PEB() ((PEB*)__readfsdword(offsetof(TEB,Peb)))
+#define GET_LAST_ERROR() __readfsdword(offsetof(TEB,LastErrorValue))
+#define SET_LAST_ERROR(e) __writefsdword(offsetof(TEB,LastErrorValue),e)
 #else
 #define IL_INT LONGLONG
 #define IL_INC(var) InterlockedIncrement64(var)
-#define GET_PEB() ((PEB*)__readgsqword(0x60))
-#define GET_LAST_ERROR() __readgsdword(0x68)
-#define SET_LAST_ERROR(e) __writegsdword(0x68,e)
+#define GET_PEB() ((PEB*)__readgsqword(offsetof(TEB,Peb)))
+#define GET_LAST_ERROR() __readgsdword(offsetof(TEB,LastErrorValue))
+#define SET_LAST_ERROR(e) __writegsdword(offsetof(TEB,LastErrorValue),e)
 #endif
 
 #ifdef __clang__
@@ -252,8 +254,10 @@ typedef struct _TEB
   PVOID StackLimit;
   PVOID Reserved1[9];
   struct _PEB *Peb;
+  ULONG LastErrorValue;
+  ULONG CountOfOwnedCriticalSections;
   PVOID Reserved2[399];
-  BYTE Reserved3[1952];
+  BYTE Reserved3[1944];
   PVOID TlsSlots[64];
   BYTE Reserved4[8];
   PVOID Reserved5[26];
