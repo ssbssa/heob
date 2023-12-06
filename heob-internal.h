@@ -60,16 +60,20 @@
 #ifndef _WIN64
 #define IL_INT LONG
 #define IL_INC(var) InterlockedIncrement(var)
-#define GET_PEB() ((PEB*)__readfsdword(offsetof(TEB,Peb)))
-#define GET_LAST_ERROR() __readfsdword(offsetof(TEB,LastErrorValue))
-#define SET_LAST_ERROR(e) __writefsdword(offsetof(TEB,LastErrorValue),e)
+#define READ_TEB_PTR(o) __readfsdword(o)
+#define READ_TEB_DWORD(o) __readfsdword(o)
+#define WRITE_TEB_DWORD(o,v) __writefsdword(o,v)
 #else
 #define IL_INT LONGLONG
 #define IL_INC(var) InterlockedIncrement64(var)
-#define GET_PEB() ((PEB*)__readgsqword(offsetof(TEB,Peb)))
-#define GET_LAST_ERROR() __readgsdword(offsetof(TEB,LastErrorValue))
-#define SET_LAST_ERROR(e) __writegsdword(offsetof(TEB,LastErrorValue),e)
+#define READ_TEB_PTR(o) __readgsqword(o)
+#define READ_TEB_DWORD(o) __readgsdword(o)
+#define WRITE_TEB_DWORD(o,v) __writegsdword(o,v)
 #endif
+
+#define GET_PEB() ((PEB*)READ_TEB_PTR(offsetof(TEB,Peb)))
+#define GET_LAST_ERROR() READ_TEB_DWORD(offsetof(TEB,LastErrorValue))
+#define SET_LAST_ERROR(e) WRITE_TEB_DWORD(offsetof(TEB,LastErrorValue),e)
 
 #ifdef __clang__
 #define __writefsdword(o,v) \
