@@ -1034,7 +1034,7 @@ int choose( int arg )
         RtlZeroMemory( &si,sizeof(STARTUPINFO) );
         RtlZeroMemory( &pi,sizeof(PROCESS_INFORMATION) );
         si.cb = sizeof(STARTUPINFO);
-        char commandLine[20];
+        char commandLine[24];
         sprintf( commandLine,"allocer%d %d",
             8*(int)sizeof(void*),arg==53?1:arg+1 );
         BOOL result = CreateProcess( NULL,commandLine,NULL,NULL,FALSE,

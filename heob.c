@@ -1575,7 +1575,7 @@ static CODE_SEG(".text$2") HANDLE inject(
 
   // wait for finished injection {{{
   COORD consoleCoord;
-  int errColor;
+  int errColor = 0;
   HANDLE in = ad->in;
   HANDLE err = ad->err;
   if( in )
