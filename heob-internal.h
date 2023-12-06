@@ -71,6 +71,7 @@
 #define WRITE_TEB_DWORD(o,v) __writegsdword(o,v)
 #endif
 
+#define GET_TEB() ((TEB*)READ_TEB_PTR(offsetof(TEB,Self)))
 #define GET_PEB() ((PEB*)READ_TEB_PTR(offsetof(TEB,Peb)))
 #define GET_LAST_ERROR() READ_TEB_DWORD(offsetof(TEB,LastErrorValue))
 #define SET_LAST_ERROR(e) WRITE_TEB_DWORD(offsetof(TEB,LastErrorValue),e)
@@ -256,7 +257,11 @@ typedef struct _TEB
   PVOID ExceptionList;
   PVOID StackBase;
   PVOID StackLimit;
-  PVOID Reserved1[9];
+  PVOID SubSystemTib;
+  PVOID FiberData;
+  PVOID ArbitraryUserPointer;
+  struct _TEB *Self;
+  PVOID Reserved1[5];
   struct _PEB *Peb;
   ULONG LastErrorValue;
   ULONG CountOfOwnedCriticalSections;

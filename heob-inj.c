@@ -979,7 +979,7 @@ static NOINLINE int trackFree(
         // stack address {{{
         if( !foundAlloc )
         {
-          TEB *teb = NtCurrentTeb();
+          TEB *teb = GET_TEB();
           if( free_ptr>=teb->StackLimit && free_ptr<teb->StackBase )
           {
             // is otherwise unused since !foundAlloc
