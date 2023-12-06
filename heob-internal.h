@@ -81,6 +81,14 @@
   (*((volatile DWORD __attribute__((__address_space__(257)))*)(o)) = v)
 #define __writegsdword(o,v) \
   (*((volatile DWORD __attribute__((__address_space__(256)))*)(o)) = v)
+#elif defined(__GNUC__) && __GNUC__>=8
+#define __readfsdword(o)    (*(__seg_fs unsigned int*)(o))
+#define __writefsdword(o,v) (*(__seg_fs unsigned int*)(o) = v)
+
+#define __readgsdword(o)    (*(__seg_gs unsigned int*)(o))
+#define __writegsdword(o,v) (*(__seg_gs unsigned int*)(o) = v)
+
+#define __readgsqword(o)    (*(__seg_gs unsigned long long*)(o))
 #endif
 
 #ifndef STATUS_INVALID_IMAGE_FORMAT
