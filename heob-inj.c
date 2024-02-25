@@ -138,6 +138,9 @@ typedef struct localData
   HMODULE msvcrt;
   HMODULE ucrtbase;
 
+  // SIGSEGV handler set by signal(), returned by the next call
+  void *crtSigSegvHandler;
+
   splitAllocation *splits;
   int ptrShift;
   allocType newArrAllocMethod;
@@ -1267,7 +1270,11 @@ static void *new_signal( int sig,void (*func)(int) )
   GET_REMOTEDATA( rd );
 
   if( rd->opt.handleException && sig==11 ) // SIGSEGV
-    return( (void*)0 ); // SIG_DFL
+  {
+    void *prevSigSegvHandler = rd->crtSigSegvHandler;
+    rd->crtSigSegvHandler = func;
+    return( prevSigSegvHandler );
+  }
 
   return( rd->fsignal(sig,func) );
 }
