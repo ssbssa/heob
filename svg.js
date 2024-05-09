@@ -792,7 +792,7 @@ function sumText(samples, bytes, allocs)
     t += '  &  ';
   if (bytes > 0.1)
   {
-    let units = [' B', ' KiB', ' MiB', ' GiB', ' TiB', ' PiB', ' EiB']
+    let units = [' B', ' KiB', ' MiB', ' GiB', ' TiB', ' PiB', ' EiB'];
     let bytes_exp = Math.floor(Math.log2(bytes) / 10);
     if (bytes_exp > 0.1)
       t += (bytes / Math.pow(2, bytes_exp * 10)).toPrecision(4);
