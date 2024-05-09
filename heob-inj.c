@@ -1265,6 +1265,48 @@ static NOINLINE void trackAllocFailure(
 // }}}
 // replacement for signal {{{
 
+#ifdef _WIN64
+static uintptr_t get_unwind_pc( int unwind,uintptr_t *mod )
+{
+  GET_REMOTEDATA( rd );
+
+  CONTEXT context;
+  RtlZeroMemory( &context,sizeof(context) );
+  context.ContextFlags = CONTEXT_CONTROL;
+  RtlCaptureContext( &context );
+
+  DWORD64 moduleBase = (uintptr_t)rd->heobMod;
+  int count = 0;
+  while( 1 )
+  {
+    DWORD64 imageBase = 0;
+    PRUNTIME_FUNCTION funcEntry =
+      RtlLookupFunctionEntry( context.Rip,&imageBase,NULL );
+    if( imageBase!=moduleBase )
+      count++;
+    if( count==unwind )
+    {
+      if( mod ) *mod = imageBase;
+      return( context.Rip );
+    }
+    moduleBase = imageBase;
+    if( funcEntry )
+    {
+      PVOID handlerData;
+      DWORD64 establisherFrame;
+      RtlVirtualUnwind( UNW_FLAG_NHANDLER,imageBase,context.Rip,funcEntry,
+          &context,&handlerData,&establisherFrame,NULL );
+    }
+    else
+    {
+      context.Rip = *(PULONG64)context.Rsp;
+      context.Rsp += 8;
+    }
+    if( !context.Rip ) return( 0 );
+  }
+}
+#endif
+
 static void *new_signal( int sig,void (*func)(int) )
 {
   GET_REMOTEDATA( rd );
@@ -1273,6 +1315,23 @@ static void *new_signal( int sig,void (*func)(int) )
   {
     void *prevSigSegvHandler = rd->crtSigSegvHandler;
     rd->crtSigSegvHandler = func;
+#ifdef _WIN64
+    if( prevSigSegvHandler )
+    {
+      // try to outsmart the SEH based signal handling of mingw-w64,
+      // which calls signal(SIGSEGV) on exception; detect it by looking
+      // for the "__C_specific_handler" function 2 levels up
+      uintptr_t moduleBase = 0;
+      uintptr_t unwindPc = get_unwind_pc( 2,&moduleBase );
+      if( unwindPc && moduleBase )
+      {
+        const char *functionName = thunkedFunctionNameByAddress(
+            (HMODULE)moduleBase,moduleBase,unwindPc,NULL );
+        if( functionName && !lstrcmp(functionName,"__C_specific_handler") )
+          return( NULL );
+      }
+    }
+#endif
     return( prevSigSegvHandler );
   }
 

@@ -293,8 +293,12 @@ T_H93=-p0 -a16
 T_A93=61
 T_H94=-h2
 T_A94=63
+T_H95=-p0
+T_A95=64
+T_H96=-p0 -n0
+T_A96=65
 ifeq ($(MINGW32_MAKE),)
-TESTS:=$(shell seq -w 01 94)
+TESTS:=$(shell seq -w 01 96)
 else
 TESTS:=01
 endif

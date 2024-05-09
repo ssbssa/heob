@@ -13,6 +13,7 @@
 #include <conio.h>
 #include <fcntl.h>
 #include <float.h>
+#include <signal.h>
 
 
 #if defined(__GNUC__) && __GNUC__>=7
@@ -290,6 +291,29 @@ static DWORD WINAPI abandonCriticalSectionThread( LPVOID )
   dll_enter_critical_section();
   return( 0 );
 }
+
+
+static void segv_handler( int )
+{
+  printf( "crash\n" );
+  TerminateProcess( GetCurrentProcess(),1 );
+}
+
+
+#ifdef _WIN64
+extern "C" LONG CALLBACK signalException( PEXCEPTION_POINTERS ExceptionInfo )
+{
+  if( ExceptionInfo->ExceptionRecord->ExceptionCode!=STATUS_ACCESS_VIOLATION )
+    return( EXCEPTION_CONTINUE_SEARCH );
+
+  void (*crash_handler)( int ) = signal( SIGSEGV,SIG_DFL );
+  if( crash_handler==SIG_DFL )
+    return( EXCEPTION_CONTINUE_SEARCH );
+
+  crash_handler( SIGSEGV );
+  return( EXCEPTION_CONTINUE_EXECUTION );
+}
+#endif
 
 
 int choose( int arg )
@@ -1187,6 +1211,25 @@ int choose( int arg )
         CloseHandle( thread );
       }
       break;
+
+    case 64:
+      // check if SIGSEGV signal handler is lost
+      {
+        void (*prev_handler)( int ) = signal( SIGSEGV,segv_handler );
+        if( signal(SIGSEGV,prev_handler)!=segv_handler )
+          printf( "signal handler lost\n" );
+      }
+      break;
+
+    case 65:
+      // check if SIGSEGV is caught despite SEH signal handler
+      {
+        signal( SIGSEGV,segv_handler );
+
+        void *ptr = (void*)&choose;
+        *(int*)ptr = 5;
+      }
+      break;
   }
 
   mem = (char*)realloc( mem,30 );
@@ -1208,7 +1251,7 @@ int main( int argc,char **argv )
   return( arg );
 }
 #else
-extern "C" void mainCRTStartup( void )
+static int __attribute__((noinline)) mainStartup( void )
 {
   _setmode( stdout->_file,_O_BINARY );
   const char *cmdLine = GetCommandLineA();
@@ -1230,6 +1273,27 @@ extern "C" void mainCRTStartup( void )
     arg = choose( arg );
     if( ret<0 ) ret = arg;
   }
+
+  return( ret );
+}
+
+extern "C" void mainCRTStartup( void )
+{
+#ifdef _WIN64
+  asm ("\t.l_start_seh:\n");
+#endif
+
+  int ret = mainStartup();
+
+#ifdef _WIN64
+  asm ("\tnop\n"
+    "\t.l_end_seh: nop\n"
+    "\t.seh_handler __C_specific_handler, @except\n"
+    "\t.seh_handlerdata\n"
+    "\t.long 1\n"
+    "\t.rva .l_start_seh, .l_end_seh, signalException ,.l_end_seh\n"
+    "\t.text");
+#endif
 
   ExitProcess( ret );
 }

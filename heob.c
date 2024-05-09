@@ -2152,7 +2152,7 @@ static int cmp_ptr( const void *av,const void *bv )
   return( *a>*b ? 1 : ( *a<*b ? -1 : 0 ) );
 }
 
-static const char *thunkedFunctionNameByAddress(
+const char *thunkedFunctionNameByAddress(
     HMODULE mod,uintptr_t base,uintptr_t addr,const char *funcname )
 {
   PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)mod;
