@@ -508,7 +508,8 @@ int choose( int arg )
         *(char****)indirectly_reachable = &reachable;
 
         char *indirectly_lost = (char*)malloc( 32 );
-        char *indirectly_lost2 = (char*)malloc( 0 );
+        size_t s = 0;
+        char *indirectly_lost2 = (char*)malloc( s );
         char *volatile *lost = (char**)malloc( sizeof(char*) );
         *(char**)indirectly_lost = indirectly_lost2;
         *lost = indirectly_lost;
@@ -809,7 +810,8 @@ int choose( int arg )
     case 34:
       // 0-sized allocation
       {
-        char *m0 = (char*)malloc( 0 );
+        size_t s = 0;
+        char *m0 = (char*)malloc( s );
         printf( "m0: 0x%p\n",m0 );
         free( m0 );
         char *m16 = (char*)malloc( 16 );
@@ -1181,7 +1183,7 @@ int choose( int arg )
               heob,"heob_find_reference" ) : NULL;
         if( heob_find_reference )
         {
-          char **mem_ref = (char**)calloc( sizeof(char*),2 );
+          char **mem_ref = (char**)calloc( 2,sizeof(char*) );
           mem_ref[1] = mem;
           heob_find_reference( mem );
           do_nothing( mem_ref );
@@ -1253,7 +1255,7 @@ int main( int argc,char **argv )
 #else
 static int __attribute__((noinline)) mainStartup( void )
 {
-  _setmode( stdout->_file,_O_BINARY );
+  _setmode( _fileno(stdout),_O_BINARY );
   const char *cmdLine = GetCommandLineA();
   if( cmdLine[0]=='"' )
   {
