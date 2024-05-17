@@ -4926,7 +4926,17 @@ VOID CALLBACK heob( ULONG_PTR arg )
   ld->pageAdd = ( rd->opt.minProtectSize+(ld->pageSize-1) )/ld->pageSize;
   ld->processors = si.dwNumberOfProcessors;
   ld->ei = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(exceptionInfo) );
-  ld->maxStackFrames = LOBYTE(LOWORD(GetVersion()))>=6 ? 1024 : 62;
+
+  HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
+  RTL_OSVERSIONINFOW osversion = { sizeof(osversion),5,1,0,0,L"" };
+  if( ntdll )
+  {
+    func_RtlGetVersion *fRtlGetVersion =
+      (func_RtlGetVersion*)GetProcAddress( ntdll,"RtlGetVersion" );
+    if( fRtlGetVersion )
+      fRtlGetVersion( &osversion );
+  }
+  ld->maxStackFrames = osversion.dwMajorVersion>=6 ? 1024 : 62;
 
   if( !rd->opt.protect )
   {
@@ -5020,7 +5030,6 @@ VOID CALLBACK heob( ULONG_PTR arg )
     ld->raise_id = *(ld->raise_alloc_a++);
   }
 
-  HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
   if( ntdll )
     ld->fNtQueryInformationThread = rd->fGetProcAddress(
         ntdll,"NtQueryInformationThread" );
