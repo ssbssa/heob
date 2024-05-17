@@ -1030,11 +1030,11 @@ static void deleteFileOnClose( textColor *tc )
 
   HMODULE kernel32 = GetModuleHandle( "kernel32.dll" );
 
-  typedef struct _FILE_DISPOSITION_INFO {
+  typedef struct FILE_DISPOSITION_INFO {
     BOOLEAN DeleteFile;
   } FILE_DISPOSITION_INFO;
 
-  typedef enum _FILE_INFO_BY_HANDLE_CLASS {
+  typedef enum FILE_INFO_BY_HANDLE_CLASS {
     FileDispositionInfo=4,
   } FILE_INFO_BY_HANDLE_CLASS;
 
@@ -1067,18 +1067,18 @@ int convertDeviceName( const wchar_t *in,wchar_t *out,int outlen )
   wchar_t drives[128];
   if( !GetLogicalDriveStringsW(127,drives) ) return( 0 );
 
-  wchar_t name[MAX_PATH];
+  wchar_t path[MAX_PATH];
   wchar_t drive[3] = L" :";
   wchar_t *p = drives;
   do
   {
     drive[0] = *p;
 
-    if( QueryDosDeviceW(drive,name,MAX_PATH) && strstartW(in,name) )
+    if( QueryDosDeviceW(drive,path,MAX_PATH) && strstartW(in,path) )
     {
-      if( lstrlenW(in+lstrlenW(name))+2>=outlen ) return( 0 );
+      if( lstrlenW(in+lstrlenW(path))+2>=outlen ) return( 0 );
       lstrcpyW( out,drive );
-      lstrcatW( out,in+lstrlenW(name) );
+      lstrcatW( out,in+lstrlenW(path) );
       return( 1 );
     }
 
@@ -1898,7 +1898,7 @@ static const type *name( const type *str, \
   \
   if( i<q ) RtlMoveMemory( a+i+1,a+i,(q-i)*sizeof(type*) ); \
   \
-  int l = len_fact*( len_func(str) + 1 ); \
+  int l = ( len_fact )*( len_func(str) + 1 ); \
   type *copy = HeapAlloc( heap,0,l ); \
   RtlMoveMemory( copy,str,l ); \
   a[i] = copy; \
@@ -6164,14 +6164,14 @@ static BOOL WINAPI symbolCallback( HANDLE process,
 #ifndef NO_THREADS
 #pragma pack(push,4)
 
-typedef struct _MD_THREAD_NAME
+typedef struct MD_THREAD_NAME
 {
   ULONG32 ThreadId;
   RVA64 ThreadNameRva;
 }
 MD_THREAD_NAME;
 
-typedef struct _MD_THREAD_NAME_LIST
+typedef struct MD_THREAD_NAME_LIST
 {
   ULONG32 NumberOfThreadNames;
   MD_THREAD_NAME ThreadNames[0];

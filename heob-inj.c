@@ -20,9 +20,9 @@
     void **frames_ = frames; \
     int ptrs_ = CaptureStackBackTrace( \
         skip,min((maxFrames)-(skip),capture),frames_,NULL ); \
-    if( !ptrs_ ) frames[ptrs_++] = caller; \
-    if( ptrs_<capture ) RtlZeroMemory( \
-        frames_+ptrs_,(capture-ptrs_)*sizeof(void*) ); \
+    if( !ptrs_ ) frames_[ptrs_++] = caller; \
+    if( ptrs_<(capture) ) RtlZeroMemory( \
+        frames_+ptrs_,((capture)-ptrs_)*sizeof(void*) ); \
   } while( 0 )
 
 #define ERRNO_NOMEM 12
