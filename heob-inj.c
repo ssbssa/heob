@@ -4928,7 +4928,11 @@ VOID CALLBACK heob( ULONG_PTR arg )
   ld->ei = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(exceptionInfo) );
 
   HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
-  RTL_OSVERSIONINFOW osversion = { sizeof(osversion),5,1,0,0,L"" };
+  RTL_OSVERSIONINFOW osversion;
+  RtlZeroMemory( &osversion,sizeof(osversion) );
+  osversion.dwOSVersionInfoSize = sizeof(osversion);
+  osversion.dwMajorVersion = 5;
+  osversion.dwMinorVersion = 1;
   if( ntdll )
   {
     func_RtlGetVersion *fRtlGetVersion =
