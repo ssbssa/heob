@@ -7597,6 +7597,7 @@ static void mainLoop( appData *ad,UINT *exitCode )
 
             HANDLE dumpFile = CreateFileW( dumpName,GENERIC_WRITE,
                 0,NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
+            DWORD e = dumpFile!=INVALID_HANDLE_VALUE ? 0 : GetLastError();
             if( dumpFile!=INVALID_HANDLE_VALUE )
             {
               MINIDUMP_EXCEPTION_INFORMATION mei;
@@ -7606,15 +7607,20 @@ static void mainLoop( appData *ad,UINT *exitCode )
 
               MINIDUMP_TYPE dumpType = opt->exceptionDetails==-1 ?
                 MiniDumpWithFullMemory : MiniDumpNormal;
-              ds->fMiniDumpWriteDump( ad->pi.hProcess,ad->pi.dwProcessId,
+              int dumpOk = ds->fMiniDumpWriteDump(
+                  ad->pi.hProcess,ad->pi.dwProcessId,
                   dumpFile,dumpType,&mei,NULL,NULL );
+              e = dumpOk ? 0 : GetLastError();
 
               CloseHandle( dumpFile );
-
-              printf( "\n$Screated minidump file: $O%S\n",dumpName );
             }
 
             HeapFree( heap,0,dumpName );
+
+            if( e==0 )
+              printf( "\n$Screated minidump file: $O%S\n",dumpName );
+            else
+              printf( "\n$Werror creating minidump file (%e)\n",e );
           }
 
           SetEvent( ad->miniDumpWait );
