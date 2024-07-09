@@ -100,10 +100,9 @@ wchar_t *num2hexstrW( wchar_t *str,UINT64 arg,int count )
 
 static char *num2commastr( char *start,uintptr_t arg,int minus,int comma )
 {
-  if( !arg )
-    (--start)[0] = '0';
   int c = 0;
-  while( arg )
+  if( comma<0 ) comma = 0;
+  while( arg || c<=comma )
   {
     (--start)[0] = arg%10 + '0';
     arg /= 10;
