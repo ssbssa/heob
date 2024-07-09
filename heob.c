@@ -8410,8 +8410,8 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
       inheritHandles = TRUE;
     }
     else
-      RtlZeroMemory( &si,sizeof(STARTUPINFO) );
-    si.cb = sizeof(STARTUPINFO);
+      RtlZeroMemory( &si,sizeof(si) );
+    si.cb = sizeof(si);
     BOOL result = CreateProcessW( NULL,args,NULL,NULL,inheritHandles,
         CREATE_SUSPENDED|((opt.newConsole&1)?CREATE_NEW_CONSOLE:0),
         NULL,NULL,&si,&ad->pi );
