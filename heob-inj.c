@@ -1802,19 +1802,22 @@ static void writeLeakData( void )
 
     int j;
     allocation *a_send = NULL;
-    int a_count = 0;
+    unsigned a_count = 0;
+    size_t a_send_size = 0;
     for( j=0; j<alloc_q; j++ )
     {
       allocation *a = sa->alloc_a + j;
       if( a->recording && a->ftFreed==FT_COUNT && a->lt<lDetails )
       {
-        if( a_send!=a )
+        a_send_size += sizeof(allocation);
+        if( a_send!=a || a_send_size>=0x10000000 )
         {
           if( a_send )
             WriteFile( rd->master,
                 a_send-a_count,a_count*sizeof(allocation),&written,NULL );
           a_send = a;
           a_count = 0;
+          a_send_size = 0;
         }
         a_send++;
         a_count++;

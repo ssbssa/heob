@@ -2938,7 +2938,7 @@ static int *sort_allocations( void *base,int *idxs,int num,int size,
 
   if( !idxs )
   {
-    idxs = HeapAlloc( heap,0,num*sizeof(int) );
+    idxs = HeapAlloc( heap,0,(size_t)num*sizeof(int) );
     for( i=0; i<num; i++ )
       idxs[i] = i;
   }
@@ -2948,9 +2948,10 @@ static int *sort_allocations( void *base,int *idxs,int num,int size,
     for( r=i; r*2+1<num; r=c )
     {
       c = r*2 + 1;
-      if( c<num-1 && compar(b+idxs[c]*size,b+idxs[c+1]*size)<0 )
+      if( c<num-1 &&
+          compar(b+(size_t)idxs[c]*size,b+(size_t)idxs[c+1]*size)<0 )
         c++;
-      if( compar(b+idxs[r]*size,b+idxs[c]*size)>=0 )
+      if( compar(b+(size_t)idxs[r]*size,b+(size_t)idxs[c]*size)>=0 )
         break;
       swap_idxs( idxs+r,idxs+c );
     }
@@ -2962,9 +2963,9 @@ static int *sort_allocations( void *base,int *idxs,int num,int size,
     for( r=0; r*2+1<i; r=c )
     {
       c = r*2 + 1;
-      if( c<i-1 && compar(b+idxs[c]*size,b+idxs[c+1]*size)<0 )
+      if( c<i-1 && compar(b+(size_t)idxs[c]*size,b+(size_t)idxs[c+1]*size)<0 )
         c++;
-      if( compar(b+idxs[r]*size,b+idxs[c]*size)>=0 )
+      if( compar(b+(size_t)idxs[r]*size,b+(size_t)idxs[c]*size)>=0 )
         break;
       swap_idxs( idxs+r,idxs+c );
     }
@@ -3188,10 +3189,10 @@ static void stackChildGrouping(
   sgParent->child_q++;
   if( !sgParent->child_a )
     sgParent->child_a = HeapAlloc( heap,0,
-        sgParent->child_q*sizeof(stackGroup) );
+        (size_t)sgParent->child_q*sizeof(stackGroup) );
   else
     sgParent->child_a = HeapReAlloc( heap,0,
-        sgParent->child_a,sgParent->child_q*sizeof(stackGroup) );
+        sgParent->child_a,(size_t)sgParent->child_q*sizeof(stackGroup) );
   stackGroup *sg = sgParent->child_a + ( sgParent->child_q - 1 );
   sg->stackStart = stackIdx;
   sg->stackIndent = stackIndent;
@@ -3668,7 +3669,7 @@ static void printLeaks( allocation *alloc_a,int alloc_q,
         int countI = i - startI;
         sg->child_q = countI;
         sg->child_a = HeapAlloc(
-            heap,HEAP_ZERO_MEMORY,countI*sizeof(stackGroup) );
+            heap,HEAP_ZERO_MEMORY,(size_t)countI*sizeof(stackGroup) );
         int curAllocSum = 0;
         size_t curAllocSumSize = 0;
         for( i=0; i<countI; i++ )
@@ -3822,7 +3823,7 @@ static DWORD WINAPI samplingThread( LPVOID arg )
     if( samp_add>0 )
     {
       allocation *samp_a = ad->samp_a;
-      size_t s = (ad->samp_s+samp_add)*sizeof(allocation);
+      size_t s = (size_t)(ad->samp_s+samp_add)*sizeof(allocation);
       if( !samp_a )
         samp_a = HeapAlloc( heap,0,s );
       else
@@ -5902,7 +5903,7 @@ static void writeExceptionThreads( appData *ad,textColor *tc,
   int thread_q = 0;
   int thread_s = 16;
   allocation *thread_a =
-    HeapAlloc( ad->heap,0,thread_s*sizeof(allocation) );
+    HeapAlloc( ad->heap,0,(size_t)thread_s*sizeof(allocation) );
   if( !thread_a ) return;
 
 #ifndef NO_THREADS
@@ -5927,7 +5928,7 @@ static void writeExceptionThreads( appData *ad,textColor *tc,
     {
       thread_s += 16;
       allocation *a = HeapReAlloc(
-          ad->heap,0,thread_a,thread_s*sizeof(allocation) );
+          ad->heap,0,thread_a,(size_t)thread_s*sizeof(allocation) );
       if( !a )
       {
         CloseHandle( thread );
@@ -6007,10 +6008,11 @@ static int addDumpMemoryLoc( appData *ad,
     dump_memory_loc *dump_mem_a = ad->dump_mem_a;
     int dump_mem_q = ad->dump_mem_q + 64;
     if( !dump_mem_a )
-      dump_mem_a = HeapAlloc( ad->heap,0,dump_mem_q*sizeof(dump_memory_loc) );
+      dump_mem_a = HeapAlloc(
+          ad->heap,0,(size_t)dump_mem_q*sizeof(dump_memory_loc) );
     else
       dump_mem_a = HeapReAlloc(
-          ad->heap,0,dump_mem_a,dump_mem_q*sizeof(dump_memory_loc) );
+          ad->heap,0,dump_mem_a,(size_t)dump_mem_q*sizeof(dump_memory_loc) );
     if( !dump_mem_a ) return( 0 );
 
     ad->dump_mem_a = dump_mem_a;
@@ -6607,7 +6609,8 @@ static int isMinidump( appData *ad,const wchar_t *name )
       (ad->opt->exceptionDetails&8) )
   {
     int c = mtl->NumberOfThreads;
-    allocation *aa = HeapAlloc( heap,HEAP_ZERO_MEMORY,c*sizeof(allocation) );
+    allocation *aa = HeapAlloc(
+        heap,HEAP_ZERO_MEMORY,(size_t)c*sizeof(allocation) );
 
     int t;
     for( t=0; t<c; t++ )
@@ -6987,8 +6990,9 @@ static void mainLoop( appData *ad,UINT *exitCode )
             break;
           if( alloc_q )
           {
-            alloc_a = HeapAlloc( heap,0,alloc_q*sizeof(allocation) );
-            if( !readFile(readPipe,alloc_a,alloc_q*sizeof(allocation),&ov) )
+            alloc_a = HeapAlloc( heap,0,(size_t)alloc_q*sizeof(allocation) );
+            if( !readFile(readPipe,alloc_a,
+                  (size_t)alloc_q*sizeof(allocation),&ov) )
               break;
           }
 
@@ -7015,7 +7019,7 @@ static void mainLoop( appData *ad,UINT *exitCode )
               break;
             }
             content_ptrs =
-              HeapAlloc( heap,0,alloc_q*sizeof(unsigned char*) );
+              HeapAlloc( heap,0,(size_t)alloc_q*sizeof(unsigned char*) );
             size_t leakContents = opt->leakContents;
             size_t content_pos = 0;
             for( lc=0; lc<alloc_q; lc++ )
