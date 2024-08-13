@@ -5315,6 +5315,12 @@ static int checkModule( appData *ad,textColor *tc,textColor *tcXml,int level,
   }
   if( problems ) return( 0 );
 
+  if( !errCode )
+  {
+    printf( "%i$Oall dependencies found\n",level+1 );
+    return( 0 );
+  }
+
   if( errCode==ERROR_DLL_INIT_FAILED )
   {
     printf( "%i$Wdll initialization routine failed\n",level+1 );
@@ -5383,19 +5389,28 @@ static void checkExecutable( appData *ad,textColor *tcXml,
     return;
   }
 
-  const char *ecStr =
-    ec==STATUS_DLL_NOT_FOUND ? "DLL_NOT_FOUND" :
-    ec==STATUS_ORDINAL_NOT_FOUND ? "ORDINAL_NOT_FOUND" :
-    ec==STATUS_ENTRYPOINT_NOT_FOUND ? "ENTRYPOINT_NOT_FOUND" :
-    ec==STATUS_INVALID_IMAGE_FORMAT ? "INVALID_IMAGE_FORMAT" :
-    "DLL_INIT_FAILED";
-  printf( "\n$Sdll loading failure on process startup (%s):\n",ecStr );
-
-  mprintf( tcXml,
-      "  <what>dll loading failure on process startup (%s)</what>\n"
-      "  <auxwhat>dll dependencies</auxwhat>\n"
-      "  <stack>\n",
-      ecStr );
+  if( ec )
+  {
+    const char *ecStr =
+      ec==STATUS_DLL_NOT_FOUND ? "DLL_NOT_FOUND" :
+      ec==STATUS_ORDINAL_NOT_FOUND ? "ORDINAL_NOT_FOUND" :
+      ec==STATUS_ENTRYPOINT_NOT_FOUND ? "ENTRYPOINT_NOT_FOUND" :
+      ec==STATUS_INVALID_IMAGE_FORMAT ? "INVALID_IMAGE_FORMAT" :
+      "DLL_INIT_FAILED";
+    printf( "\n$Sdll loading failure on process startup (%s):\n",ecStr );
+    mprintf( tcXml,
+        "  <what>dll loading failure on process startup (%s)</what>\n"
+        "  <auxwhat>dll dependencies</auxwhat>\n"
+        "  <stack>\n",
+        ecStr );
+  }
+  else
+  {
+    printf( "\n$Sdll dependency check:\n" );
+    mprintf( tcXml,
+        "  <what>dll dependency check</what>\n"
+        "  <stack>\n" );
+  }
 
   wchar_t *lastDelim = strrchrW( exePath,'\\' );
   if( lastDelim && lastDelim>exePath )
@@ -7775,7 +7790,10 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
     printf( "     %i",1 );
   printf( "\n" );
   if( fullhelp )
+  {
     printf( "    $I-y$BX$N    symbol path\n" );
+    printf( "    $I-Y$BX$N    check dll dependencies\n" );
+  }
   printf( "    $I-P$BX$N    show process ID and wait [$I%d$N]\n",
       defopt->pid );
   printf( "    $I-c$BX$N    create new console [$I%d$N]\n",
@@ -8085,6 +8103,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   wchar_t badArg = 0;
   int keepSuspended = 0;
   int fakeAttached = 0;
+  int checkDllDependencies = 0;
   // permanent options {{{
   opt.groupLeaks = -1;
 #if USE_STACKWALK
@@ -8124,6 +8143,10 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
       case 'y':
         if( ad->symPath ) break;
         ad->symPath = getQuotedStringOption( args+2,heap,&args );
+        break;
+
+      case 'Y':
+        checkDllDependencies = wtoi( args+2 );
         break;
 
       case 'A':
@@ -8379,6 +8402,18 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     args = NULL;
   }
   // }}}
+
+  if( checkDllDependencies && args && args[0] )
+  {
+    wchar_t *noQuotes = getQuotedStringOption( args,heap,&args );
+    if( noQuotes )
+    {
+      checkExecutable( ad,NULL,args,0 );
+      HeapFree( heap,0,noQuotes );
+      exitHeob( ad,HEOB_TRACE,0,0 );
+    }
+    args = NULL;
+  }
 
   if( (!args || !args[0]) && !opt.attached )
     showHelpText( ad,&defopt,fullhelp );
