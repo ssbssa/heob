@@ -5354,25 +5354,9 @@ static void differentThreadExitCode( appData *ad,DWORD exitCode )
 
 }
 
-static DWORD unexpectedEnd( appData *ad,textColor *tcXml,int *errorWritten )
+static void checkExecutable( appData *ad,textColor *tcXml,
+    const wchar_t *exePath,DWORD ec )
 {
-  *errorWritten = 0;
-
-  DWORD ec;
-  if( !GetExitCodeProcess(ad->pi.hProcess,&ec) ) ec = 0;
-
-  if( ec!=STATUS_DLL_NOT_FOUND && ec!=STATUS_ORDINAL_NOT_FOUND &&
-      ec!=STATUS_ENTRYPOINT_NOT_FOUND && ec!=STATUS_DLL_INIT_FAILED &&
-      ec!=STATUS_INVALID_IMAGE_FORMAT )
-  {
-    differentThreadExitCode( ad,ec );
-    return( ec );
-  }
-
-  *errorWritten = 1;
-
-  HANDLE heap = ad->heap;
-  wchar_t *exePath = ad->exePathW;
   textColor *tc = ad->tcOut;
 
   int xmlCreated = 0;
@@ -5386,8 +5370,6 @@ static DWORD unexpectedEnd( appData *ad,textColor *tcXml,int *errorWritten )
       "<error>\n"
       "  <kind>SyscallParam</kind>\n" );
 
-  nameOfProcess( GetModuleHandle("ntdll.dll"),
-      heap,ad->pi.hProcess,exePath,-1 );
   HMODULE exeMod =
     LoadLibraryExW( exePath,NULL,DONT_RESOLVE_DLL_REFERENCES );
   if( !exeMod )
@@ -5398,7 +5380,7 @@ static DWORD unexpectedEnd( appData *ad,textColor *tcXml,int *errorWritten )
         "</error>\n\n",
         exePath );
     if( xmlCreated ) writeXmlFooter( tcXml,ad );
-    return( ec );
+    return;
   }
 
   const char *ecStr =
@@ -5430,6 +5412,32 @@ static DWORD unexpectedEnd( appData *ad,textColor *tcXml,int *errorWritten )
   if( xmlCreated ) writeXmlFooter( tcXml,ad );
 
   FreeLibrary( exeMod );
+}
+
+static DWORD unexpectedEnd( appData *ad,textColor *tcXml,int *errorWritten )
+{
+  *errorWritten = 0;
+
+  DWORD ec;
+  if( !GetExitCodeProcess(ad->pi.hProcess,&ec) ) ec = 0;
+
+  if( ec!=STATUS_DLL_NOT_FOUND && ec!=STATUS_ORDINAL_NOT_FOUND &&
+      ec!=STATUS_ENTRYPOINT_NOT_FOUND && ec!=STATUS_DLL_INIT_FAILED &&
+      ec!=STATUS_INVALID_IMAGE_FORMAT )
+  {
+    differentThreadExitCode( ad,ec );
+    return( ec );
+  }
+
+  *errorWritten = 1;
+
+  HANDLE heap = ad->heap;
+  wchar_t *exePath = ad->exePathW;
+
+  nameOfProcess( GetModuleHandle("ntdll.dll"),
+      heap,ad->pi.hProcess,exePath,-1 );
+
+  checkExecutable( ad,tcXml,exePath,ec );
 
   return( ec );
 }
