@@ -5221,6 +5221,7 @@ static int checkModule( appData *ad,textColor *tc,textColor *tcXml,int level,
       exePath );
 
   UINT i;
+  int problems = 0;
   for( i=0; iid[i].Characteristics; i++ )
   {
     if( !iid[i].FirstThunk || !iid[i].OriginalFirstThunk )
@@ -5289,7 +5290,7 @@ static int checkModule( appData *ad,textColor *tc,textColor *tcXml,int level,
       }
 
       FreeLibrary( subMod );
-      if( exePath[0] ) return( 0 );
+      if( exePath[0] ) problems++;
       continue;
     }
 
@@ -5310,8 +5311,9 @@ static int checkModule( appData *ad,textColor *tc,textColor *tcXml,int level,
           curModName );
     }
 
-    return( 0 );
+    problems++;
   }
+  if( problems ) return( 0 );
 
   if( errCode==ERROR_DLL_INIT_FAILED )
   {
