@@ -5318,7 +5318,7 @@ static int checkModule( appData *ad,textColor *tc,textColor *tcXml,int level,
   if( !errCode )
   {
     printf( "%i$Oall dependencies found\n",level+1 );
-    return( 0 );
+    return( 1 );
   }
 
   if( errCode==ERROR_DLL_INIT_FAILED )
@@ -5339,7 +5339,7 @@ static int checkModule( appData *ad,textColor *tc,textColor *tcXml,int level,
         errCode,errCode );
   }
 
-  return( 1 );
+  return( 0 );
 }
 
 static void differentThreadExitCode( appData *ad,DWORD exitCode )
@@ -5360,7 +5360,7 @@ static void differentThreadExitCode( appData *ad,DWORD exitCode )
 
 }
 
-static void checkExecutable( appData *ad,textColor *tcXml,
+static int checkExecutable( appData *ad,textColor *tcXml,
     const wchar_t *exePath,DWORD ec )
 {
   textColor *tc = ad->tcOut;
@@ -5386,7 +5386,7 @@ static void checkExecutable( appData *ad,textColor *tcXml,
         "</error>\n\n",
         exePath );
     if( xmlCreated ) writeXmlFooter( tcXml,ad );
-    return;
+    return( 0 );
   }
 
   if( ec )
@@ -5419,7 +5419,7 @@ static void checkExecutable( appData *ad,textColor *tcXml,
     SetDllDirectoryW( exePath );
   }
 
-  checkModule( ad,tc,tcXml,0,exeMod,0 );
+  int depOK = checkModule( ad,tc,tcXml,0,exeMod,0 );
 
   mprintf( tcXml,
       "  </stack>\n"
@@ -5427,6 +5427,8 @@ static void checkExecutable( appData *ad,textColor *tcXml,
   if( xmlCreated ) writeXmlFooter( tcXml,ad );
 
   FreeLibrary( exeMod );
+
+  return( depOK );
 }
 
 static DWORD unexpectedEnd( appData *ad,textColor *tcXml,int *errorWritten )
@@ -8408,9 +8410,9 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     wchar_t *noQuotes = getQuotedStringOption( args,heap,&args );
     if( noQuotes )
     {
-      checkExecutable( ad,NULL,args,0 );
+      int depOK = checkExecutable( ad,NULL,args,0 );
       HeapFree( heap,0,noQuotes );
-      exitHeob( ad,HEOB_TRACE,0,0 );
+      exitHeob( ad,HEOB_TRACE,0,depOK ? 0 : 1 );
     }
     args = NULL;
   }
