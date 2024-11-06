@@ -4,4 +4,5 @@ jobs:
   build:
     runs-on: windows-2022
     steps:
+      - uses: actions/checkout@v4
       - run: make BITS=64 PREF= strip-heob64
