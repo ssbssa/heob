@@ -1,0 +1,7 @@
+name: build with gcc
+on: [push]
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - run: make BITS=64 PREF= strip-heob64
