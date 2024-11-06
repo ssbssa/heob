@@ -13,3 +13,11 @@ jobs:
       - run: make BITS=64 PREF= strip-heob64
         env:
           PATH: c:\mingw64\bin;c:\msys64\usr\bin
+      - run: 7z a -mx=9 heob.7z heob32.exe heob64.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: heob
+          path: |
+            heob32.exe
+            heob64.exe
+          compression-level: 9
