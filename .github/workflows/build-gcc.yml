@@ -7,12 +7,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: 'true'
-      - run: |
-          gcc -v
-          echo PATH=$env:PATH
-      - run: |
-          gcc -v
-          make BITS=32 PREF= strip-heob32
+      - run: make BITS=32 PREF= strip-heob32
         env:
-          PATH: c:\mingw32\bin;${{ env.PATH }}
+          PATH: c:\mingw32\bin;c:\msys64\usr\bin
       - run: make BITS=64 PREF= strip-heob64
+        env:
+          PATH: c:\mingw64\bin;c:\msys64\usr\bin
