@@ -5,4 +5,7 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: 'true'
+      - run: gcc -v
       - run: make BITS=64 PREF= strip-heob64
