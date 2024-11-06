@@ -9,10 +9,10 @@ jobs:
           submodules: 'true'
       - run: |
           gcc -v
+          echo PATH=$env:PATH
+      - run: |
+          gcc -v
           make BITS=32 PREF= strip-heob32
         env:
           PATH: c:\mingw32\bin;${{ env.PATH }}
-      - run: |
-          gcc -v
-          echo PATH=$env:PATH
       - run: make BITS=64 PREF= strip-heob64
