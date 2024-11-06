@@ -9,3 +9,6 @@ jobs:
           submodules: 'true'
       - run: gcc -v
       - run: make BITS=64 PREF= strip-heob64
+      - run: gcc -v
+        env:
+          PATH: c:\mingw32\bin;${{ env.PATH }}
