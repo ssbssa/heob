@@ -20,3 +20,13 @@ jobs:
             heob32.exe
             heob64.exe
           compression-level: 9
+      - run: |
+          make BITS=32 PREF= allocer32.exe
+          make BITS=32 PREF= test
+        env:
+          PATH: c:\mingw32\bin;c:\msys64\usr\bin
+      - run: |
+          make BITS=64 PREF= allocer64.exe
+          make BITS=64 PREF= test
+        env:
+          PATH: c:\mingw64\bin;c:\msys64\usr\bin
