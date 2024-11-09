@@ -6,6 +6,9 @@ jobs:
     steps:
       - name: setup msys2
         uses: msys2/setup-msys2@v2
+        with:
+          install: >-
+            make
       - name: checkout sources
         uses: actions/checkout@v4
         with:
