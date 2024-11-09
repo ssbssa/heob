@@ -37,7 +37,6 @@ jobs:
         shell: msys2 {0}
         run: |
           make BITS=32 PREF= allocer32.exe
-          ./heob32.exe -p1 -a4 -f0 allocer32 1
           make BITS=32 PREF= test
         env:
           PATH: c:\mingw32\bin;c:\msys64\usr\bin
@@ -45,7 +44,11 @@ jobs:
         shell: msys2 {0}
         run: |
           make BITS=64 PREF= allocer64.exe
-          ./heob64.exe -p1 -a4 -f0 allocer64 1
           make BITS=64 PREF= test
         env:
           PATH: c:\mingw64\bin;c:\msys64\usr\bin
+      - name: upload test result
+        uses: actions/upload-artifact@v4
+        with:
+          name: tests
+          path: test*.diff
