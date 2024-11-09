@@ -25,12 +25,14 @@ jobs:
             heob64.exe
           compression-level: 9
       - name: test heob32
+        shell: cmd
         run: |
           c:\msys64\usr\bin\make BITS=32 PREF= allocer32.exe
           c:\msys64\usr\bin\make BITS=32 PREF= test
         env:
           PATH: c:\mingw32\bin;c:\msys64\usr\bin
       - name: test heob64
+        shell: cmd
         run: |
           c:\msys64\usr\bin\make BITS=64 PREF= allocer64.exe
           c:\msys64\usr\bin\make BITS=64 PREF= test
