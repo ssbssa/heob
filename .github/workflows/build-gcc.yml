@@ -4,33 +4,35 @@ jobs:
   build:
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
+      - name: checkout sources
+        uses: actions/checkout@v4
         with:
           submodules: 'true'
-      - run: make BITS=32 PREF= strip-heob32
+      - name: build heob32
+        run: c:\msys64\usr\bin\make BITS=32 PREF= strip-heob32
         env:
           PATH: c:\mingw32\bin;c:\msys64\usr\bin
-      - run: make BITS=64 PREF= strip-heob64
+      - name: build heob64
+        run: c:\msys64\usr\bin\make BITS=64 PREF= strip-heob64
         env:
           PATH: c:\mingw64\bin;c:\msys64\usr\bin
-      - uses: actions/upload-artifact@v4
+      - name: upload artifact
+        uses: actions/upload-artifact@v4
         with:
           name: heob
           path: |
             heob32.exe
             heob64.exe
           compression-level: 9
-      - shell: cmd
+      - name: test heob32
         run: |
-          bash -c "type make"
-          make BITS=32 PREF= allocer32.exe
-          make BITS=32 PREF= test
+          c:\msys64\usr\bin\make BITS=32 PREF= allocer32.exe
+          c:\msys64\usr\bin\make BITS=32 PREF= test
         env:
           PATH: c:\mingw32\bin;c:\msys64\usr\bin
-      - shell: cmd
+      - name: test heob64
         run: |
-          bash -c "type make"
-          make BITS=64 PREF= allocer64.exe
-          make BITS=64 PREF= test
+          c:\msys64\usr\bin\make BITS=64 PREF= allocer64.exe
+          c:\msys64\usr\bin\make BITS=64 PREF= test
         env:
           PATH: c:\mingw64\bin;c:\msys64\usr\bin
