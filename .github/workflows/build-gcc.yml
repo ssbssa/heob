@@ -10,6 +10,7 @@ jobs:
           path-type: inherit
           install: >-
             make
+            diff
       - name: checkout sources
         uses: actions/checkout@v4
         with:
