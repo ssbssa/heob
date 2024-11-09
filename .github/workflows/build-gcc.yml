@@ -22,12 +22,14 @@ jobs:
           compression-level: 9
       - shell: cmd
         run: |
+          where make
           make BITS=32 PREF= allocer32.exe
           make BITS=32 PREF= test
         env:
           PATH: c:\mingw32\bin;c:\msys64\usr\bin
       - shell: cmd
         run: |
+          where make
           make BITS=64 PREF= allocer64.exe
           make BITS=64 PREF= test
         env:
