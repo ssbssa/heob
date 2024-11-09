@@ -9,10 +9,12 @@ jobs:
         with:
           submodules: 'true'
       - name: build heob32
+        shell: cmd
         run: c:\msys64\usr\bin\make BITS=32 PREF= strip-heob32
         env:
           PATH: c:\mingw32\bin;c:\msys64\usr\bin
       - name: build heob64
+        shell: cmd
         run: c:\msys64\usr\bin\make BITS=64 PREF= strip-heob64
         env:
           PATH: c:\mingw64\bin;c:\msys64\usr\bin
