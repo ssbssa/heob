@@ -17,12 +17,12 @@ jobs:
           submodules: 'true'
       - name: build heob32
         shell: cmd
-        run: make BITS=32 PREF= strip-heob32
+        run: make BITS=32 PREF= strip-heob32 allocer32.exe
         env:
           PATH: c:\mingw32\bin;c:\msys64\usr\bin
       - name: build heob64
         shell: cmd
-        run: make BITS=64 PREF= strip-heob64
+        run: make BITS=64 PREF= strip-heob64 allocer64.exe
         env:
           PATH: c:\mingw64\bin;c:\msys64\usr\bin
       - name: upload artifact
@@ -36,14 +36,12 @@ jobs:
       - name: test heob32
         shell: msys2 {0}
         run: |
-          make BITS=32 PREF= CFLAGS=-mcrtdll=msvcrt allocer32.exe
           make BITS=32 PREF= test
         env:
           PATH: c:\mingw32\bin;c:\msys64\usr\bin
       - name: test heob64
         shell: msys2 {0}
         run: |
-          make BITS=64 PREF= CFLAGS=-mcrtdll=msvcrt allocer64.exe
           make BITS=64 PREF= test
         env:
           PATH: c:\mingw64\bin;c:\msys64\usr\bin
