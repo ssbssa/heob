@@ -36,14 +36,14 @@ jobs:
       - name: test heob32
         shell: msys2 {0}
         run: |
-          make BITS=32 PREF= allocer32.exe
+          make BITS=32 PREF= CFLAGS=-mcrtdll=msvcrt allocer32.exe
           make BITS=32 PREF= test
         env:
           PATH: c:\mingw32\bin;c:\msys64\usr\bin
       - name: test heob64
         shell: msys2 {0}
         run: |
-          make BITS=64 PREF= allocer64.exe
+          make BITS=64 PREF= CFLAGS=-mcrtdll=msvcrt allocer64.exe
           make BITS=64 PREF= test
         env:
           PATH: c:\mingw64\bin;c:\msys64\usr\bin
