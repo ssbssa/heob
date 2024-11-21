@@ -5199,14 +5199,16 @@ static void writeSvgFooter( textColor *tc,appData *ad )
 // process startup failure {{{
 
 static int checkModule( appData *ad,textColor *tc,textColor *tcXml,int level,
-    HMODULE mod,DWORD errCode )
+    HMODULE mod,DWORD errCode,int showAll )
 {
   PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)mod;
   PIMAGE_NT_HEADERS inh = (PIMAGE_NT_HEADERS)REL_PTR( idh,idh->e_lfanew );
 
   PIMAGE_DATA_DIRECTORY idd =
     &inh->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
-  if( !idd->Size ) return( 1 );
+  PIMAGE_DATA_DIRECTORY iddExport =
+    &inh->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+  if( !idd->Size && (!showAll || !iddExport->Size) ) return( 1 );
 
   PIMAGE_IMPORT_DESCRIPTOR iid =
     (PIMAGE_IMPORT_DESCRIPTOR)REL_PTR( idh,idd->VirtualAddress );
@@ -5220,6 +5222,39 @@ static int checkModule( appData *ad,textColor *tc,textColor *tcXml,int level,
       "    </frame>\n",
       exePath );
 
+  if( showAll && iddExport->Size )
+  {
+    printf( "%i$Wexports\n",level+1 );
+
+    DWORD iedStart = iddExport->VirtualAddress;
+    DWORD iedEnd = iedStart + iddExport->Size;
+    PIMAGE_EXPORT_DIRECTORY ied =
+      (PIMAGE_EXPORT_DIRECTORY)REL_PTR( idh,iedStart );
+    DWORD number = ied->NumberOfFunctions;
+    DWORD *functions = (DWORD*)REL_PTR( idh,ied->AddressOfFunctions );
+    DWORD nnames = ied->NumberOfNames;
+    DWORD *names = (DWORD*)REL_PTR( idh,ied->AddressOfNames );
+    WORD *ords = (WORD*)REL_PTR( idh,ied->AddressOfNameOrdinals );
+    DWORD ordinalBase = ied->Base;
+    for( DWORD i=0; i<number; i++ )
+    {
+      DWORD f = functions[i];
+      if( !f ) continue;
+      DWORD ordinal = ordinalBase + i;
+      DWORD n;
+      for( n=0; n<nnames && ords[n]!=i; n++ );
+      if( n<nnames )
+        printf( "%i$I%s",level+2,(char*)REL_PTR(idh,names[n]) );
+      else
+        printf( "%iordinal $I%u",level+2,ordinal );
+      if( f>iedStart && f<iedEnd )
+        printf( "$N -> %s",(char*)REL_PTR(idh,f) );
+      printf( "\n" );
+    }
+  }
+
+  if( !idd->Size ) return( 1 );
+
   UINT i;
   int problems = 0;
   for( i=0; iid[i].Characteristics; i++ )
@@ -5230,10 +5265,12 @@ static int checkModule( appData *ad,textColor *tc,textColor *tcXml,int level,
     PSTR curModName = (PSTR)REL_PTR( idh,iid[i].Name );
     if( !curModName[0] ) continue;
 
-    HMODULE subMod = LoadLibrary( curModName );
-    if( subMod )
+    HMODULE subMod = showAll ? NULL : LoadLibrary( curModName );
+    if( subMod || showAll )
     {
       exePath[0] = 0;
+      if( showAll )
+        printf( "%i%s\n",level+1,curModName );
 
       PIMAGE_THUNK_DATA originalThunk =
         (PIMAGE_THUNK_DATA)REL_PTR( idh,iid[i].OriginalFirstThunk );
@@ -5244,7 +5281,9 @@ static int checkModule( appData *ad,textColor *tc,textColor *tcXml,int level,
         {
           PIMAGE_IMPORT_BY_NAME import = (PIMAGE_IMPORT_BY_NAME)REL_PTR(
               idh,originalThunk->u1.AddressOfData );
-          if( !GetProcAddress(subMod,(LPCSTR)import->Name) )
+          if( showAll )
+            printf( "%i$I%s\n",level+2,import->Name );
+          else if( !GetProcAddress(subMod,(LPCSTR)import->Name) )
           {
             if( !exePath[0] )
             {
@@ -5267,7 +5306,9 @@ static int checkModule( appData *ad,textColor *tc,textColor *tcXml,int level,
         else
         {
           WORD ordinal = (WORD)originalThunk->u1.Ordinal;
-          if( !GetProcAddress(subMod,(LPCSTR)(UINT_PTR)ordinal) )
+          if( showAll )
+            printf( "%iordinal $I%d\n",level+2,ordinal );
+          else if( !GetProcAddress(subMod,(LPCSTR)(UINT_PTR)ordinal) )
           {
             if( !exePath[0] )
             {
@@ -5289,7 +5330,7 @@ static int checkModule( appData *ad,textColor *tc,textColor *tcXml,int level,
         }
       }
 
-      FreeLibrary( subMod );
+      if( subMod ) FreeLibrary( subMod );
       if( exePath[0] ) problems++;
       continue;
     }
@@ -5298,7 +5339,7 @@ static int checkModule( appData *ad,textColor *tc,textColor *tcXml,int level,
     subMod = LoadLibraryEx( curModName,NULL,DONT_RESOLVE_DLL_REFERENCES );
     if( subMod )
     {
-      checkModule( ad,tc,tcXml,level+1,subMod,e );
+      checkModule( ad,tc,tcXml,level+1,subMod,e,showAll );
       FreeLibrary( subMod );
     }
     else
@@ -5317,7 +5358,8 @@ static int checkModule( appData *ad,textColor *tc,textColor *tcXml,int level,
 
   if( !errCode )
   {
-    printf( "%i$Oall dependencies found\n",level+1 );
+    if( !showAll )
+      printf( "%i$Oall dependencies found\n",level+1 );
     return( 1 );
   }
 
@@ -5361,7 +5403,7 @@ static void differentThreadExitCode( appData *ad,DWORD exitCode )
 }
 
 static int checkExecutable( appData *ad,textColor *tcXml,
-    const wchar_t *exePath,DWORD ec )
+    const wchar_t *exePath,DWORD ec,int showAll )
 {
   textColor *tc = ad->tcOut;
 
@@ -5406,10 +5448,13 @@ static int checkExecutable( appData *ad,textColor *tcXml,
   }
   else
   {
-    printf( "\n$Sdll dependency check:\n" );
+    const char *title = showAll ?
+      "dll exports and imports" : "dll dependency check";
+    printf( "\n$S%s:\n",title );
     mprintf( tcXml,
-        "  <what>dll dependency check</what>\n"
-        "  <stack>\n" );
+        "  <what>%s</what>\n"
+        "  <stack>\n",
+        title );
   }
 
   wchar_t *lastDelim = strrchrW( exePath,'\\' );
@@ -5419,7 +5464,7 @@ static int checkExecutable( appData *ad,textColor *tcXml,
     SetDllDirectoryW( exePath );
   }
 
-  int depOK = checkModule( ad,tc,tcXml,0,exeMod,0 );
+  int depOK = checkModule( ad,tc,tcXml,0,exeMod,0,showAll );
 
   mprintf( tcXml,
       "  </stack>\n"
@@ -5454,7 +5499,7 @@ static DWORD unexpectedEnd( appData *ad,textColor *tcXml,int *errorWritten )
   nameOfProcess( GetModuleHandle("ntdll.dll"),
       heap,ad->pi.hProcess,exePath,-1 );
 
-  checkExecutable( ad,tcXml,exePath,ec );
+  checkExecutable( ad,tcXml,exePath,ec,0 );
 
   return( ec );
 }
@@ -7795,6 +7840,12 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
   {
     printf( "    $I-y$BX$N    symbol path\n" );
     printf( "    $I-Y$BX$N    check dll dependencies\n" );
+    if( fullhelp>1 )
+    {
+      printf( "              $I0$N = off\n" );
+      printf( "              $I1$N = on\n" );
+      printf( "              $I2$N = show all dll exports and imports\n" );
+    }
   }
   printf( "    $I-P$BX$N    show process ID and wait [$I%d$N]\n",
       defopt->pid );
@@ -8410,7 +8461,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     wchar_t *noQuotes = getQuotedStringOption( args,heap,&args );
     if( noQuotes )
     {
-      int depOK = checkExecutable( ad,NULL,args,0 );
+      int depOK = checkExecutable( ad,NULL,args,0,checkDllDependencies>1 );
       HeapFree( heap,0,noQuotes );
       exitHeob( ad,HEOB_TRACE,0,depOK ? 0 : 1 );
     }
