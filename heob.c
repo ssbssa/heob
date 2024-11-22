@@ -7691,12 +7691,12 @@ static void mainLoop( appData *ad,UINT *exitCode )
               CloseHandle( dumpFile );
             }
 
-            HeapFree( heap,0,dumpName );
-
             if( e==0 )
               printf( "\n$Screated minidump file: $O%S\n",dumpName );
             else
               printf( "\n$Werror creating minidump file (%e)\n",e );
+
+            HeapFree( heap,0,dumpName );
           }
 
           SetEvent( ad->miniDumpWait );
