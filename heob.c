@@ -7846,6 +7846,8 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
       printf( "              $I1$N = on\n" );
       printf( "              $I2$N = show all dll exports and imports\n" );
     }
+    printf( "    $I-#$BP$N[$I/$BT$N]"
+        "create minidump of $Ip$Nrocess (with $It$Nype [$I2$N])\n" );
   }
   printf( "    $I-P$BX$N    show process ID and wait [$I%d$N]\n",
       defopt->pid );
@@ -8157,6 +8159,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   int keepSuspended = 0;
   int fakeAttached = 0;
   int checkDllDependencies = 0;
+  DWORD dumpType = -1;
   // permanent options {{{
   opt.groupLeaks = -1;
 #if USE_STACKWALK
@@ -8200,6 +8203,17 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
 
       case 'Y':
         checkDllDependencies = wtoi( args+2 );
+        break;
+
+      case '#':
+        {
+          wchar_t *start = args + 2;
+          ad->pi.dwProcessId = (DWORD)wtop( start );
+          while( start[0] && start[0]!=' ' && start[0]!='/' ) start++;
+          dumpType = MiniDumpWithFullMemory;
+          if( start[0]=='/' )
+            dumpType = (DWORD)wtop( start+1 );
+        }
         break;
 
       case 'A':
@@ -8453,6 +8467,74 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
       exitHeob( ad,HEOB_TRACE,0,0 );
     }
     args = NULL;
+  }
+  // }}}
+
+  // create minidump {{{
+  if( dumpType!=(DWORD)-1 )
+  {
+    const char *msg = NULL;
+    wchar_t *dumpName = NULL;
+    HANDLE dumpFile = INVALID_HANDLE_VALUE;
+    dbgsym ds;
+
+    do
+    {
+      dbgsym_init( &ds,(HANDLE)0x1,NULL,&opt,NULL,heap,ad->symPath,FALSE,NULL );
+      if( !ds.fMiniDumpWriteDump )
+      {
+        msg = "finding MiniDumpWriteDump";
+        SetLastError( ERROR_PROC_NOT_FOUND );
+        break;
+      }
+
+      HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
+      if( !ntdll )
+      {
+        msg = "finding ntdll.dll";
+        break;
+      }
+
+      DWORD access = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ;
+      if( (dumpType&MiniDumpWithHandleData)!=0 )
+        access |= PROCESS_DUP_HANDLE;
+      ad->pi.hProcess = OpenProcess( access,FALSE,ad->pi.dwProcessId );
+      if( !ad->pi.hProcess )
+      {
+        msg = "opening process";
+        break;
+      }
+
+      nameOfProcess( ntdll,heap,ad->pi.hProcess,ad->exePathW,1 );
+      dumpName = expandFileNameVars( ad,L"%n-%p.dmp",NULL );
+      dumpFile = CreateFileW( dumpName,GENERIC_WRITE,
+          0,NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL );
+      if( dumpName==INVALID_HANDLE_VALUE )
+      {
+        msg = "creating minidump file";
+        break;
+      }
+
+      int dumpOk = ds.fMiniDumpWriteDump( ad->pi.hProcess,
+          ad->pi.dwProcessId,dumpFile,dumpType,NULL,NULL,NULL );
+      if( !dumpOk )
+        msg = "creating minidump file";
+    }
+    while( 0 );
+
+    DWORD e = 0;
+    if( msg )
+    {
+      e = GetLastError();
+      printf( "\n$Werror %s (%e)\n",msg,e );
+    }
+    else
+      printf( "\n$Screated minidump file: $O%S\n",dumpName );
+
+    if( dumpName ) HeapFree( heap,0,dumpName );
+    if( dumpFile!=INVALID_HANDLE_VALUE ) CloseHandle( dumpFile );
+    dbgsym_close( &ds );
+    exitHeob( ad,HEOB_TRACE,0,e );
   }
   // }}}
 
