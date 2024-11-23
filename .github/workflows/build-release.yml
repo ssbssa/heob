@@ -1,0 +1,50 @@
+name: build release
+on:
+  push:
+    tags:
+      - '*'
+jobs:
+  build_release:
+    name: build_release
+    runs-on: windows-2022
+    steps:
+      - name: checkout sources
+        uses: actions/checkout@v4
+        with:
+          submodules: 'true'
+
+      - name: build heob32.exe
+        run: make BITS=32 PREF= heob32.exe
+        env:
+          PATH: c:\mingw32\bin;c:\msys64\usr\bin
+      - name: build heob64.exe
+        run: make BITS=64 PREF= heob64.exe
+        env:
+          PATH: c:\mingw64\bin;c:\msys64\usr\bin
+
+      - name: compress debug artifact
+        shell: bash
+        run: 7z a -mx=9 heob-$GITHUB_REF_NAME-dbg.7z heob32.exe heob64.exe
+
+      - name: strip heob32.exe
+        run: make BITS=32 PREF= strip-heob32
+        env:
+          PATH: c:\mingw32\bin;c:\msys64\usr\bin
+      - name: strip heob64.exe
+        run: make BITS=64 PREF= strip-heob64
+        env:
+          PATH: c:\mingw64\bin;c:\msys64\usr\bin
+
+      - name: compress release artifact
+        shell: bash
+        run: 7z a -mx=9 heob-$GITHUB_REF_NAME.7z heob32.exe heob64.exe
+
+      - name: release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          prerelease: false
+          name: heob ${{ github.ref_name }}
+          files: |
+            heob-${{ github.ref_name }}.7z
+            heob-${{ github.ref_name }}-dbg.7z
