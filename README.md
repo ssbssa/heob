@@ -34,3 +34,8 @@ Run `build.bat` in the source directory.
 To get file/line information in stacktraces of executables with
 DWARF debug information (gcc), dwarfstack.dll needs to be available.
 For PDB debug information, dbghelp.dll is used.
+
+
+## code signing:
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org)

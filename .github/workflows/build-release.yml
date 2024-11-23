@@ -35,9 +35,30 @@ jobs:
         env:
           PATH: c:\mingw64\bin;c:\msys64\usr\bin
 
+      - name: upload-unsigned-artifact
+        id: upload-unsigned-artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: heob-unsigned
+          if-no-files-found: error
+          path: |
+            heob32.exe
+            heob64.exe
+      - name: sign
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+          organization-id: '${{ vars.SIGNPATH_ORGANIZATION_ID }}'
+          project-slug: 'heob'
+          signing-policy-slug: 'release-signing'
+          github-artifact-id: "${{ steps.upload-unsigned-artifact.outputs.artifact-id }}"
+          wait-for-completion: true
+          output-artifact-directory: 'heob-signed'
+
       - name: compress release artifact
         shell: bash
-        run: 7z a -mx=9 heob-$GITHUB_REF_NAME.7z heob32.exe heob64.exe
+        run: 7z a -mx=9 ../heob-$GITHUB_REF_NAME.7z heob32.exe heob64.exe
+        working-directory: heob-signed
 
       - name: release
         uses: softprops/action-gh-release@v2
