@@ -8869,6 +8869,8 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   }
   if( !out )
     opt.sourceCode = opt.leakContents = 0;
+  if( (tc && tc->out && GetFileType(tc->out)==FILE_TYPE_DISK) || ad->xmlName )
+    opt.attached = 1;
   // }}}
 
   const wchar_t *subXmlName = NULL;
