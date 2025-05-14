@@ -1253,6 +1253,10 @@ typedef struct appData
   HANDLE appCounterMapping;
   size_t kernel32offset;
   DWORD startTicks;
+  FILETIME ftCreationTime;
+  FILETIME ftExitTime;
+  FILETIME ftKernelTime;
+  FILETIME ftUserTime;
 #ifndef NO_THREADS
   DWORD threadNumTlsRemote;
 #endif
@@ -3914,6 +3918,7 @@ static void printAttachedProcessInfo( appData *ad,textColor *tc )
     printf( "$Iparent PID: $N%u\n",ad->ppid );
   if( ad->pExePath[0] )
     printf( "$Iparent application: $N%S\n",ad->pExePath );
+  printf( "$Iprocess creation time: $N%T\n",&ad->ftCreationTime );
   if( api->stdinName[0] )
     printf( "$Istdin: $N%S\n",api->stdinName );
   if( api->stdoutName[0] )
@@ -4448,6 +4453,7 @@ static textColor *writeXmlHeader( appData *ad )
     }
     if( api->currentDirectory[0] )
       printf( "  <line>directory: %S</line>\n",api->currentDirectory );
+    printf( "  <line>process creation time: %T</line>\n",&ad->ftCreationTime );
     if( api->stdinName[0] )
       printf( "  <line>stdin: %S</line>\n",api->stdinName );
     if( api->stdoutName[0] )
@@ -8917,6 +8923,9 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
           ad->noStackWalkRemote,&noStackWalk,sizeof(int),NULL );
     }
 #endif
+
+    GetProcessTimes( ad->pi.hProcess,&ad->ftCreationTime,
+        &ad->ftExitTime,&ad->ftKernelTime,&ad->ftUserTime );
 
     // debugger PID {{{
     if( ad->writeProcessPid )
