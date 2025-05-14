@@ -683,6 +683,31 @@ static int strstartW( const wchar_t *str,const wchar_t *start )
         str,l2,start,l2)==2 );
 }
 
+static inline DWORD div64( DWORD lowPart,DWORD highPart,DWORD divisor )
+{
+#ifndef _WIN64
+  HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
+  if( !ntdll ) return( -1 );
+  func_RtlExtendedLargeIntegerDivide *fRtlExtendedLargeIntegerDivide =
+    (func_RtlExtendedLargeIntegerDivide*)GetProcAddress(
+        ntdll,"RtlExtendedLargeIntegerDivide" );
+  if( !fRtlExtendedLargeIntegerDivide ) return( -1 );
+#endif
+
+  LARGE_INTEGER li;
+  li.LowPart = lowPart;
+  li.HighPart = highPart;
+
+#ifndef _WIN64
+  li = fRtlExtendedLargeIntegerDivide( li,divisor,NULL );
+#else
+  li.QuadPart /= divisor;
+#endif
+  if( li.QuadPart>(DWORD)-1 ) return( -1 );
+
+  return( li.LowPart );
+}
+
 // }}}
 // output variants {{{
 
@@ -3932,6 +3957,8 @@ static void printAttachedProcessInfo( appData *ad,textColor *tc )
 
 static void getAttachedProcessTimes( appData *ad )
 {
+  GetProcessTimes( ad->pi.hProcess,&ad->ftCreationTime,
+      &ad->ftExitTime,&ad->ftKernelTime,&ad->ftUserTime );
   SYSTEMTIME stExitTime;
   GetSystemTime( &stExitTime );
   SystemTimeToFileTime( &stExitTime,&ad->ftExitTime );
@@ -7783,7 +7810,15 @@ static void mainLoop( appData *ad,UINT *exitCode )
   }
 
   if( ad->api )
+  {
+    printf( "$Iuser CPU time:   $N%t\n",
+        div64(ad->ftUserTime.dwLowDateTime,ad->ftUserTime.dwHighDateTime,
+          10000000) );
+    printf( "$Ikernel CPU time: $N%t\n",
+        div64(ad->ftKernelTime.dwLowDateTime,ad->ftKernelTime.dwHighDateTime,
+          10000000) );
     printf( "$Iprocess exit time: $N%T\n",&ad->ftExitTime );
+  }
 
   CloseHandle( ov.hEvent );
   HeapFree( heap,0,aa );
