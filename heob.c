@@ -3930,6 +3930,13 @@ static void printAttachedProcessInfo( appData *ad,textColor *tc )
   printf( "\n" );
 }
 
+static void getAttachedProcessTimes( appData *ad )
+{
+  SYSTEMTIME stExitTime;
+  GetSystemTime( &stExitTime );
+  SystemTimeToFileTime( &stExitTime,&ad->ftExitTime );
+}
+
 // }}}
 // common options {{{
 
@@ -7167,6 +7174,8 @@ static void mainLoop( appData *ad,UINT *exitCode )
           ei->throwName[sizeof(ei->throwName)-1] = 0;
           if( ei->aq<1 || ei->aq>3 ) ei->aq = 1;
 
+          getAttachedProcessTimes( ad );
+
 #if USE_STACKWALK
           if( ds->swf.fStackWalk64 )
           {
@@ -7364,6 +7373,7 @@ static void mainLoop( appData *ad,UINT *exitCode )
 
       case WRITE_MAIN_ALLOC_FAIL:
         printf( "\n$Wnot enough memory to keep track of allocations\n" );
+        getAttachedProcessTimes( ad );
         terminated = -1;
         *ad->heobExit = HEOB_OUT_OF_MEMORY;
         break;
@@ -7505,6 +7515,8 @@ static void mainLoop( appData *ad,UINT *exitCode )
           terminated = -2;
           break;
         }
+
+        getAttachedProcessTimes( ad );
 
         if( !terminated )
           printf( "$Sexit code: %u (%x)\n",*exitCode,*exitCode );
@@ -7755,6 +7767,7 @@ static void mainLoop( appData *ad,UINT *exitCode )
 
   if( terminated==-2 )
   {
+    getAttachedProcessTimes( ad );
     int errorWritten;
     DWORD ec = unexpectedEnd( ad,tcXml,&errorWritten );
     printf( "\n$Wunexpected end of application" );
@@ -7768,6 +7781,9 @@ static void mainLoop( appData *ad,UINT *exitCode )
       *ad->heobExitData = ec;
     }
   }
+
+  if( ad->api )
+    printf( "$Iprocess exit time: $N%T\n",&ad->ftExitTime );
 
   CloseHandle( ov.hEvent );
   HeapFree( heap,0,aa );
