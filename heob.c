@@ -7811,6 +7811,7 @@ static void mainLoop( appData *ad,UINT *exitCode )
 
   if( ad->api )
   {
+    printf( "\n" );
     printf( "$Iuser CPU time:   $N%t\n",
         div64(ad->ftUserTime.dwLowDateTime,ad->ftUserTime.dwHighDateTime,
           10000000) );
