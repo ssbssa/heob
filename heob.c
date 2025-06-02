@@ -2226,6 +2226,33 @@ const char *thunkedFunctionNameByAddress(
   return( funcname );
 }
 
+static const char *demangleSymbol( dbgsym *ds,const char *symname )
+{
+#ifndef NO_DBGHELP
+  if( symname[0]=='?' && ds->fUnDecorateSymbolName &&
+      ds->fUnDecorateSymbolName(symname,
+        ds->undname,MAX_SYM_NAME,UNDNAME_NO_MS_KEYWORDS|
+        UNDNAME_NO_ACCESS_SPECIFIERS|UNDNAME_NO_MEMBER_TYPE) )
+  {
+    ds->undname[MAX_SYM_NAME] = 0;
+    return( ds->undname );
+  }
+#endif
+#ifndef NO_DWARFSTACK
+  if( symname[0]=='_' && symname[1]=='Z' && ds->fdwstDemangle &&
+      ds->fdwstDemangle(symname,ds->undname,MAX_SYM_NAME) )
+  {
+    ds->undname[MAX_SYM_NAME] = 0;
+    return( ds->undname );
+  }
+#endif
+#if defined(NO_DBGHELP) && defined(NO_DWARFSTACK)
+  (void)ds;
+#endif
+
+  return( symname );
+}
+
 static void locFuncCache(
     uint64_t addr,const wchar_t *filename,int lineno,const char *funcname,
     void *context,int columnno )
@@ -2348,27 +2375,7 @@ static void locFuncCache(
   // demangle function name {{{
 #if !defined(NO_DBGHELP) || !defined(NO_DWARFSTACK)
   if( lineno<=DWST_NO_DBG_SYM && funcname )
-  {
-    if( 0 );
-#ifndef NO_DBGHELP
-    else if( funcname[0]=='?' && ds->fUnDecorateSymbolName &&
-        ds->fUnDecorateSymbolName(funcname,
-          ds->undname,MAX_SYM_NAME,UNDNAME_NO_MS_KEYWORDS|
-          UNDNAME_NO_ACCESS_SPECIFIERS|UNDNAME_NO_MEMBER_TYPE) )
-    {
-      ds->undname[MAX_SYM_NAME] = 0;
-      funcname = ds->undname;
-    }
-#endif
-#ifndef NO_DWARFSTACK
-    else if( funcname[0]=='_' && funcname[1]=='Z' && ds->fdwstDemangle &&
-        ds->fdwstDemangle(funcname,ds->undname,MAX_SYM_NAME) )
-    {
-      ds->undname[MAX_SYM_NAME] = 0;
-      funcname = ds->undname;
-    }
-#endif
-  }
+    funcname = demangleSymbol( ds,funcname );
 #endif
   // }}}
 
