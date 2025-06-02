@@ -5347,7 +5347,7 @@ static int checkModule( appData *ad,textColor *tc,textColor *tcXml,int level,
           if( showAll )
           {
             printf( "%i$I%s\n",level+2,import->Name );
-            printDemangledSymbol( ad->ds,tc,level+3,import->Name );
+            printDemangledSymbol( ad->ds,tc,level+3,(char*)import->Name );
           }
           else if( !GetProcAddress(subMod,(LPCSTR)import->Name) )
           {
