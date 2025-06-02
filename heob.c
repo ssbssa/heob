@@ -5245,6 +5245,17 @@ static void writeSvgFooter( textColor *tc,appData *ad )
 // }}}
 // process startup failure {{{
 
+static void printDemangledSymbol( dbgsym *ds,textColor *tc,int level,
+    const char *symname )
+{
+  if( !symname ) return;
+
+  const char *demangled = demangleSymbol( ds,symname );
+  if( demangled==symname ) return;
+
+  printf( "%i$I%s\n",level,demangled );
+}
+
 static int checkModule( appData *ad,textColor *tc,textColor *tcXml,int level,
     HMODULE mod,DWORD errCode,int showAll )
 {
@@ -5290,13 +5301,18 @@ static int checkModule( appData *ad,textColor *tc,textColor *tcXml,int level,
       DWORD ordinal = ordinalBase + i;
       DWORD n;
       for( n=0; n<nnames && ords[n]!=i; n++ );
+      const char *name = NULL;
       if( n<nnames )
-        printf( "%i$I%s",level+2,(char*)REL_PTR(idh,names[n]) );
+      {
+        name = (char*)REL_PTR( idh,names[n] );
+        printf( "%i$I%s",level+2,name );
+      }
       else
         printf( "%iordinal $I%u",level+2,ordinal );
       if( f>iedStart && f<iedEnd )
         printf( "$N -> %s",(char*)REL_PTR(idh,f) );
       printf( "\n" );
+      printDemangledSymbol( ad->ds,tc,level+3,name );
     }
   }
 
@@ -5329,7 +5345,10 @@ static int checkModule( appData *ad,textColor *tc,textColor *tcXml,int level,
           PIMAGE_IMPORT_BY_NAME import = (PIMAGE_IMPORT_BY_NAME)REL_PTR(
               idh,originalThunk->u1.AddressOfData );
           if( showAll )
+          {
             printf( "%i$I%s\n",level+2,import->Name );
+            printDemangledSymbol( ad->ds,tc,level+3,import->Name );
+          }
           else if( !GetProcAddress(subMod,(LPCSTR)import->Name) )
           {
             if( !exePath[0] )
@@ -8616,7 +8635,17 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     wchar_t *noQuotes = getQuotedStringOption( args,heap,&args );
     if( noQuotes )
     {
-      int depOK = checkExecutable( ad,NULL,args,0,checkDllDependencies>1 );
+      int showAll = checkDllDependencies>1;
+      dbgsym ds;
+      if( showAll )
+      {
+        dbgsym_init( &ds,(HANDLE)0x1,NULL,&opt,NULL,heap,ad->symPath,FALSE,
+            NULL );
+        ad->ds = &ds;
+      }
+      int depOK = checkExecutable( ad,NULL,args,0,showAll );
+      if( showAll )
+        dbgsym_close( &ds );
       HeapFree( heap,0,noQuotes );
       exitHeob( ad,HEOB_TRACE,0,depOK ? 0 : 1 );
     }
