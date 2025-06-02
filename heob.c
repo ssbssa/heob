@@ -7904,8 +7904,10 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
       printf( "              $I1$N = on\n" );
       printf( "              $I2$N = show all dll exports and imports\n" );
     }
+#ifndef NO_DBGHELP
     printf( "    $I-#$BP$N[$I/$BT$N]"
         "create minidump of $Ip$Nrocess (with $It$Nype [$I2$N])\n" );
+#endif
   }
   printf( "    $I-P$BX$N    show process ID and wait [$I%d$N]\n",
       defopt->pid );
@@ -8217,7 +8219,9 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   int keepSuspended = 0;
   int fakeAttached = 0;
   int checkDllDependencies = 0;
+#ifndef NO_DBGHELP
   DWORD dumpType = -1;
+#endif
   // permanent options {{{
   opt.groupLeaks = -1;
 #if USE_STACKWALK
@@ -8263,6 +8267,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
         checkDllDependencies = wtoi( args+2 );
         break;
 
+#ifndef NO_DBGHELP
       case '#':
         {
           wchar_t *start = args + 2;
@@ -8273,6 +8278,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
             dumpType = (DWORD)wtop( start+1 );
         }
         break;
+#endif
 
       case 'A':
         {
@@ -8529,6 +8535,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   // }}}
 
   // create minidump {{{
+#ifndef NO_DBGHELP
   if( dumpType!=(DWORD)-1 )
   {
     const char *msg = NULL;
@@ -8594,6 +8601,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
     dbgsym_close( &ds );
     exitHeob( ad,HEOB_TRACE,0,e );
   }
+#endif
   // }}}
 
   if( checkDllDependencies && args && args[0] )
