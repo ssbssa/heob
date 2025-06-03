@@ -6168,11 +6168,14 @@ static int addDumpMemoryLoc( appData *ad,
 
 static int addDumpMemoryLocMaxSize( appData *ad,
     const char *rvaOfs,size_t rva,size_t size,size_t address,
-    size_t maxSize )
+    size_t maxSize,size_t *maxNeededSize )
 {
   size_t neededSize = rva + size;
   if( neededSize<=maxSize )
     return( addDumpMemoryLoc(ad,rvaOfs+rva,size,address) );
+
+  if( neededSize>*maxNeededSize )
+    *maxNeededSize = neededSize;
 
   return( 0 );
 }
@@ -6492,6 +6495,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
     return( 1 );
   }
 
+  size_t maxNeededSize = 0;
   if( mml )
   {
     uint32_t r;
@@ -6501,7 +6505,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
           dump,mml->MemoryRanges[r].Memory.Rva,
           mml->MemoryRanges[r].Memory.DataSize,
           (size_t)mml->MemoryRanges[r].StartOfMemoryRange,
-          size );
+          size,&maxNeededSize );
     }
   }
 
@@ -6514,7 +6518,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
       addDumpMemoryLocMaxSize( ad,
           dump,rva,(size_t)mm64l->MemoryRanges[r].DataSize,
           (size_t)mm64l->MemoryRanges[r].StartOfMemoryRange,
-          size );
+          size,&maxNeededSize );
 
       rva += (size_t)mm64l->MemoryRanges[r].DataSize;
     }
@@ -6608,7 +6612,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
       addDumpMemoryLocMaxSize( ad,
           dump,thread->Stack.Memory.Rva,thread->Stack.Memory.DataSize,
           (size_t)thread->Stack.StartOfMemoryRange,
-          size );
+          size,&maxNeededSize );
 
       size_t teb_ptr = (size_t)thread->Teb;
 #ifndef _WIN64
@@ -6668,6 +6672,10 @@ static int isMinidump( appData *ad,const wchar_t *name )
       printf( "$Iminidump timestamp:    $N%T\n",&ft );
     }
   }
+
+  if( maxNeededSize )
+    printf( "\n$Wtruncated minidump, size should be at least %B\n",
+        maxNeededSize );
 
   ds.swf.fReadProcessMemory = readDumpMemory;
   func_SymRegisterCallback64 *fSymRegisterCallback64 =
