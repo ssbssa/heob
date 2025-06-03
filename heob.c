@@ -6166,6 +6166,17 @@ static int addDumpMemoryLoc( appData *ad,
   return( 1 );
 }
 
+static int addDumpMemoryLocMaxSize( appData *ad,
+    const char *rvaOfs,size_t rva,size_t size,size_t address,
+    size_t maxSize )
+{
+  size_t neededSize = rva + size;
+  if( neededSize<=maxSize )
+    return( addDumpMemoryLoc(ad,rvaOfs+rva,size,address) );
+
+  return( 0 );
+}
+
 static const void *getDumpLoc( appData *ad,size_t address,size_t *size )
 {
   dump_memory_loc *dump_mem_a = ad->dump_mem_a;
@@ -6486,10 +6497,11 @@ static int isMinidump( appData *ad,const wchar_t *name )
     uint32_t r;
     for( r=0; r<mml->NumberOfMemoryRanges; r++)
     {
-      addDumpMemoryLoc( ad,
-          dump+mml->MemoryRanges[r].Memory.Rva,
+      addDumpMemoryLocMaxSize( ad,
+          dump,mml->MemoryRanges[r].Memory.Rva,
           mml->MemoryRanges[r].Memory.DataSize,
-          (size_t)mml->MemoryRanges[r].StartOfMemoryRange );
+          (size_t)mml->MemoryRanges[r].StartOfMemoryRange,
+          size );
     }
   }
 
@@ -6499,9 +6511,10 @@ static int isMinidump( appData *ad,const wchar_t *name )
     size_t r;
     for( r=0; r<mm64l->NumberOfMemoryRanges; r++ )
     {
-      addDumpMemoryLoc( ad,
-          dump+rva,(size_t)mm64l->MemoryRanges[r].DataSize,
-          (size_t)mm64l->MemoryRanges[r].StartOfMemoryRange );
+      addDumpMemoryLocMaxSize( ad,
+          dump,rva,(size_t)mm64l->MemoryRanges[r].DataSize,
+          (size_t)mm64l->MemoryRanges[r].StartOfMemoryRange,
+          size );
 
       rva += (size_t)mm64l->MemoryRanges[r].DataSize;
     }
@@ -6592,9 +6605,10 @@ static int isMinidump( appData *ad,const wchar_t *name )
     {
       MINIDUMP_THREAD *thread = mtl->Threads;
 
-      addDumpMemoryLoc( ad,
-          dump+thread->Stack.Memory.Rva,thread->Stack.Memory.DataSize,
-          (size_t)thread->Stack.StartOfMemoryRange );
+      addDumpMemoryLocMaxSize( ad,
+          dump,thread->Stack.Memory.Rva,thread->Stack.Memory.DataSize,
+          (size_t)thread->Stack.StartOfMemoryRange,
+          size );
 
       size_t teb_ptr = (size_t)thread->Teb;
 #ifndef _WIN64
