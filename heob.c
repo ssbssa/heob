@@ -6018,6 +6018,8 @@ static void printExceptionThreads( int thread_q,allocation *thread_a,
   {
     allocation *a = &thread_a[t];
     printf( "  $Sthread:" );
+    if( a->size )
+      printf( " $W(suspended=%U)",a->size );
     printThreadName( a->threadNum );
     printStackCount( a->frames,a->frameCount,
         mi_a,mi_q,ad->ds,FT_COUNT,0 );
@@ -6081,8 +6083,10 @@ static void writeExceptionThreads( appData *ad,textColor *tc,
     RtlZeroMemory( &context,sizeof(CONTEXT) );
     context.ContextFlags = CONTEXT_FULL;
 
-    if( UNLIKELY(SuspendThread(thread)==(DWORD)-1) ) continue;
+    DWORD suspendCount = SuspendThread( thread );
+    if( UNLIKELY(suspendCount==(DWORD)-1) ) continue;
 
+    a->size = suspendCount;
     GetThreadContext( thread,&context );
     stackwalkDbghelp(
         &ad->ds->swf,0,ad->pi.hProcess,thread,&context,a->frames );
@@ -6801,6 +6805,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
       }
 #endif
 
+      a->size = thread->SuspendCount;
       stackwalkDbghelp( &ad->ds->swf,0,ad,(HANDLE)2,context,a->frames );
     }
 
