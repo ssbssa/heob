@@ -440,7 +440,8 @@ static NOINLINE void mprintf( textColor *tc,const char *format,... )
             char str[32];
             char *end = str + sizeof(str) - 8;
             char *start = num2commastr( end,arg,0,3 );
-            if( end-start>5 ) end = start + 5;
+            int numchars = arg >= 1000000 ? 6 : 5;
+            if( end-start>numchars ) end = start + numchars;
             if( end[-1]=='.' ) end--;
             end++[0] = ' ';
             end++[0] = units[unit];
