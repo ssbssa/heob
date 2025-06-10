@@ -406,7 +406,7 @@ typedef LONG NTAPI func_NtGetNextThread(
     HANDLE,HANDLE,ACCESS_MASK,ULONG,ULONG,HANDLE* );
 
 typedef LONG NTAPI func_RtlGetVersion( PRTL_OSVERSIONINFOW );
-typedef LARGE_INTEGER func_RtlExtendedLargeIntegerDivide(
+typedef LARGE_INTEGER NTAPI func_RtlExtendedLargeIntegerDivide(
     LARGE_INTEGER,ULONG,PULONG );
 
 // }}}
