@@ -9,7 +9,7 @@ jobs:
         with:
           msystem: CLANGARM64
           update: true
-          install: mingw-w64-clang-aarch64-gcc
+          install: mingw-w64-clang-aarch64-gcc make
       - name: CI-Build
         shell: msys2 {0}
         run: |
