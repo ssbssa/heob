@@ -1,0 +1,15 @@
+name: build aarch64
+on: [push]
+jobs:
+  msys2-clangarm64:
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANGARM64
+          update: true
+      - name: CI-Build
+        shell: msys2 {0}
+        run: |
+          gcc -v
