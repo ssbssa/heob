@@ -5792,6 +5792,7 @@ static void writeException( appData *ad,textColor *tcXml,
       PREG( "ecx"   ,Ecx   ,"%X","       "        ,     );
       PREG( "eax"   ,Eax   ,"%X","       "        ,"\n" );
 #else
+#ifndef __aarch64__
       PREG( "rax"   ,Rax   ,"%X","    "           ,     );
       PREG( "rcx"   ,Rcx   ,"%X","  "             ,     );
       PREG( "rdx"   ,Rdx   ,"%X","  "             ,"\n" );
@@ -5807,6 +5808,8 @@ static void writeException( appData *ad,textColor *tcXml,
       PREG( "r13"   ,R13   ,"%X","    "           ,     );
       PREG( "r14"   ,R14   ,"%X","  "             ,     );
       PREG( "r15"   ,R15   ,"%X","  "             ,"\n" );
+#else
+#endif
 #endif
     }
     if( ei->c.ContextFlags&CONTEXT_CONTROL )
@@ -5819,13 +5822,17 @@ static void writeException( appData *ad,textColor *tcXml,
       PREG( "esp"   ,Esp   ,"%X","    "           ,     );
       PREG( "ss"    ,SegSs ,"%w","       "        ,"\n" );
 #else
+#ifndef __aarch64__
       PREG( "ss"    ,SegSs ,"%w","    "           ,     );
       PREG( "rsp"   ,Rsp   ,"%X","               ", );
       PREG( "cs"    ,SegCs ,"%w","  "             ,"\n" );
       PREG( "rip"   ,Rip   ,"%X","    "           ,     );
       PREG( "eflags",EFlags,"%x","  "             ,"\n" );
+#else
+#endif
 #endif
     }
+#ifdef CONTEXT_SEGMENTS
     if( ei->c.ContextFlags&CONTEXT_SEGMENTS )
     {
 #ifndef _WIN64
@@ -5840,6 +5847,7 @@ static void writeException( appData *ad,textColor *tcXml,
       PREG( "gs"    ,SegGs ,"%w","       "        ,"\n" );
 #endif
     }
+#endif
   }
   // }}}
 

@@ -13,4 +13,5 @@ jobs:
       - name: CI-Build
         shell: msys2 {0}
         run: |
-          make BITS=64 PREF= heob64.exe
+          make BITS=64 PREF= WARN= heob64.exe
+          make BITS=64 PREF= WARN= NO_THREAD_JUMPS= WARN_TEST=-Wno-implicit-exception-spec-mismatch allocer64.exe
