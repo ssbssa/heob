@@ -14,11 +14,16 @@ jobs:
           msystem: CLANGARM64
           update: true
           install: mingw-w64-clang-aarch64-gcc make diffutils sed
-      - name: build
+      - name: build heob
         shell: msys2 {0}
         run: |
           make BITS=64 PREF= WARN= heob64.exe
           make BITS=64 PREF= WARN= NO_THREAD_JUMPS= WARN_TEST=-Wno-implicit-exception-spec-mismatch allocer64.exe
+      - name: build dwarfstack
+        shell: msys2 {0}
+        run: |
+          make -C dwarfstack bin/dwarfstack.dll
+          cp -p dwarfstack/bin/dwarfstack.dll dwarfstack64.dll
       - name: test
         shell: msys2 {0}
         run: |
