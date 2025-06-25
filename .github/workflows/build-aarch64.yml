@@ -4,19 +4,24 @@ jobs:
   msys2-clangarm64:
     runs-on: windows-11-arm
     steps:
-      - uses: actions/checkout@v4
+      - name: checkout sources
+        uses: actions/checkout@v4
         with:
           submodules: true
-      - uses: msys2/setup-msys2@v2
+      - name: setup msys2
+        uses: msys2/setup-msys2@v2
         with:
           msystem: CLANGARM64
           update: true
           install: mingw-w64-clang-aarch64-gcc make diffutils sed
-      - name: CI-Build
+      - name: build
         shell: msys2 {0}
         run: |
           make BITS=64 PREF= WARN= heob64.exe
           make BITS=64 PREF= WARN= NO_THREAD_JUMPS= WARN_TEST=-Wno-implicit-exception-spec-mismatch allocer64.exe
+      - name: test
+        shell: msys2 {0}
+        run: |
           ./heob64 ./allocer64 1 || true
           ./heob64 ./allocer64 2 || true
           make BITS=64 PREF= SED="sed -b" test
