@@ -11,7 +11,7 @@ jobs:
         with:
           msystem: CLANGARM64
           update: true
-          install: mingw-w64-clang-aarch64-gcc make diffutils
+          install: mingw-w64-clang-aarch64-gcc make diffutils sed
       - name: CI-Build
         shell: msys2 {0}
         run: |
