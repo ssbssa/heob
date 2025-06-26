@@ -39,8 +39,10 @@ jobs:
       - name: test
         shell: msys2 {0}
         run: |
-          ./heob64 ./allocer64 1 || true
-          ./heob64 ./allocer64 2 || true
+          ./heob64 -Y2 /c/Windows/System32/ucrtbase.dll || true
+          ./heob64 -D15 ./allocer64 2 || true
+          ./heob64 -D-1 ./allocer64 2 || true
+          ./heob64 -D15 *.dmp
           make BITS=64 PREF= test
           head -n-0 test*.diff
       - name: upload test results
