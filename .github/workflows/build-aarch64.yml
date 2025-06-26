@@ -4,6 +4,18 @@ jobs:
   msys2-clangarm64:
     runs-on: windows-11-arm
     steps:
+      - name: upload dlls
+        uses: actions/upload-artifact@v4
+        with:
+          name: dlls
+          if-no-files-found: error
+          path: |
+            c:\windows\system32\ucrtbase.dll
+            c:\windows\system32\msvcrt.dll
+            c:\windows\system32\kernel32.dll
+            c:\windows\system32\ntdll.dll
+            c:\windows\system32\wsock32.dll
+            c:\windows\system32\cmd.exe
       - name: configure git line endings
         run: |
           git config --global core.autocrlf false
