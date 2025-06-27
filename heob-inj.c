@@ -5087,10 +5087,17 @@ VOID CALLBACK heob( ULONG_PTR arg )
       0xc2,0x04,0x00    // ret  $0x4
     };
 #else
+#ifndef __aarch64__
     unsigned char doNothing[] = {
       0x31,0xc0,        // xor  %eax,%eax
       0xc3              // retq
     };
+#else
+    unsigned char doNothing[] = {
+      0xe0,0x03,0x1f,0xaa,      // mov  x0,xzr
+      0xc0,0x03,0xf5,0xd6       // ret
+    };
+#endif
 #endif
     DWORD prot;
     VirtualProtect( fp,sizeof(doNothing),PAGE_EXECUTE_READWRITE,&prot );
