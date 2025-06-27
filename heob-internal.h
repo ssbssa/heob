@@ -134,17 +134,20 @@ register char *teb_reg18 __asm__("x18");
 #define cip Eip
 #define cfp Ebp
 #define MACH_TYPE IMAGE_FILE_MACHINE_I386
+#define PROC_ARCH PROCESSOR_ARCHITECTURE_INTEL
 #else
 #ifndef __aarch64__
 #define csp Rsp
 #define cip Rip
 #define cfp Rbp
 #define MACH_TYPE IMAGE_FILE_MACHINE_AMD64
+#define PROC_ARCH PROCESSOR_ARCHITECTURE_AMD64
 #else
 #define csp Sp
 #define cip Pc
 #define cfp Fp
 #define MACH_TYPE IMAGE_FILE_MACHINE_ARM64
+#define PROC_ARCH PROCESSOR_ARCHITECTURE_ARM64
 #endif
 #endif
 
