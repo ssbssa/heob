@@ -53,7 +53,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
   ep->ContextRecord->Eip += 10;
 #else
 #ifdef __aarch64__
-  ep->ContextRecord->Pc += 10;
+  ep->ContextRecord->Pc += 4;
 #else
   ep->ContextRecord->Rip += 10;
 #endif
