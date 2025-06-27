@@ -51,4 +51,6 @@ jobs:
           name: test-results
           if-no-files-found: error
           path: |
+            allocer64.exe
+            dll-alloc64.dll
             test*.diff
