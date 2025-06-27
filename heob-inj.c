@@ -5095,7 +5095,7 @@ VOID CALLBACK heob( ULONG_PTR arg )
 #else
     unsigned char doNothing[] = {
       0xe0,0x03,0x1f,0xaa,      // mov  x0,xzr
-      0xc0,0x03,0xf5,0xd6       // ret
+      0xc0,0x03,0x5f,0xd6       // ret
     };
 #endif
 #endif
