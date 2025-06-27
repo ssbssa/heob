@@ -577,6 +577,7 @@ int choose( int arg )
           char *copy = strdup( "memory leak X" );
           mem[i+1] = copy[0];
           copy[12] = '0' + i;
+          do_nothing( copy );
           if( !i ) free_me = copy;
           if( i==2 ) free( free_me );
         }
