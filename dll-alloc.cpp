@@ -58,6 +58,11 @@ extern "C" __declspec(dllexport) void dll_enter_critical_section( void )
   EnterCriticalSection( &cs );
 }
 
+extern "C" __declspec(dllexport) char *launder( char *s,int i )
+{
+  return( &s[i] );
+}
+
 extern "C" BOOL WINAPI DllMain(
     HINSTANCE hinstDLL,DWORD fdwReason,LPVOID lpvReserved )
 {
