@@ -23,11 +23,6 @@ jobs:
         run: |
           make BITS=64 PREF= WARN= strip-heob64
           make BITS=64 PREF= WARN= NO_THREAD_JUMPS= WARN_TEST=-Wno-implicit-exception-spec-mismatch allocer64.exe
-      - name: build heob with MSVC
-        shell: cmd
-        run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsamd64_arm64.bat"
-          call build.bat
       - name: build dwarfstack
         shell: msys2 {0}
         run: |
