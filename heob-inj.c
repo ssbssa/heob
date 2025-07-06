@@ -4273,7 +4273,11 @@ static LONG WINAPI exceptionWalker( PEXCEPTION_POINTERS ep )
 
   if( ec==EXCEPTION_BREAKPOINT )
   {
+#ifndef __aarch64__
     ep->ContextRecord->cip++;
+#else
+    ep->ContextRecord->cip += 4;
+#endif
     return( EXCEPTION_CONTINUE_EXECUTION );
   }
 
