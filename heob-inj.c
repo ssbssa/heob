@@ -1322,6 +1322,7 @@ static void *new_signal( int sig,void (*func)(int) )
     void *prevSigSegvHandler = rd->crtSigSegvHandler;
     rd->crtSigSegvHandler = func;
 #ifdef _WIN64
+#if 0
     char msg[100] = "\ncaught signal: prev=0x";
     HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
     DWORD written;
@@ -1334,13 +1335,16 @@ static void *new_signal( int sig,void (*func)(int) )
     WriteFile( out,msg,16,&written,NULL );
     lstrcpy( msg,"\n" );
     WriteFile( out,msg,lstrlen(msg),&written,NULL );
+#endif
     if( prevSigSegvHandler )
     {
       // try to outsmart the SEH based signal handling of mingw-w64,
       // which calls signal(SIGSEGV) on exception; detect it by looking
       // for the "__C_specific_handler" function 2 levels up
       uintptr_t moduleBase = 0;
-      uintptr_t unwindPc = get_unwind_pc( 1,&moduleBase );
+      uintptr_t unwindPc;
+#if 0
+      unwindPc = get_unwind_pc( 1,&moduleBase );
       if( moduleBase )
       {
         lstrcpy( msg,"  mod1:" );
@@ -1350,7 +1354,9 @@ static void *new_signal( int sig,void (*func)(int) )
         lstrcpy( msg,"\n" );
         WriteFile( out,msg,lstrlen(msg),&written,NULL );
       }
+#endif
       unwindPc = get_unwind_pc( 2,&moduleBase );
+#if 0
       lstrcpy( msg,"  mod=0x" );
       WriteFile( out,msg,lstrlen(msg),&written,NULL );
       for( int i=0; i<16; i++ )
@@ -1376,10 +1382,12 @@ static void *new_signal( int sig,void (*func)(int) )
       WriteFile( out,msg,16,&written,NULL );
       lstrcpy( msg,"\n" );
       WriteFile( out,msg,lstrlen(msg),&written,NULL );
+#endif
       if( unwindPc && moduleBase )
       {
         const char *functionName = thunkedFunctionNameByAddress(
             (HMODULE)moduleBase,moduleBase,unwindPc,NULL );
+#if 0
         if( functionName )
         {
           lstrcpy( msg,"  func=" );
@@ -1410,6 +1418,7 @@ static void *new_signal( int sig,void (*func)(int) )
             }
           }
         }
+#endif
         if( functionName && !lstrcmp(functionName,"__C_specific_handler") )
           return( NULL );
       }
