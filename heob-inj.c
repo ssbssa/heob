@@ -1299,8 +1299,14 @@ static uintptr_t get_unwind_pc( int unwind,uintptr_t *mod )
     }
     else
     {
+#ifndef __aarch64__
       context.cip = *(PULONG64)context.csp;
       context.csp += 8;
+#else
+      if( context.cip == context.Lr ) return( 0 );
+      context.cip = context.Lr;
+      context.ContextFlags |= CONTEXT_UNWOUND_TO_CALL;
+#endif
     }
     if( !context.cip ) return( 0 );
   }
@@ -4193,8 +4199,14 @@ static void stackwalk( const CONTEXT *contextRecord,void **frames )
       }
       else
       {
+#ifndef __aarch64__
         context.cip = *(PULONG64)context.csp;
         context.csp += 8;
+#else
+        if( context.cip == context.Lr ) break;
+        context.cip = context.Lr;
+        context.ContextFlags |= CONTEXT_UNWOUND_TO_CALL;
+#endif
       }
       if( !context.cip ) break;
 
