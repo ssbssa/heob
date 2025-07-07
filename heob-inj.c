@@ -1334,7 +1334,17 @@ static void *new_signal( int sig,void (*func)(int) )
       // which calls signal(SIGSEGV) on exception; detect it by looking
       // for the "__C_specific_handler" function 2 levels up
       uintptr_t moduleBase = 0;
-      uintptr_t unwindPc = get_unwind_pc( 2,&moduleBase );
+      uintptr_t unwindPc = get_unwind_pc( 1,&moduleBase );
+      if( moduleBase )
+      {
+        lstrcpy( msg,"  mod1:" );
+        WriteFile( out,msg,lstrlen(msg),&written,NULL );
+        GetModuleFileNameA( (HMODULE)moduleBase,msg,sizeof(msg) );
+        WriteFile( out,msg,lstrlen(msg),&written,NULL );
+        lstrcpy( msg,"\n" );
+        WriteFile( out,msg,lstrlen(msg),&written,NULL );
+      }
+      unwindPc = get_unwind_pc( 2,&moduleBase );
       lstrcpy( msg,"  mod=0x" );
       WriteFile( out,msg,lstrlen(msg),&written,NULL );
       for( int i=0; i<16; i++ )
@@ -1343,6 +1353,13 @@ static void *new_signal( int sig,void (*func)(int) )
         msg[15-i] = d>=10 ? 'A' - 10 + d : '0' + d;
       }
       WriteFile( out,msg,16,&written,NULL );
+      if( moduleBase )
+      {
+        lstrcpy( msg,":" );
+        WriteFile( out,msg,lstrlen(msg),&written,NULL );
+        GetModuleFileNameA( (HMODULE)moduleBase,msg,sizeof(msg) );
+        WriteFile( out,msg,lstrlen(msg),&written,NULL );
+      }
       lstrcpy( msg,", pc=0x" );
       WriteFile( out,msg,lstrlen(msg),&written,NULL );
       for( int i=0; i<16; i++ )

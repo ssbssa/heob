@@ -39,6 +39,7 @@ jobs:
       - name: test
         shell: msys2 {0}
         run: |
+          ./heob64 -p0 -n0 allocer64 65 || true
           ./heob64 -Y2 allocer64.exe || true
           ./heob64 -Y2 dll-alloc64.dll || true
           ./heob64 -D15 ./allocer64 2 || true
