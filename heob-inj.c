@@ -1381,6 +1381,28 @@ static void *new_signal( int sig,void (*func)(int) )
           WriteFile( out,functionName,lstrlen(functionName),&written,NULL );
           lstrcpy( msg,"\n" );
           WriteFile( out,msg,lstrlen(msg),&written,NULL );
+
+          const char *names[2] = { "memcmp","__C_specific_handler" };
+          for( int i=0; i<2; i++ )
+          {
+            uintptr_t f = (uintptr_t)rd->fGetProcAddress( (HMODULE)moduleBase,names[i] );
+            if( f )
+            {
+              lstrcpy( msg,"  name=" );
+              WriteFile( out,msg,lstrlen(msg),&written,NULL );
+              WriteFile( out,names[i],lstrlen(names[i]),&written,NULL );
+              lstrcpy( msg,", addr=0x" );
+              WriteFile( out,msg,lstrlen(msg),&written,NULL );
+              for( int i=0; i<16; i++ )
+              {
+                uintptr_t d = (f >> (4*i)) & 0xf;
+                msg[15-i] = d>=10 ? 'A' - 10 + d : '0' + d;
+              }
+              WriteFile( out,msg,16,&written,NULL );
+              lstrcpy( msg,"\n" );
+              WriteFile( out,msg,lstrlen(msg),&written,NULL );
+            }
+          }
         }
         if( functionName && !lstrcmp(functionName,"__C_specific_handler") )
           return( NULL );
