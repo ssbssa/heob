@@ -22,8 +22,27 @@
 
 
 #if !defined(_MSC_VER) || _MSC_VER<1900
+#if 0
 __declspec(dllimport) void *operator new[]( size_t );
 __declspec(dllimport) void operator delete[]( void* );
+#else
+void *operator new( size_t s )
+{
+  return( malloc(s) );
+}
+void *operator new[]( size_t s )
+{
+  return( malloc(s) );
+}
+void operator delete( void *p )
+{
+  free( p );
+}
+void operator delete[]( void *p )
+{
+  free( p );
+}
+#endif
 #endif
 
 extern "C" __declspec(dllimport) void *dll_alloc( size_t );

@@ -7,6 +7,23 @@
 #include <stdlib.h>
 #include <windows.h>
 
+void *operator new( size_t s )
+{
+  return( malloc(s) );
+}
+void *operator new[]( size_t s )
+{
+  return( malloc(s) );
+}
+void operator delete( void *p )
+{
+  free( p );
+}
+void operator delete[]( void *p )
+{
+  free( p );
+}
+
 static void *allocated = NULL;
 
 extern "C" __declspec(dllexport) void *dll_alloc( size_t s )

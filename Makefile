@@ -68,10 +68,10 @@ heob-ver$(BITS).o: heob-ver.rc heob.manifest heob.ico svg.js Makefile
 strip-heob$(BITS): heob$(BITS).exe
 	$(PREF)strip -s $<
 
-allocer$(BITS).exe: allocer.cpp libheobcpp$(BITS).a dll-alloc$(BITS).dll dll-alloc-shared$(BITS).dll
+allocer$(BITS).exe: allocer.cpp dll-alloc$(BITS).dll dll-alloc-shared$(BITS).dll
 	$(CXX) $(CFLAGS_TEST) -o$@ $^ -nostdlib -lmsvcrt -lkernel32
 
-dll-alloc$(BITS).dll: dll-alloc.cpp libheobcpp$(BITS).a
+dll-alloc$(BITS).dll: dll-alloc.cpp
 	$(CXX) $(CFLAGS_TEST) -shared -o$@ $^ -static-libgcc
 
 dll-alloc-shared$(BITS).dll: dll-alloc$(BITS).dll
