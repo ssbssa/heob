@@ -1316,6 +1316,18 @@ static void *new_signal( int sig,void (*func)(int) )
     void *prevSigSegvHandler = rd->crtSigSegvHandler;
     rd->crtSigSegvHandler = func;
 #ifdef _WIN64
+    char msg[100] = "\ncaught signal: prev=0x";
+    HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+    DWORD written;
+    WriteFile( out,msg,lstrlen(msg),&written,NULL );
+    for( int i=0; i<16; i++ )
+    {
+      uintptr_t d = ((uintptr_t)prevSigSegvHandler >> (4*i)) & 0xf;
+      msg[15-i] = d>=10 ? 'A' - 10 + d : '0' + d;
+    }
+    WriteFile( out,msg,16,&written,NULL );
+    lstrcpy( msg,"\n" );
+    WriteFile( out,msg,lstrlen(msg),&written,NULL );
     if( prevSigSegvHandler )
     {
       // try to outsmart the SEH based signal handling of mingw-w64,
@@ -1323,10 +1335,36 @@ static void *new_signal( int sig,void (*func)(int) )
       // for the "__C_specific_handler" function 2 levels up
       uintptr_t moduleBase = 0;
       uintptr_t unwindPc = get_unwind_pc( 2,&moduleBase );
+      lstrcpy( msg,"  mod=0x" );
+      WriteFile( out,msg,lstrlen(msg),&written,NULL );
+      for( int i=0; i<16; i++ )
+      {
+        uintptr_t d = (moduleBase >> (4*i)) & 0xf;
+        msg[15-i] = d>=10 ? 'A' - 10 + d : '0' + d;
+      }
+      WriteFile( out,msg,16,&written,NULL );
+      lstrcpy( msg,", pc=0x" );
+      WriteFile( out,msg,lstrlen(msg),&written,NULL );
+      for( int i=0; i<16; i++ )
+      {
+        uintptr_t d = (unwindPc >> (4*i)) & 0xf;
+        msg[15-i] = d>=10 ? 'A' - 10 + d : '0' + d;
+      }
+      WriteFile( out,msg,16,&written,NULL );
+      lstrcpy( msg,"\n" );
+      WriteFile( out,msg,lstrlen(msg),&written,NULL );
       if( unwindPc && moduleBase )
       {
         const char *functionName = thunkedFunctionNameByAddress(
             (HMODULE)moduleBase,moduleBase,unwindPc,NULL );
+        if( functionName )
+        {
+          lstrcpy( msg,"  func=" );
+          WriteFile( out,msg,lstrlen(msg),&written,NULL );
+          WriteFile( out,functionName,lstrlen(functionName),&written,NULL );
+          lstrcpy( msg,"\n" );
+          WriteFile( out,msg,lstrlen(msg),&written,NULL );
+        }
         if( functionName && !lstrcmp(functionName,"__C_specific_handler") )
           return( NULL );
       }
