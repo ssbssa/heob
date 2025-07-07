@@ -2204,12 +2204,14 @@ const char *thunkedFunctionNameByAddress(
   {
     const unsigned char *expFunc = REL_PTR( idh,funcs[ords[i]] );
     int isThunk = 0;
+#ifndef __aarch64__
     if( expFunc[0]==0xe9 )
     {
       // follow jump thunk
       expFunc = expFunc + 5 + *(uint32_t*)(expFunc+1);
       isThunk = 1;
     }
+#endif
 
     uintptr_t expFuncAddr = (uintptr_t)expFunc + relocation;
     if( addr>=expFuncAddr && (expFuncAddr>nearestFuncAddr ||
