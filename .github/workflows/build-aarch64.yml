@@ -56,3 +56,4 @@ jobs:
             allocer64.exe
             dll-alloc64.dll
             test*.diff
+            crash*.dmp
