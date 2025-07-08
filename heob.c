@@ -4259,7 +4259,7 @@ static void getAppCounter( appData *ad,
 // disassembler {{{
 
 #ifndef NO_DBGENG
-static char *disassemble( DWORD pid,size_t addr,HANDLE heap,textColor *tc )
+static char *disassemble( DWORD pid,size_t addr,HANDLE heap )
 {
   HMODULE dbgeng = NULL;
   IDebugClient *dbgclient = NULL;
@@ -4269,52 +4269,46 @@ static char *disassemble( DWORD pid,size_t addr,HANDLE heap,textColor *tc )
   char *dis = NULL;
   do
   {
-#define FAIL(res) \
-    { \
-      printf( "disassemble-fail at line %d, res=%x\n",__LINE__,res ); \
-      break; \
-    }
-
     dbgeng = LoadLibrary( "dbgeng.dll" );
-    if( !dbgeng ) FAIL(GetLastError());
+    if( !dbgeng ) break;
 
     typedef HRESULT WINAPI func_DebugCreate( REFIID,PVOID* );
     func_DebugCreate *fDebugCreate =
       (func_DebugCreate*)GetProcAddress( dbgeng,"DebugCreate" );
-    if( !fDebugCreate ) FAIL(GetLastError());
+    if( !fDebugCreate ) break;
 
     HRESULT res;
 
     const GUID IID_IDebugClient =
     { 0x27fe5639,0x8407,0x4f47,{0x83,0x64,0xee,0x11,0x8f,0xb0,0x8a,0xc8} };
     res = fDebugCreate( &IID_IDebugClient,(void**)&dbgclient );
-    if( res!=S_OK ) FAIL(res);
+    if( res!=S_OK ) break;
 
     const GUID IID_IDebugControl3 =
     { 0x7df74a86,0xb03f,0x407f,{0x90,0xab,0xa2,0x0d,0xad,0xce,0xad,0x08} };
     res = dbgclient->lpVtbl->QueryInterface( dbgclient,
         &IID_IDebugControl3,(void**)&dbgcontrol );
-    if( res!=S_OK ) FAIL(res);
+    if( res!=S_OK ) break;
 
     res = dbgcontrol->lpVtbl->SetAssemblyOptions( dbgcontrol,
         DEBUG_ASMOPT_NO_CODE_BYTES );
-    if( res!=S_OK ) FAIL(res);
+    if( res!=S_OK ) break;
 
     res = dbgclient->lpVtbl->AttachProcess( dbgclient,
         0,pid,
         DEBUG_ATTACH_NONINVASIVE|DEBUG_ATTACH_NONINVASIVE_NO_SUSPEND );
-    if( res!=S_OK ) FAIL(res);
+    if( res!=S_OK ) break;
     attached = 1;
 
     res = dbgcontrol->lpVtbl->WaitForEvent( dbgcontrol,
         0,INFINITE );
-    if( res!=S_OK ) FAIL(res);
+    if( res!=S_OK ) break;
 
     asmbuf = HeapAlloc( heap,0,65536 );
     ULONG64 offset = addr;
     res = dbgcontrol->lpVtbl->Disassemble( dbgcontrol,
         offset,0,asmbuf,65536,NULL,&offset );
-    if( res!=S_OK ) FAIL(res);
+    if( res!=S_OK ) break;
 
     char *asmc = asmbuf;
     while( asmc[0]=='`' ||
@@ -4326,7 +4320,7 @@ static char *disassemble( DWORD pid,size_t addr,HANDLE heap,textColor *tc )
     size_t asml = lstrlen( asmc );
     while( asml && (asmc[asml-1]=='\r' || asmc[asml-1]=='\n') )
       asmc[--asml] = 0;
-    if( !asml || asmc[0]=='?' ) FAIL(0);
+    if( !asml || asmc[0]=='?' ) break;
 
     dis = HeapAlloc( heap,0,asml+1 );
     lstrcpy( dis,asmc );
@@ -4343,7 +4337,7 @@ static char *disassemble( DWORD pid,size_t addr,HANDLE heap,textColor *tc )
 static void printDisassembler( textColor *tc,const char *header,
     DWORD pid,size_t addr,HANDLE heap )
 {
-  char *dis = disassemble( pid,addr,heap,tc );
+  char *dis = disassemble( pid,addr,heap );
   if( !dis ) return;
 
   if( header )
@@ -5775,18 +5769,19 @@ static void writeException( appData *ad,textColor *tcXml,
     if( ei->aa[0].frames[0] && (opt->exceptionDetails&2) &&
         ei->er.ExceptionCode!=EXCEPTION_BREAKPOINT )
       ip = (size_t)ei->aa[0].frames[0];
-    printf( "  ip: %X\n",ip );
-    uint32_t instruction;
+#ifdef __aarch64__
+    uint32_t alignedInstruction;
+#endif
     if( ip && convert_address )
     {
       ip = (size_t)convert_address( ad,ip,NULL );
-      printf( "  ip-converted: %X\n",ip );
+#ifdef __aarch64__
       if( ip )
       {
-        instruction = *(uint32_t*)ip;
-        ip = (size_t)&instruction;
-        printf( "  ip-converted-2: %X\n",ip );
+        alignedInstruction = *(uint32_t*)ip;
+        ip = (size_t)&alignedInstruction;
       }
+#endif
     }
     if( ip )
       printDisassembler( tc,"$S  assembly instruction:\n",
