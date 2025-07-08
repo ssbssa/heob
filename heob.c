@@ -5776,9 +5776,18 @@ static void writeException( appData *ad,textColor *tcXml,
         ei->er.ExceptionCode!=EXCEPTION_BREAKPOINT )
       ip = (size_t)ei->aa[0].frames[0];
     printf( "  ip: %X\n",ip );
+    uint32_t instruction;
     if( ip && convert_address )
+    {
       ip = (size_t)convert_address( ad,ip,NULL );
-    printf( "  ip-converted: %X\n",ip );
+      printf( "  ip-converted: %X\n",ip );
+      if( ip )
+      {
+        instruction = *(uint32_t*)ip;
+        ip = (size_t)&instruction;
+        printf( "  ip-converted-2: %X\n",ip );
+      }
+    }
     if( ip )
       printDisassembler( tc,"$S  assembly instruction:\n",
           ad->pi.dwProcessId,ip,ad->heap );
