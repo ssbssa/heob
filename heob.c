@@ -5811,6 +5811,35 @@ static void writeException( appData *ad,textColor *tcXml,
       PREG( "r14"   ,R14   ,"%X","  "             ,     );
       PREG( "r15"   ,R15   ,"%X","  "             ,"\n" );
 #else
+      PREG( "x0"    ,X0    ,"%X","    "           ,     );
+      PREG( "x1"    ,X1    ,"%X","   "            ,     );
+      PREG( "x2"    ,X2    ,"%X","   "            ,"\n" );
+      PREG( "x3"    ,X3    ,"%X","    "           ,     );
+      PREG( "x4"    ,X4    ,"%X","   "            ,     );
+      PREG( "x5"    ,X5    ,"%X","   "            ,"\n" );
+      PREG( "x6"    ,X6    ,"%X","    "           ,     );
+      PREG( "x7"    ,X7    ,"%X","   "            ,     );
+      PREG( "x8"    ,X8    ,"%X","   "            ,"\n" );
+      PREG( "x9"    ,X9    ,"%X","    "           ,     );
+      PREG( "x10"   ,X10   ,"%X","   "            ,     );
+      PREG( "x11"   ,X11   ,"%X","  "             ,"\n" );
+      PREG( "x12"   ,X12   ,"%X","    "           ,     );
+      PREG( "x13"   ,X13   ,"%X","  "             ,     );
+      PREG( "x14"   ,X14   ,"%X","  "             ,"\n" );
+      PREG( "x15"   ,X15   ,"%X","    "           ,     );
+      PREG( "x16"   ,X16   ,"%X","  "             ,     );
+      PREG( "x17"   ,X17   ,"%X","  "             ,"\n" );
+      PREG( "x18"   ,X18   ,"%X","    "           ,     );
+      PREG( "x19"   ,X19   ,"%X","  "             ,     );
+      PREG( "x20"   ,X20   ,"%X","  "             ,"\n" );
+      PREG( "x21"   ,X21   ,"%X","    "           ,     );
+      PREG( "x22"   ,X22   ,"%X","  "             ,     );
+      PREG( "x23"   ,X23   ,"%X","  "             ,"\n" );
+      PREG( "x24"   ,X24   ,"%X","    "           ,     );
+      PREG( "x25"   ,X25   ,"%X","  "             ,     );
+      PREG( "x26"   ,X26   ,"%X","  "             ,"\n" );
+      PREG( "x27"   ,X27   ,"%X","    "           ,     );
+      PREG( "x28"   ,X28   ,"%X","  "             ,"\n" );
 #endif
 #endif
     }
@@ -5831,6 +5860,11 @@ static void writeException( appData *ad,textColor *tcXml,
       PREG( "rip"   ,Rip   ,"%X","    "           ,     );
       PREG( "eflags",EFlags,"%x","  "             ,"\n" );
 #else
+      PREG( "fp"    ,Fp    ,"%X","    "           ,     );
+      PREG( "lr"    ,Lr    ,"%X","   "            , );
+      PREG( "sp"    ,Sp    ,"%X","   "            ,"\n" );
+      PREG( "pc"    ,Pc    ,"%X","    "           ,     );
+      PREG( "cpsr"  ,Cpsr  ,"%x","   "            ,"\n" );
 #endif
 #endif
     }
