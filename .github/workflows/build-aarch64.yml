@@ -45,6 +45,7 @@ jobs:
           ./heob64 -D15 ./allocer64 2 || true
           ./heob64 -D-1 ./allocer64 2 || true
           ./heob64 -D15 *.dmp
+          ./heob64 -I10 -vprof.svg ./allocer64 47 57 || true
           make BITS=64 PREF= test
           head -n-0 test*.diff
       - name: upload test results
@@ -57,3 +58,4 @@ jobs:
             dll-alloc64.dll
             test*.diff
             crash*.dmp
+            prof.svg
