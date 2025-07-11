@@ -2182,13 +2182,19 @@ static int cmp_ptr( const void *av,const void *bv )
 }
 
 const char *thunkedFunctionNameByAddress(
-    HMODULE mod,uintptr_t base,uintptr_t addr,const char *funcname )
+    HMODULE mod,uintptr_t base,uintptr_t addr,const char *funcname,
+    void *context )
 {
   PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)mod;
   PIMAGE_NT_HEADERS inh = (PIMAGE_NT_HEADERS)REL_PTR( idh,idh->e_lfanew );
   PIMAGE_DATA_DIRECTORY idd =
     &inh->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
-  if( !idd->Size ) return( funcname );
+  textColor *tc = context;
+  if( !idd->Size )
+  {
+    printf( "  $Wno export directory\n" );
+    return( funcname );
+  }
 
   PIMAGE_EXPORT_DIRECTORY ied =
     (PIMAGE_EXPORT_DIRECTORY)REL_PTR( idh,idd->VirtualAddress );
@@ -2383,10 +2389,14 @@ static void locFuncCache(
           ds->currentModule->path,NULL,DONT_RESOLVE_DLL_REFERENCES );
     if( !ds->currentModuleLoaded )
       // don't try to load this module again
+    {
       ds->currentModule = NULL;
+      textColor *tc = ds->tc;
+      printf( "  $WLoadLibraryExW failed (%e)\n",GetLastError() );
+    }
     else
       funcname = thunkedFunctionNameByAddress( ds->currentModuleLoaded,
-          ds->currentModule->base,(uintptr_t)addr,funcname );
+          ds->currentModule->base,(uintptr_t)addr,funcname,ds->tc );
   }
   // }}}
 
