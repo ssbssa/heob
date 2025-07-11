@@ -2231,8 +2231,7 @@ const char *thunkedFunctionNameByAddress(
         ( (instrPtr[1]&0x003ffc00U)>>10 );
       if( (instrPtr[0]&0x00800000U)!=0 )
         ofs |= 0xffffffff00000000ULL;
-      expFunc =
-        (const unsigned char*)( ((uintptr_t)expFunc&0xfffff000U) + ofs );
+      expFunc = (const unsigned char*)( ((uintptr_t)expFunc&~0xfffULL) + ofs );
       printf( "  jump thunk: ofs=%X; func=%p\n",ofs,expFunc );
     }
 #endif
