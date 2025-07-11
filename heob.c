@@ -2206,9 +2206,11 @@ const char *thunkedFunctionNameByAddress(
   uintptr_t nearestFuncAddr = 0;
   int nearestIsThunk = 0;
   uintptr_t relocation = base - (uintptr_t)idh;
+  printf( "  number of exports: %u\n",number );
   for( i=0; i<number; i++ )
   {
     const unsigned char *expFunc = REL_PTR( idh,funcs[ords[i]] );
+    printf( "  export %u (%s) at %p\n",i,REL_PTR(idh,names[i]),expFunc );
     int isThunk = 0;
 #ifndef __aarch64__
     if( expFunc[0]==0xe9 )
@@ -2231,6 +2233,7 @@ const char *thunkedFunctionNameByAddress(
         ofs |= 0xffffffff00000000ULL;
       expFunc =
         (const unsigned char*)( ((uintptr_t)expFunc&0xfffff000U) + ofs );
+      printf( "  jump thunk: ofs=%X; func=%p\n",ofs,expFunc );
     }
 #endif
 
