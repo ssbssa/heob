@@ -36,10 +36,13 @@ jobs:
           path: |
             heob64.exe
             dwarfstack64.dll
+      - name: jump thunk test
+        shell: cmd
+        run: |
+          heob64 -"thunks-aarch64.dll"0x180000000 0x18000100b 0x18000100c 0x180001018 0x180001024 0x180001030 0x180001087 0x180001088 0x1800028af 0x1800028b0 0x1800040d7 0x1800040d8 0x1800058ff 0x180005900
       - name: test
         shell: msys2 {0}
         run: |
-          ./heob64 -"thunks-aarch64.dll"0x180000000 0x18000100b 0x18000100c 0x180001018 0x180001024 0x180001030 0x180001087 0x180001088 0x1800028af 0x1800028b0 0x1800040d7 0x1800040d8 0x1800058ff 0x180005900
           ./heob64 -p0 -n0 allocer64 65 || true
           ./heob64 -Y2 allocer64.exe || true
           ./heob64 -Y2 dll-alloc64.dll || true
