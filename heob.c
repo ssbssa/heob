@@ -2182,19 +2182,13 @@ static int cmp_ptr( const void *av,const void *bv )
 }
 
 const char *thunkedFunctionNameByAddress(
-    HMODULE mod,uintptr_t base,uintptr_t addr,const char *funcname,
-    void *context )
+    HMODULE mod,uintptr_t base,uintptr_t addr,const char *funcname )
 {
   PIMAGE_DOS_HEADER idh = (PIMAGE_DOS_HEADER)mod;
   PIMAGE_NT_HEADERS inh = (PIMAGE_NT_HEADERS)REL_PTR( idh,idh->e_lfanew );
   PIMAGE_DATA_DIRECTORY idd =
     &inh->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
-  textColor *tc = context;
-  if( !idd->Size )
-  {
-    printf( "  $Wno export directory\n" );
-    return( funcname );
-  }
+  if( !idd->Size ) return( funcname );
 
   PIMAGE_EXPORT_DIRECTORY ied =
     (PIMAGE_EXPORT_DIRECTORY)REL_PTR( idh,idd->VirtualAddress );
@@ -2206,11 +2200,9 @@ const char *thunkedFunctionNameByAddress(
   uintptr_t nearestFuncAddr = 0;
   int nearestIsThunk = 0;
   uintptr_t relocation = base - (uintptr_t)idh;
-  printf( "  number of exports: %u\n",number );
   for( i=0; i<number; i++ )
   {
     const unsigned char *expFunc = REL_PTR( idh,funcs[ords[i]] );
-    printf( "  export %u (%s) at %p\n",i,REL_PTR(idh,names[i]),expFunc );
     int isThunk = 0;
 #ifndef __aarch64__
     if( expFunc[0]==0xe9 )
@@ -2232,7 +2224,6 @@ const char *thunkedFunctionNameByAddress(
       if( (instrPtr[0]&0x00800000U)!=0 )
         ofs |= 0xffffffff00000000ULL;
       expFunc = (const unsigned char*)( ((uintptr_t)expFunc&~0xfffULL) + ofs );
-      printf( "  jump thunk: ofs=%X; func=%p\n",ofs,expFunc );
     }
 #endif
 
@@ -2391,14 +2382,10 @@ static void locFuncCache(
           ds->currentModule->path,NULL,DONT_RESOLVE_DLL_REFERENCES );
     if( !ds->currentModuleLoaded )
       // don't try to load this module again
-    {
       ds->currentModule = NULL;
-      textColor *tc = ds->tc;
-      printf( "  $WLoadLibraryExW failed (%e)\n",GetLastError() );
-    }
     else
       funcname = thunkedFunctionNameByAddress( ds->currentModuleLoaded,
-          ds->currentModule->base,(uintptr_t)addr,funcname,ds->tc );
+          ds->currentModule->base,(uintptr_t)addr,funcname );
   }
   // }}}
 

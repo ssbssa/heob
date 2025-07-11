@@ -727,7 +727,7 @@ int heobSubProcess(
     int raise_alloc_q,size_t *raise_alloc_a,const wchar_t *specificOptions );
 int convertDeviceName( const wchar_t *in,wchar_t *out,int outlen );
 const char *thunkedFunctionNameByAddress(
-    HMODULE mod,uintptr_t base,uintptr_t addr,const char *funcname,void* );
+    HMODULE mod,uintptr_t base,uintptr_t addr,const char *funcname );
 
 static inline int mul_overflow( size_t n,size_t s,size_t *res )
 {

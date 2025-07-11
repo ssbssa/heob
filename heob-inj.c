@@ -1386,7 +1386,7 @@ static void *new_signal( int sig,void (*func)(int) )
       if( unwindPc && moduleBase )
       {
         const char *functionName = thunkedFunctionNameByAddress(
-            (HMODULE)moduleBase,moduleBase,unwindPc,NULL,NULL );
+            (HMODULE)moduleBase,moduleBase,unwindPc,NULL );
 #if 0
         if( functionName )
         {
