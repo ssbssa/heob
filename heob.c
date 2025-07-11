@@ -2211,6 +2211,21 @@ const char *thunkedFunctionNameByAddress(
       expFunc = expFunc + 5 + *(uint32_t*)(expFunc+1);
       isThunk = 1;
     }
+#else
+    const uint32_t *instrPtr = (const uint32_t*)expFunc;
+    if( (instrPtr[0]&0x9f00001fU)==0x90000010U && // adrp x16, ofs1
+        (instrPtr[1]&0xffc003ffU)==0x91000210U && // add  x16, x16, ofs2
+        instrPtr[2]==0xd61f0200U )                // br   x16
+    {
+      uintptr_t ofs =
+        ( (instrPtr[0]&0x60000000U)>>17 ) |
+        ( (instrPtr[0]&0x007fffe0U)<<9 ) |
+        ( (instrPtr[1]&0x003ffc00U)>>10 );
+      if( (instrPtr[0]&0x00800000U)!=0 )
+        ofs |= 0xffffffff00000000ULL;
+      expFunc =
+        (const unsigned char*)( ((uintptr_t)expFunc&0xfffff000U) + ofs );
+    }
 #endif
 
     uintptr_t expFuncAddr = (uintptr_t)expFunc + relocation;
