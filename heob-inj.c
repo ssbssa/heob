@@ -1277,17 +1277,21 @@ static uintptr_t get_unwind_pc( int unwind,uintptr_t *mod )
 
   DWORD64 moduleBase = (uintptr_t)rd->heobMod;
   int count = 0;
+  uintptr_t pc = 0;
   while( 1 )
   {
     DWORD64 imageBase = 0;
     PRUNTIME_FUNCTION funcEntry =
       RtlLookupFunctionEntry( context.cip,&imageBase,NULL );
     if( imageBase!=moduleBase )
+    {
       count++;
+      if( count>unwind ) return( pc );
+    }
     if( count==unwind )
     {
       if( mod ) *mod = imageBase;
-      return( context.cip );
+      pc = context.cip;
     }
     moduleBase = imageBase;
     if( funcEntry )
@@ -1303,12 +1307,12 @@ static uintptr_t get_unwind_pc( int unwind,uintptr_t *mod )
       context.cip = *(PULONG64)context.csp;
       context.csp += 8;
 #else
-      if( context.cip == context.Lr ) return( 0 );
+      if( context.cip == context.Lr ) return( pc );
       context.cip = context.Lr;
       context.ContextFlags |= CONTEXT_UNWOUND_TO_CALL;
 #endif
     }
-    if( !context.cip ) return( 0 );
+    if( !context.cip ) return( pc );
   }
 }
 #endif
