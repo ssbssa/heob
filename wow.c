@@ -34,6 +34,8 @@ int main(int argc, char **argv)
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
   }
+  else
+    printf("CreateProcessA() failed with error %lu\n", GetLastError());
 
   return 0;
 }
