@@ -43,15 +43,15 @@ jobs:
       - name: WOW test
         shell: cmd
         run: |
-          wow32 wow32
-          wow32 wow64
-          wow32 wow64a
-          wow64 wow32
-          wow64 wow64
-          wow64 wow64a
-          wow64a wow32
-          wow64a wow64
-          wow64a wow64a
+          wow32.exe wow32.exe
+          wow32.exe wow64.exe
+          wow32.exe wow64a.exe
+          wow64.exe wow32.exe
+          wow64.exe wow64.exe
+          wow64.exe wow64a.exe
+          wow64a.exe wow32.exe
+          wow64a.exe wow64.exe
+          wow64a.exe wow64a.exe
       - name: test
         shell: msys2 {0}
         run: |
