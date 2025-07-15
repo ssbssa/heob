@@ -2504,6 +2504,7 @@ int heobSubProcess(
   if( heobEnd )
   {
     heobEnd++;
+    USHORT machProc;
     if( isWrongArch(processInformation->hProcess,&machProc) )
     {
       if( machProc==IMAGE_FILE_MACHINE_I386 )
