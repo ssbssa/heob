@@ -56,15 +56,15 @@ jobs:
           wow32.exe wow32.exe
           wow32.exe wow64.exe
           wow32.exe wow64a.exe
-          heob32.exe wow32.exe
-          heob32.exe wow64.exe
-          heob32.exe wow64a.exe
-          heob64.exe wow32.exe
-          heob64.exe wow64.exe
-          heob64.exe wow64a.exe
-          heob64a.exe wow32.exe
-          heob64a.exe wow64.exe
-          heob64a.exe wow64a.exe
+          heob32.exe wow32.exe wow64.exe
+          heob32.exe wow64.exe wow64.exe
+          heob32.exe wow64a.exe wow64.exe
+          heob64.exe wow32.exe wow64.exe
+          heob64.exe wow64.exe wow64.exe
+          heob64.exe wow64a.exe wow64.exe
+          heob64a.exe wow32.exe wow64.exe
+          heob64a.exe wow64.exe wow64.exe
+          heob64a.exe wow64a.exe wow64.exe
       - name: test
         shell: msys2 {0}
         run: |
