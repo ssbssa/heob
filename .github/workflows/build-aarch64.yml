@@ -17,12 +17,20 @@ jobs:
         with:
           msystem: CLANGARM64
           update: true
-          install: mingw-w64-clang-aarch64-gcc make diffutils sed
+          install: mingw-w64-clang-aarch64-gcc make diffutils sed mingw-w64-i686-gcc mingw-w64-x86_64-gcc
       - name: build heob
         shell: msys2 {0}
         run: |
           make BITS=64a PREF= WARN= FFREESTANDING= strip-heob64a
           make BITS=64a PREF= WARN= NO_THREAD_JUMPS= WARN_TEST=-Wno-implicit-exception-spec-mismatch allocer64a.exe
+      - name: build heob32
+        run: |
+          set MSYSTEM=MINGW32
+          msys2 -c 'make BITS=32 PREF= WARN= FFREESTANDING= strip-heob32'
+      - name: build heob64
+        run: |
+          set MSYSTEM=MINGW64
+          msys2 -c 'make BITS=64 PREF= WARN= FFREESTANDING= strip-heob64'
       - name: build dwarfstack
         shell: msys2 {0}
         run: |
