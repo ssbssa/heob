@@ -8267,6 +8267,16 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   ad->in = GetStdHandle( STD_INPUT_HANDLE );
   if( !FlushConsoleInputBuffer(ad->in) ) ad->in = NULL;
 
+  if( GetModuleFileNameW(NULL,ad->exePathW,MAX_PATH) )
+  {
+    int nameLen = lstrlenW( ad->exePathW );
+    if( nameLen>4 && !lstrcmpiW(ad->exePathW+nameLen-4,L".exe") )
+    {
+      ad->exePathW[nameLen-4] = 0;
+      SetDllDirectoryW( ad->exePathW );
+    }
+  }
+
   // command line arguments {{{
   wchar_t *cmdLine = GetCommandLineW();
   wchar_t *args;
