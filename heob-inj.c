@@ -2511,6 +2511,8 @@ int heobSubProcess(
         lstrcpyW( heobEnd,L"heob32.exe" );
       else if( machProc==IMAGE_FILE_MACHINE_AMD64 )
         lstrcpyW( heobEnd,L"heob64.exe" );
+      else if( machProc==IMAGE_FILE_MACHINE_ARM64 )
+        lstrcpyW( heobEnd,L"heob64a.exe" );
     }
 
     wchar_t *heobCmd = HeapAlloc( heap,0,32768*2 );
