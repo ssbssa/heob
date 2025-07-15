@@ -26,13 +26,13 @@ jobs:
       - name: build heob32
         run: |
           msys2 -c 'make BITS=32 PREF= strip-heob32'
-          env:
-            MSYSTEM: MINGW32
+        env:
+          MSYSTEM: MINGW32
       - name: build heob64
         run: |
           msys2 -c 'make BITS=64 PREF= strip-heob64'
-          env:
-            MSYSTEM: MINGW64
+        env:
+          MSYSTEM: MINGW64
       - name: build dwarfstack
         shell: msys2 {0}
         run: |
