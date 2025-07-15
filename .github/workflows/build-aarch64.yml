@@ -21,8 +21,8 @@ jobs:
       - name: build heob
         shell: msys2 {0}
         run: |
-          make BITS=64 PREF= WARN= FFREESTANDING= strip-heob64
-          make BITS=64 PREF= WARN= NO_THREAD_JUMPS= WARN_TEST=-Wno-implicit-exception-spec-mismatch allocer64.exe
+          make BITS=64a PREF= WARN= FFREESTANDING= strip-heob64a
+          make BITS=64a PREF= WARN= NO_THREAD_JUMPS= WARN_TEST=-Wno-implicit-exception-spec-mismatch allocer64a.exe
       - name: build dwarfstack
         shell: msys2 {0}
         run: |
@@ -34,12 +34,12 @@ jobs:
           name: heob-aarch64
           if-no-files-found: error
           path: |
-            heob64.exe
+            heob64a.exe
             dwarfstack64.dll
       - name: jump thunk test
         shell: cmd
         run: |
-          heob64 -"thunks-aarch64.dll"0x180000000 0x18000100b 0x18000100c 0x180001018 0x180001024 0x180001030 0x180001087 0x180001088 0x1800028af 0x1800028b0 0x1800040d7 0x1800040d8 0x1800058ff 0x180005900
+          heob64a -"thunks-aarch64.dll"0x180000000 0x18000100b 0x18000100c 0x180001018 0x180001024 0x180001030 0x180001087 0x180001088 0x1800028af 0x1800028b0 0x1800040d7 0x1800040d8 0x1800058ff 0x180005900
       - name: WOW test
         shell: cmd
         run: |
@@ -55,14 +55,14 @@ jobs:
       - name: test
         shell: msys2 {0}
         run: |
-          ./heob64 -p0 -n0 allocer64 65 || true
-          ./heob64 -Y2 allocer64.exe || true
-          ./heob64 -Y2 dll-alloc64.dll || true
-          ./heob64 -D15 ./allocer64 2 || true
-          ./heob64 -D-1 ./allocer64 2 || true
-          ./heob64 -D15 *.dmp
-          ./heob64 -I10 -vprof.svg ./allocer64 47 57 || true
-          make BITS=64 PREF= test
+          ./heob64a -p0 -n0 allocer64a 65 || true
+          ./heob64a -Y2 allocer64a.exe || true
+          ./heob64a -Y2 dll-alloc64a.dll || true
+          ./heob64a -D15 ./allocer64a 2 || true
+          ./heob64a -D-1 ./allocer64a 2 || true
+          ./heob64a -D15 *.dmp
+          ./heob64a -I10 -vprof.svg ./allocer64a 47 57 || true
+          make BITS=64a PREF= test
           head -n-0 test*.diff
       - name: upload test results
         uses: actions/upload-artifact@v4
@@ -70,8 +70,8 @@ jobs:
           name: test-results
           if-no-files-found: error
           path: |
-            allocer64.exe
-            dll-alloc64.dll
+            allocer64a.exe
+            dll-alloc64a.dll
             test*.diff
             crash*.dmp
             prof.svg
