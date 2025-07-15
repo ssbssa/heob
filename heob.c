@@ -6675,6 +6675,49 @@ static int isMinidump( appData *ad,const wchar_t *name )
 
       ft = secondsToFiletime( header->TimeDateStamp );
       printf( "$Iminidump timestamp:    $N%T\n",&ft );
+
+      unsigned int flags = header->Flags;
+      printf( "$Iminidump flags: $N%x",flags );
+      if( flags )
+      {
+        const char *flagNames[25] = {
+          "WithDataSegs",
+          "WithFullMemory",
+          "WithHandleData",
+          "FilterMemory",
+          "ScanMemory",
+          "WithUnloadedModules",
+          "WithIndirectlyReferencedMemory",
+          "FilterModulePaths",
+          "WithProcessThreadData",
+          "WithPrivateReadWriteMemory",
+          "WithoutOptionalData",
+          "WithFullMemoryInfo",
+          "WithThreadInfo",
+          "WithCodeSegs",
+          "WithoutAuxiliaryState",
+          "WithFullAuxiliaryState",
+          "WithPrivateWriteCopyMemory",
+          "IgnoreInaccessibleMemory",
+          "WithTokenInformation",
+          "WithModuleHeaders",
+          "FilterTriage",
+          "WithAvxXStateContext",
+          "WithIptTrace",
+          "ScanInaccessiblePartialPages",
+          "FilterWriteCombinedMemory",
+        };
+        int printed = 0;
+        for( unsigned int f=0; f<25; f++ )
+        {
+          if( !(flags&(1<<f)) ) continue;
+
+          printf( "%s%s",printed?" | ":" (",flagNames[f] );
+          printed++;
+        }
+        if( printed ) printf( ")" );
+      }
+      printf( "\n" );
     }
   }
 
