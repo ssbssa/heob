@@ -2493,14 +2493,13 @@ int heobSubProcess(
   if( heobEnd )
   {
     heobEnd++;
-    if( isWrongArch(processInformation->hProcess) )
+    USHORT machProc;
+    if( isWrongArch(processInformation->hProcess,&machProc) )
     {
-#ifndef _WIN64
-#define OTHER_HEOB L"heob64.exe"
-#else
-#define OTHER_HEOB L"heob32.exe"
-#endif
-      lstrcpyW( heobEnd,OTHER_HEOB );
+      if( machProc==IMAGE_FILE_MACHINE_I386 )
+        lstrcpyW( heobEnd,L"heob32.exe" );
+      else if( machProc==IMAGE_FILE_MACHINE_AMD64 )
+        lstrcpyW( heobEnd,L"heob64.exe" );
     }
 
     wchar_t *heobCmd = HeapAlloc( heap,0,32768*2 );

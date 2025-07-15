@@ -155,6 +155,9 @@ typedef BOOL WINAPI func_CreateProcessW(
 typedef BOOL WINAPI func_InitializeCriticalSectionEx(
     LPCRITICAL_SECTION,DWORD,DWORD );
 typedef HRESULT WINAPI func_GetThreadDescription( HANDLE,PWSTR* );
+typedef BOOL WINAPI func_IsWow64Process2( HANDLE,USHORT*,USHORT* );
+typedef BOOL WINAPI func_GetProcessInformation(
+    HANDLE,PROCESS_INFORMATION_CLASS,LPVOID,DWORD );
 
 // }}}
 // CRT function definitions {{{
@@ -691,7 +694,7 @@ wchar_t *num2hexstrW( wchar_t *str,UINT64 arg,int count );
 wchar_t *num2strW( wchar_t *start,uintptr_t arg,int minus );
 wchar_t *mstrrchrW( const wchar_t *s,wchar_t c );
 int strstart( const char *str,const char *start );
-int isWrongArch( HANDLE process );
+int isWrongArch( HANDLE process,USHORT *machProcOut );
 int heobSubProcess(
     DWORD creationFlags,LPPROCESS_INFORMATION processInformation,
     HMODULE heobMod,HANDLE heap,options *opt,DWORD appCounterID,

@@ -1079,11 +1079,42 @@ static void deleteFileOnClose( textColor *tc )
 // }}}
 // process bitness / name {{{
 
-int isWrongArch( HANDLE process )
+int isWrongArch( HANDLE process,USHORT *machProcOut )
 {
+  HMODULE kernel32 = GetModuleHandle( "kernel32.dll" );
+  func_IsWow64Process2 *fIsWow64Process2 =
+    (func_IsWow64Process2*)GetProcAddress( kernel32,"IsWow64Process2" );
+  USHORT machProc,machHost;
+  if( fIsWow64Process2 && fIsWow64Process2(process,&machProc,&machHost) )
+  {
+    if( machProc==IMAGE_FILE_MACHINE_UNKNOWN )
+    {
+      func_GetProcessInformation *fGetProcessInformation =
+        (func_GetProcessInformation*)GetProcAddress(
+            kernel32,"GetProcessInformation" );
+      USHORT pmi[4]; // size of PROCESS_MACHINE_INFORMATION
+      if (fGetProcessInformation &&
+          fGetProcessInformation(process,9 /*ProcessMachineTypeInfo*/,
+            &pmi,sizeof(pmi)))
+        machProc = pmi[0];
+      else
+        machProc = machHost;
+    }
+    if( machProcOut )
+      *machProcOut = machProc;
+    return( machProc!=MACH_TYPE );
+  }
+
   BOOL remoteWow64,meWow64;
   IsWow64Process( process,&remoteWow64 );
   IsWow64Process( GetCurrentProcess(),&meWow64 );
+  if( machProcOut )
+  {
+    int meBits = sizeof(void*) * 8;
+    int remoteBits = remoteWow64!=meWow64 ? (32+64)-meBits : meBits;
+    *machProcOut =
+      remoteBits==32 ? IMAGE_FILE_MACHINE_I386 : IMAGE_FILE_MACHINE_AMD64;
+  }
   return( remoteWow64!=meWow64 );
 }
 
@@ -8794,7 +8825,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
       exitHeob( ad,HEOB_PROCESS_FAIL,e,0x7fffffff );
     }
 
-    int needNewHeob = ( opt.newConsole>1 || isWrongArch(ad->pi.hProcess) );
+    int needNewHeob = opt.newConsole>1 || isWrongArch( ad->pi.hProcess,NULL );
 
     if( (ad->outName && strstrW(ad->outName,L"%c")) ||
         (ad->xmlName && strstrW(ad->xmlName,L"%c")) ||
@@ -9034,7 +9065,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   unsigned heobExitData = 0;
   ad->heobExit = &heobExit;
   ad->heobExitData = &heobExitData;
-  if( isWrongArch(ad->pi.hProcess) )
+  if( isWrongArch(ad->pi.hProcess,NULL) )
   {
     printf( "$Wonly " BITS "bit applications possible\n" );
     heobExit = HEOB_WRONG_BITNESS;
