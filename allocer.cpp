@@ -473,7 +473,11 @@ int choose( int arg )
 #ifndef _WIN64
 #define BITS "32"
 #else
+#ifndef __aarch64__
 #define BITS "64"
+#else
+#define BITS "64a"
+#endif
 #endif
         HMODULE mod = LoadLibrary( "dll-alloc-shared" BITS ".dll" );
         if( mod )

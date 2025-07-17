@@ -49,7 +49,11 @@ enum
 #ifndef _WIN64
 #define HEOB_BITS "32"
 #else
+#ifndef __aarch64__
 #define HEOB_BITS "64"
+#else
+#define HEOB_BITS "64a"
+#endif
 #endif
 
 typedef int func_heob_control( int );
