@@ -360,7 +360,7 @@ int choose( int arg )
         mem[2] = zeroes[0];
         mem[3] = wcopy[0];
         char *newChars = new char[50];
-        mem[4] = newChars[0];
+        mem[4] = *launder( newChars,0 );
 
         chdir( "\\" );
         char *cwd = _getcwd( NULL,0 );
