@@ -7,7 +7,7 @@ if errorlevel 1 (
     if errorlevel 1 (
       set bits=32
     ) else (
-      set bits=64
+      set bits=64a
     )
   ) else (
     set bits=64
