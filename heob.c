@@ -6707,7 +6707,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
       ft = secondsToFiletime( header->TimeDateStamp );
       printf( "$Iminidump timestamp:    $N%T\n",&ft );
 
-      unsigned int flags = header->Flags;
+      unsigned flags = (unsigned)header->Flags;
       printf( "$Iminidump flags: $N%x",flags );
       if( flags )
       {
