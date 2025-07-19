@@ -151,6 +151,10 @@ register char *teb_reg18 __asm__("x18");
 #endif
 #endif
 
+#ifndef IMAGE_FILE_MACHINE_ARM64
+#define IMAGE_FILE_MACHINE_ARM64 0xaa64
+#endif
+
 // }}}
 // kernel32.dll function definitions {{{
 
