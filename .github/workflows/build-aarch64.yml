@@ -22,7 +22,7 @@ jobs:
         shell: msys2 {0}
         run: |
           make BITS=64a PREF= WARN= FFREESTANDING= strip-heob64a
-          make BITS=64a PREF= WARN= NO_THREAD_JUMPS= WARN_TEST=-Wno-implicit-exception-spec-mismatch allocer64a.exe
+          make BITS=64a PREF= WARN= NO_THREAD_JUMPS= WARN_TEST=-Wno-implicit-exception-spec-mismatch LIBHEOBCPP= allocer64a.exe
       - name: build heob with MSVC
         shell: cmd
         run: |

@@ -22,7 +22,7 @@
 
 
 #if !defined(_MSC_VER) || _MSC_VER<1900
-#if 0
+#ifndef __clang__
 __declspec(dllimport) void *operator new[]( size_t );
 __declspec(dllimport) void operator delete[]( void* );
 #else

@@ -43,6 +43,7 @@ WARN=-Wall -Wextra -Wshadow -Wwrite-strings -Werror \
      -Wno-infinite-recursion
 CFLAGS=-fno-omit-frame-pointer -fno-optimize-sibling-calls
 FFREESTANDING=-ffreestanding
+LIBHEOBCPP=libheobcpp$(BITS).a
 CFLAGS_HEOB=$(CPPFLAGS) $(WARN) $(CFLAGS) \
 	    -O3 -g3 -DHEOB_VER="\"$(HEOB_VERSION)\"" \
 	    $(FFREESTANDING)
@@ -68,10 +69,10 @@ heob-ver$(BITS).o: heob-ver.rc heob.manifest heob.ico svg.js Makefile
 strip-heob$(BITS): heob$(BITS).exe
 	$(PREF)strip -s $<
 
-allocer$(BITS).exe: allocer.cpp dll-alloc$(BITS).dll dll-alloc-shared$(BITS).dll
+allocer$(BITS).exe: allocer.cpp $(LIBHEOBCPP) dll-alloc$(BITS).dll dll-alloc-shared$(BITS).dll
 	$(CXX) $(CFLAGS_TEST) -o$@ $^ -nostdlib -lmsvcrt -lkernel32
 
-dll-alloc$(BITS).dll: dll-alloc.cpp
+dll-alloc$(BITS).dll: dll-alloc.cpp $(LIBHEOBCPP)
 	$(CXX) $(CFLAGS_TEST) -shared -o$@ $^ -static-libgcc
 
 dll-alloc-shared$(BITS).dll: dll-alloc$(BITS).dll

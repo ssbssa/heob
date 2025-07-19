@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <windows.h>
 
+#ifdef __clang__
 void *operator new( size_t s )
 {
   return( malloc(s) );
@@ -23,6 +24,7 @@ void operator delete[]( void *p )
 {
   free( p );
 }
+#endif
 
 static void *allocated = NULL;
 
