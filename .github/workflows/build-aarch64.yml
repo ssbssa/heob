@@ -85,7 +85,7 @@ jobs:
           ./heob64a -D-1 ./allocer64a 2 || true
           ./heob64a -D15 *.dmp
           ./heob64a -I10 -vprof.svg ./allocer64a 47 57 || true
-          make BITS=64a PREF= IGNORED_TESTS="02 13 20 39 47 49 63 68 90" test
+          make BITS=64a PREF= LIBHEOBCPP= IGNORED_TESTS="02 13 20 39 47 49 63 68 90" test
           head -n-0 test*.diff || true
       - name: upload test results
         uses: actions/upload-artifact@v4
