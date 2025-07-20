@@ -1197,7 +1197,7 @@ int choose( int arg )
       {
         unsigned int bits = _EM_ZERODIVIDE;
         _clearfp();
-        _controlfp_s( 0,~bits,bits );
+        _controlfp( ~bits,bits );
 
         float inf = 1./0.;
         printf( "inf = %f\n",inf );
