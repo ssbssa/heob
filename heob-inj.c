@@ -3693,6 +3693,8 @@ static void replaceModFuncs( void )
           rd->fGetProcAddress( dll_msvcrt,"_get_heap_handle" );
         if( fget_heap_handle )
           rd->crtHeap = fget_heap_handle();
+        else
+          rd->crtHeap = GetProcessHeap();
       }
       else
       {
