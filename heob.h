@@ -43,14 +43,14 @@ enum
   HEOB_NOT_FOUND = -1024,
 };
 
-
-#ifndef HEOB_INTERNAL
-
 #ifndef _WIN64
 #define HEOB_BITS "32"
 #else
 #define HEOB_BITS "64"
 #endif
+
+
+#ifndef HEOB_INTERNAL
 
 typedef int func_heob_control( int );
 

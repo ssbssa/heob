@@ -451,12 +451,7 @@ int choose( int arg )
         char *leak = (char*)dll_alloc( 10 );
         mem[1] = leak[0];
 
-#ifndef _WIN64
-#define BITS "32"
-#else
-#define BITS "64"
-#endif
-        HMODULE mod = LoadLibrary( "dll-alloc-shared" BITS ".dll" );
+        HMODULE mod = LoadLibrary( "dll-alloc-shared" HEOB_BITS ".dll" );
         if( mod )
         {
           typedef void *dll_alloc_func( size_t );
@@ -895,7 +890,7 @@ int choose( int arg )
     case 39:
       // query heob for allocation information
       {
-        HMODULE heob = GetModuleHandle( "heob" BITS ".exe" );
+        HMODULE heob = GetModuleHandle( "heob" HEOB_BITS ".exe" );
         heob_find_allocation = heob ? (func_heob_find*)GetProcAddress(
             heob,"heob_find_allocation" ) : NULL;
         heob_find_freed = heob ? (func_heob_find*)GetProcAddress(
@@ -1178,7 +1173,7 @@ int choose( int arg )
     case 60:
       // raise exception on free
       {
-        HMODULE heob = GetModuleHandle( "heob" BITS ".exe" );
+        HMODULE heob = GetModuleHandle( "heob" HEOB_BITS ".exe" );
         func_heob_raise_free *heob_raise_free =
           heob ? (func_heob_raise_free*)GetProcAddress(
               heob,"heob_raise_free" ) : NULL;
@@ -1194,7 +1189,7 @@ int choose( int arg )
     case 61:
       // find reference in another allocated block
       {
-        HMODULE heob = GetModuleHandle( "heob" BITS ".exe" );
+        HMODULE heob = GetModuleHandle( "heob" HEOB_BITS ".exe" );
         func_heob_raise_free *heob_find_reference =
           heob ? (func_heob_raise_free*)GetProcAddress(
               heob,"heob_find_reference" ) : NULL;

@@ -1987,7 +1987,7 @@ static void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
   ds->ansiPath = HeapAlloc( heap,0,MAX_PATH );
 
 #ifndef NO_DBGHELP
-  ds->symMod = LoadLibrary( "dbghelp" BITS ".dll" );
+  ds->symMod = LoadLibrary( "dbghelp" HEOB_BITS ".dll" );
   if( !ds->symMod )
     ds->symMod = LoadLibrary( "dbghelp.dll" );
   if( ds->symMod )
@@ -2088,7 +2088,7 @@ static void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
 #endif
 
 #ifndef NO_DWARFSTACK
-  ds->dwstMod = LoadLibrary( "dwarfstack" BITS ".dll" );
+  ds->dwstMod = LoadLibrary( "dwarfstack" HEOB_BITS ".dll" );
   if( !ds->dwstMod )
     ds->dwstMod = LoadLibrary( "dwarfstack.dll" );
   if( ds->dwstMod )
@@ -4445,7 +4445,7 @@ static void showConsole( void )
 static void setHeobConsoleTitle( HANDLE heap,const wchar_t *prog )
 {
   wchar_t *title = HeapAlloc( heap,0,(10+lstrlenW(prog))*2 );
-  lstrcpyW( title,L"heob" BITS " - " );
+  lstrcpyW( title,L"heob" HEOB_BITS " - " );
   lstrcatW( title,prog );
   SetConsoleTitleW( title );
   HeapFree( heap,0,title );
@@ -8921,7 +8921,7 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
       wchar_t *nameEnd = strchrW( name,':' );
       if( !nameEnd ) break;
       wchar_t *so = NULL;
-      if( strstartW(name,exePath) || strstartW(name,L"*" BITS ":") )
+      if( strstartW(name,exePath) || strstartW(name,L"*" HEOB_BITS ":") )
         so = nameEnd + 1;
       name = strchrW( nameEnd+1,';' );
       if( !name ) break;
