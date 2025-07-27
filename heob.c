@@ -6501,13 +6501,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
 #endif
 
   if( !system || system->PlatformId!=VER_PLATFORM_WIN32_NT ||
-      arch!=
-#ifndef _WIN64
-      PROCESSOR_ARCHITECTURE_INTEL
-#else
-      PROCESSOR_ARCHITECTURE_AMD64
-#endif
-    )
+      arch!=PROC_ARCH )
   {
     if( !system )
       printf( "$Wminidump doesn't contain system info stream\n" );

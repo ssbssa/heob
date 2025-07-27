@@ -119,11 +119,13 @@
 #define cip Eip
 #define cfp Ebp
 #define MACH_TYPE IMAGE_FILE_MACHINE_I386
+#define PROC_ARCH PROCESSOR_ARCHITECTURE_INTEL
 #else
 #define csp Rsp
 #define cip Rip
 #define cfp Rbp
 #define MACH_TYPE IMAGE_FILE_MACHINE_AMD64
+#define PROC_ARCH PROCESSOR_ARCHITECTURE_AMD64
 #endif
 
 // }}}
