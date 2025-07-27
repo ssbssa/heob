@@ -116,6 +116,7 @@ static DWORD WINAPI namedThread( LPVOID arg )
     SetThreadName( -1,"self named thread" );
 
   char *leak = (char*)malloc( 10+(arg?0:16) );
+  do_nothing( leak );
   return leak[0];
 }
 
@@ -191,6 +192,7 @@ static DWORD WINAPI descThread( LPVOID arg )
     SetThreadDesc( GetCurrentThread(),L"self named thread" );
 
   char *leak = (char*)malloc( 10+(arg?0:16) );
+  do_nothing( leak );
   return leak[0];
 }
 
@@ -356,12 +358,14 @@ int choose( int arg )
 
     case 2:
       // access after allowed area
+      do_nothing( mem );
       mem[1] = mem[20];
       mem[25] = 5;
       break;
 
     case 3:
       // access before allowed area
+      do_nothing( mem );
       mem[1] = mem[-10];
       mem[-5] = 3;
       break;
@@ -389,6 +393,7 @@ int choose( int arg )
       {
 #define BIGNUM ((size_t)1 << (sizeof(void*)*8-1))
         char *big = (char*)malloc( BIGNUM );
+        do_nothing( big );
         mem[1] = big[0];
       }
       break;
@@ -493,6 +498,7 @@ int choose( int arg )
           char c[5000];
         };
         BigStruct *bs = (BigStruct*)malloc( sizeof(BigStruct) );
+        do_nothing( bs );
         mem[1] = bs[1].c[4500];
       }
       break;
@@ -573,6 +579,7 @@ int choose( int arg )
           char *copy = strdup( "memory leak X" );
           mem[i+1] = copy[0];
           copy[12] = '0' + i;
+          do_nothing( copy );
           if( !i ) free_me = copy;
           if( i==2 ) free( free_me );
         }
@@ -599,6 +606,7 @@ int choose( int arg )
         errno = 0;
         char *m = (char*)calloc( HALF_OVERFLOW,2 );
         arg = errno;
+        do_nothing( m );
         if( m ) mem[1] = m[0];
       }
       break;
@@ -623,6 +631,7 @@ int choose( int arg )
       // initial value
       {
         char *emptyness = (char*)malloc( 30 );
+        do_nothing( emptyness );
         mem[1] = emptyness[0];
       }
       break;
@@ -652,6 +661,7 @@ int choose( int arg )
       {
         SetThreadName( -1,"main thread" );
         char *mainLeak = (char*)malloc( 11 );
+        do_nothing( mainLeak );
         mem[1] = mainLeak[0];
 
         HANDLE thread = CreateThread(
@@ -762,6 +772,7 @@ int choose( int arg )
         ref[3*d] = (unsigned char*)&ref;
         ref[4*d] = (unsigned char*)dll_static_char();
         do_nothing( ref );
+        do_nothing( noref );
         mem[1] = ref[3*d]!=NULL;
         mem[2] = noref[0];
         free( ref[1*d]+2 );
@@ -834,6 +845,7 @@ int choose( int arg )
           heob_control( HEOB_LEAK_RECORDING_STOP );
 
           char *leakNo = (char*)malloc( 16 );
+          do_nothing( leakNo );
           mem[1] = leakNo[0];
 
           heob_control( HEOB_LEAK_RECORDING_START );
@@ -841,6 +853,7 @@ int choose( int arg )
           printf( "leak count: %d\n",heob_control(HEOB_LEAK_COUNT) );
 
           char *leakYes = (char*)malloc( 16 );
+          do_nothing( leakYes );
           mem[2] = leakYes[0];
           leakYes = strdup( "string leak" );
           mem[3] = leakYes[0];
@@ -851,6 +864,7 @@ int choose( int arg )
           heob_control( HEOB_LEAK_RECORDING_SHOW );
 
           leakYes = (char*)malloc( 16 );
+          do_nothing( leakYes );
           mem[4] = leakYes[0];
         }
         else
@@ -947,6 +961,7 @@ int choose( int arg )
       {
         mem[4] = 0;
         char **ptr_buf = (char**)malloc( sizeof(char*) );
+        do_nothing( ptr_buf );
         free( *ptr_buf );
       }
       break;
@@ -1081,6 +1096,7 @@ int choose( int arg )
       // allocation initialization
       {
         unsigned char *b1 = (unsigned char*)malloc( 1 );
+        do_nothing( b1 );
         printf( "malloc(1)[0] = %02x\n",b1[0] );
         unsigned char *b2 = (unsigned char*)calloc( 1,1 );
         printf( "calloc(1, 1)[0] = %02x\n",b2[0] );
@@ -1141,6 +1157,7 @@ int choose( int arg )
       {
         SetThreadDesc( GetCurrentThread(),L"main thread" );
         char *mainLeak = (char*)malloc( 11 );
+        do_nothing( mainLeak );
         mem[1] = mainLeak[0];
 
         HANDLE thread = CreateThread(
