@@ -46,13 +46,13 @@ CFLAGS_HEOB=$(CPPFLAGS) $(CFLAGS) -O3 -g3 -DHEOB_VER="\"$(HEOB_VERSION)\"" \
 	    -ffreestanding
 LDFLAGS_HEOB=-nostdlib -lkernel32 -Wl,-dynamicbase,--build-id
 NO_THREAD_JUMPS=-fno-thread-jumps
+WARN_TEST=-Wno-stringop-overflow -Wno-maybe-uninitialized \
+	  -Wno-use-after-free -Wno-stringop-overread
 CFLAGS_TEST=$(CFLAGS) -O3 -g -D_GLIBCXX_INCLUDE_NEXT_C_HEADERS \
 	    -D__USE_MINGW_ANSI_STDIO=0 \
-	    $(NO_THREAD_JUMPS) \
-	    -Wno-stringop-overflow -Wno-uninitialized -Wno-array-bounds \
-	    -Wno-maybe-uninitialized -Wno-free-nonheap-object \
-	    -Wno-use-after-free \
-	    -Wno-mismatched-new-delete -Wno-stringop-overread
+	    $(NO_THREAD_JUMPS) $(WARN_TEST) \
+	    -Wno-uninitialized -Wno-array-bounds \
+	    -Wno-free-nonheap-object -Wno-mismatched-new-delete
 
 
 all: heob$(BITS).exe allocer$(BITS).exe
