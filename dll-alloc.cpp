@@ -58,7 +58,7 @@ extern "C" __declspec(dllexport) void dll_enter_critical_section( void )
   EnterCriticalSection( &cs );
 }
 
-extern "C" BOOL WINAPI DllMain(
+extern "C" BOOL WINAPI DllMainCRTStartup(
     HINSTANCE hinstDLL,DWORD fdwReason,LPVOID lpvReserved )
 {
   (void)hinstDLL;

@@ -71,7 +71,7 @@ allocer$(BITS).exe: allocer.cpp libheobcpp$(BITS).a dll-alloc$(BITS).dll dll-all
 	$(CXX) $(CFLAGS_TEST) -o$@ $^ -nostdlib -lmsvcrt -lkernel32
 
 dll-alloc$(BITS).dll: dll-alloc.cpp libheobcpp$(BITS).a
-	$(CXX) $(CFLAGS_TEST) -shared -o$@ $^ -static-libgcc
+	$(CXX) $(CFLAGS_TEST) -shared -o$@ $^ -nostdlib -lmsvcrt -lkernel32
 
 dll-alloc-shared$(BITS).dll: dll-alloc$(BITS).dll
 	cp -f $< $@
