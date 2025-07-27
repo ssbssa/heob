@@ -1281,28 +1281,28 @@ static uintptr_t get_unwind_pc( int unwind,uintptr_t *mod )
   {
     DWORD64 imageBase = 0;
     PRUNTIME_FUNCTION funcEntry =
-      RtlLookupFunctionEntry( context.Rip,&imageBase,NULL );
+      RtlLookupFunctionEntry( context.cip,&imageBase,NULL );
     if( imageBase!=moduleBase )
       count++;
     if( count==unwind )
     {
       if( mod ) *mod = imageBase;
-      return( context.Rip );
+      return( context.cip );
     }
     moduleBase = imageBase;
     if( funcEntry )
     {
       PVOID handlerData;
       DWORD64 establisherFrame;
-      RtlVirtualUnwind( UNW_FLAG_NHANDLER,imageBase,context.Rip,funcEntry,
+      RtlVirtualUnwind( UNW_FLAG_NHANDLER,imageBase,context.cip,funcEntry,
           &context,&handlerData,&establisherFrame,NULL );
     }
     else
     {
-      context.Rip = *(PULONG64)context.Rsp;
-      context.Rsp += 8;
+      context.cip = *(PULONG64)context.csp;
+      context.csp += 8;
     }
-    if( !context.Rip ) return( 0 );
+    if( !context.cip ) return( 0 );
   }
 }
 #endif
@@ -4107,22 +4107,22 @@ static void stackwalk( const CONTEXT *contextRecord,void **frames )
     {
       DWORD64 imageBase;
       PRUNTIME_FUNCTION funcEntry =
-        RtlLookupFunctionEntry( context.Rip,&imageBase,NULL );
+        RtlLookupFunctionEntry( context.cip,&imageBase,NULL );
       if( funcEntry )
       {
         PVOID handlerData;
         DWORD64 establisherFrame;
-        RtlVirtualUnwind( UNW_FLAG_NHANDLER,imageBase,context.Rip,funcEntry,
+        RtlVirtualUnwind( UNW_FLAG_NHANDLER,imageBase,context.cip,funcEntry,
             &context,&handlerData,&establisherFrame,NULL );
       }
       else
       {
-        context.Rip = *(PULONG64)context.Rsp;
-        context.Rsp += 8;
+        context.cip = *(PULONG64)context.csp;
+        context.csp += 8;
       }
-      if( !context.Rip ) break;
+      if( !context.cip ) break;
 
-      frames[count++] = (void*)context.Rip;
+      frames[count++] = (void*)context.cip;
     }
 #endif
     if( count<PTRS )
