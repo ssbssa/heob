@@ -1055,25 +1055,26 @@ static void deleteFileOnClose( textColor *tc )
 
   HMODULE kernel32 = GetModuleHandle( "kernel32.dll" );
 
-  typedef struct FILE_DISPOSITION_INFO {
+  typedef struct FILE_DISPOSITION_INFO_HEOB {
     BOOLEAN DeleteFile;
-  } FILE_DISPOSITION_INFO;
+  } FILE_DISPOSITION_INFO_HEOB;
 
-  typedef enum FILE_INFO_BY_HANDLE_CLASS {
-    FileDispositionInfo=4,
-  } FILE_INFO_BY_HANDLE_CLASS;
+  typedef enum FILE_INFO_BY_HANDLE_CLASS_HEOB {
+    FileDispositionInfo_heob=4,
+  } FILE_INFO_BY_HANDLE_CLASS_HEOB;
 
   typedef BOOL WINAPI func_SetFileInformationByHandle(
-      HANDLE,FILE_INFO_BY_HANDLE_CLASS,LPVOID,DWORD );
+      HANDLE,FILE_INFO_BY_HANDLE_CLASS_HEOB,LPVOID,DWORD );
 
   func_SetFileInformationByHandle *fSetFileInformationByHandle =
     (func_SetFileInformationByHandle*)GetProcAddress(
         kernel32,"SetFileInformationByHandle" );
   if( !fSetFileInformationByHandle ) return;
 
-  FILE_DISPOSITION_INFO fdi;
+  FILE_DISPOSITION_INFO_HEOB fdi;
   fdi.DeleteFile = TRUE;
-  fSetFileInformationByHandle( tc->out,FileDispositionInfo,&fdi,sizeof(fdi) );
+  fSetFileInformationByHandle( tc->out,
+      FileDispositionInfo_heob,&fdi,sizeof(fdi) );
 }
 
 // }}}
@@ -4308,15 +4309,15 @@ static char *disassemble( DWORD pid,size_t addr,HANDLE heap )
 
     HRESULT res;
 
-    const GUID IID_IDebugClient =
+    const GUID IID_IDebugClient_heob =
     { 0x27fe5639,0x8407,0x4f47,{0x83,0x64,0xee,0x11,0x8f,0xb0,0x8a,0xc8} };
-    res = fDebugCreate( &IID_IDebugClient,(void**)&dbgclient );
+    res = fDebugCreate( &IID_IDebugClient_heob,(void**)&dbgclient );
     if( res!=S_OK ) break;
 
-    const GUID IID_IDebugControl3 =
+    const GUID IID_IDebugControl3_heob =
     { 0x7df74a86,0xb03f,0x407f,{0x90,0xab,0xa2,0x0d,0xad,0xce,0xad,0x08} };
     res = dbgclient->lpVtbl->QueryInterface( dbgclient,
-        &IID_IDebugControl3,(void**)&dbgcontrol );
+        &IID_IDebugControl3_heob,(void**)&dbgcontrol );
     if( res!=S_OK ) break;
 
     res = dbgcontrol->lpVtbl->SetAssemblyOptions( dbgcontrol,
@@ -7021,13 +7022,13 @@ static void mainLoop( appData *ad,UINT *exitCode )
     {
       fCoInitialize( NULL );
 
-      const GUID CLSID_TaskbarList =
+      const GUID CLSID_TaskbarList_heob =
       { 0x56fdf344,0xfd6d,0x11d0,{0x95,0x8a,0x00,0x60,0x97,0xc9,0xa0,0x90} };
-      const GUID IID_ITaskbarList3 =
+      const GUID IID_ITaskbarList3_heob =
       { 0xea1afb91,0x9e28,0x4b86,{0x90,0xe9,0x9e,0x9f,0x8a,0x5e,0xef,0xaf} };
 
-      fCoCreateInstance( &CLSID_TaskbarList,NULL,CLSCTX_INPROC_SERVER,
-          &IID_ITaskbarList3,(void**)&tl3 );
+      fCoCreateInstance( &CLSID_TaskbarList_heob,NULL,CLSCTX_INPROC_SERVER,
+          &IID_ITaskbarList3_heob,(void**)&tl3 );
       if( !tl3 ) fCoUninitialize();
     }
     if( ole32 && !tl3 )
