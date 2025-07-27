@@ -1266,7 +1266,7 @@ static NOINLINE void trackAllocFailure(
 // replacement for signal {{{
 
 #ifdef _WIN64
-static uintptr_t get_unwind_pc( int unwind,uintptr_t *mod )
+static uintptr_t get_unwind_pc( int unwind,const char *func )
 {
   GET_REMOTEDATA( rd );
 
@@ -1283,11 +1283,20 @@ static uintptr_t get_unwind_pc( int unwind,uintptr_t *mod )
     PRUNTIME_FUNCTION funcEntry =
       RtlLookupFunctionEntry( context.cip,&imageBase,NULL );
     if( imageBase!=moduleBase )
+    {
       count++;
+      if( count>unwind ) return( 0 );
+    }
     if( count==unwind )
     {
-      if( mod ) *mod = imageBase;
-      return( context.cip );
+      uintptr_t pc = context.cip;
+      if( pc && imageBase )
+      {
+        const char *functionName = thunkedFunctionNameByAddress(
+            (HMODULE)imageBase,imageBase,pc,NULL );
+        if( functionName && !lstrcmp(functionName,func) )
+          return( pc );
+      }
     }
     moduleBase = imageBase;
     if( funcEntry )
@@ -1321,15 +1330,8 @@ static void *new_signal( int sig,void (*func)(int) )
       // try to outsmart the SEH based signal handling of mingw-w64,
       // which calls signal(SIGSEGV) on exception; detect it by looking
       // for the "__C_specific_handler" function 2 levels up
-      uintptr_t moduleBase = 0;
-      uintptr_t unwindPc = get_unwind_pc( 2,&moduleBase );
-      if( unwindPc && moduleBase )
-      {
-        const char *functionName = thunkedFunctionNameByAddress(
-            (HMODULE)moduleBase,moduleBase,unwindPc,NULL );
-        if( functionName && !lstrcmp(functionName,"__C_specific_handler") )
-          return( NULL );
-      }
+      uintptr_t unwindPc = get_unwind_pc( 2,"__C_specific_handler" );
+      if( unwindPc ) return( NULL );
     }
 #endif
     return( prevSigSegvHandler );
