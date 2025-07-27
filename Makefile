@@ -45,9 +45,10 @@ CFLAGS=-Wall -Wextra -Wshadow -Wwrite-strings -Werror \
 CFLAGS_HEOB=$(CPPFLAGS) $(CFLAGS) -O3 -g3 -DHEOB_VER="\"$(HEOB_VERSION)\"" \
 	    -ffreestanding
 LDFLAGS_HEOB=-nostdlib -lkernel32 -Wl,-dynamicbase,--build-id
+NO_THREAD_JUMPS=-fno-thread-jumps
 CFLAGS_TEST=$(CFLAGS) -O3 -g -D_GLIBCXX_INCLUDE_NEXT_C_HEADERS \
 	    -D__USE_MINGW_ANSI_STDIO=0 \
-	    -fno-thread-jumps \
+	    $(NO_THREAD_JUMPS) \
 	    -Wno-stringop-overflow -Wno-uninitialized -Wno-array-bounds \
 	    -Wno-maybe-uninitialized -Wno-free-nonheap-object \
 	    -Wno-use-after-free \
