@@ -22,3 +22,37 @@ _ZdaPvRKSt9nothrow_t == ??_V@YAXPAX@Z
 _ZdlPvj == ??3@YAXPAX@Z
 ; delete[](size_t)
 _ZdaPvj == ??_V@YAXPAX@Z
+
+_chdir
+_clearfp
+_controlfp
+_errno
+_fullpath
+_getch
+_getcwd
+_getdcwd
+_msize
+_setmode
+_strdup
+_wcsdup
+_wfullpath
+_wgetcwd
+_wgetdcwd
+atoi
+calloc
+chdir == _chdir
+exit
+fflush
+free
+malloc
+printf
+puts
+realloc
+signal
+sprintf
+strchr
+strcmp
+strdup == _strdup
+strlen
+system
+wcsdup == _wcsdup

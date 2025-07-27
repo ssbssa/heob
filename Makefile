@@ -68,10 +68,10 @@ strip-heob$(BITS): heob$(BITS).exe
 	$(PREF)strip -s $<
 
 allocer$(BITS).exe: allocer.cpp libheobcpp$(BITS).a dll-alloc$(BITS).dll dll-alloc-shared$(BITS).dll
-	$(CXX) $(CFLAGS_TEST) -o$@ $^ -nostdlib -lmsvcrt -lkernel32
+	$(CXX) $(CFLAGS_TEST) -o$@ $^ -nostdlib -lkernel32
 
 dll-alloc$(BITS).dll: dll-alloc.cpp libheobcpp$(BITS).a
-	$(CXX) $(CFLAGS_TEST) -shared -o$@ $^ -nostdlib -lmsvcrt -lkernel32
+	$(CXX) $(CFLAGS_TEST) -shared -o$@ $^ -nostdlib -lkernel32
 
 dll-alloc-shared$(BITS).dll: dll-alloc$(BITS).dll
 	cp -f $< $@

@@ -40,7 +40,7 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 {
   printf( "handled exception code: %08lX\n",
       ep->ExceptionRecord->ExceptionCode );
-  fflush( stdout );
+  fflush( NULL );
 
   static int wasHere = 0;
   if( wasHere ||
@@ -321,7 +321,7 @@ extern "C" LONG CALLBACK signalException( PEXCEPTION_POINTERS ExceptionInfo )
 int choose( int arg )
 {
   printf( "allocer: main()\n" );
-  fflush( stdout );
+  fflush( NULL );
 
   char *mem = (char*)malloc( 15 );
   mem[0] = 0;
@@ -408,7 +408,7 @@ int choose( int arg )
         tmp2 = (char*)malloc( 15 );
         printf( "ptr1=0x%p; ptr2=0x%p -> %s\n",
             tmp,tmp2,tmp==tmp2?"same":"different" );
-        fflush( stdout );
+        fflush( NULL );
         mem[2] = tmp[1];
         mem[3] = tmp2[0];
         free( tmp2 );
@@ -745,7 +745,7 @@ int choose( int arg )
 
         printf( "processId: %lu\n",pi.dwProcessId );
         printf( "threadId: %lu\n",pi.dwThreadId );
-        fflush( stdout );
+        fflush( NULL );
         WaitForSingleObject( pi.hProcess,INFINITE );
 
         CloseHandle( pi.hThread );
@@ -854,7 +854,7 @@ int choose( int arg )
           mem[3] = leakYes[0];
 
           printf( "leak count: %d\n",heob_control(HEOB_LEAK_COUNT) );
-          fflush( stdout );
+          fflush( NULL );
 
           heob_control( HEOB_LEAK_RECORDING_SHOW );
 
@@ -1181,7 +1181,7 @@ int choose( int arg )
         {
           size_t n = heob_raise_free( mem );
           printf( "heob_raise_free() found allocation %u\n",(unsigned)n );
-          fflush( stdout );
+          fflush( NULL );
         }
       }
       break;
@@ -1250,7 +1250,7 @@ int choose( int arg )
   if( mem ) printf( "%s",mem );
   free( mem );
 
-  fflush( stdout );
+  fflush( NULL );
 
   return( arg );
 }
@@ -1267,7 +1267,7 @@ int main( int argc,char **argv )
 #else
 static int __attribute__((noinline)) mainStartup( void )
 {
-  _setmode( _fileno(stdout),_O_BINARY );
+  _setmode( 1,_O_BINARY );
   const char *cmdLine = GetCommandLineA();
   if( cmdLine[0]=='"' )
   {
