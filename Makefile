@@ -42,8 +42,9 @@ CFLAGS=-Wall -Wextra -Wshadow -Wwrite-strings -Werror \
        -Wno-cast-function-type \
        -Wno-infinite-recursion \
        -fno-omit-frame-pointer -fno-optimize-sibling-calls
+FREESTANDING=-ffreestanding
 CFLAGS_HEOB=$(CPPFLAGS) $(CFLAGS) -O3 -g3 -DHEOB_VER="\"$(HEOB_VERSION)\"" \
-	    -ffreestanding
+	    $(FREESTANDING)
 LDFLAGS_HEOB=-nostdlib -lkernel32 -Wl,-dynamicbase,--build-id
 NO_THREAD_JUMPS=-fno-thread-jumps
 WARN_TEST=-Wno-stringop-overflow -Wno-maybe-uninitialized \
