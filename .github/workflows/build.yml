@@ -1,13 +1,13 @@
-name: build release
-on:
-  push:
-    tags:
-      - '*'
+name: build
+on: [push, pull_request]
 jobs:
-  build_release:
-    name: build_release
+  build:
     runs-on: windows-2022
     steps:
+      - name: configure git line endings
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
       - name: checkout sources
         uses: actions/checkout@v4
         with:
@@ -23,8 +23,18 @@ jobs:
           PATH: c:\mingw64\bin;c:\msys64\usr\bin
 
       - name: compress debug artifact
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
         shell: bash
         run: 7z a -mx=9 heob-$GITHUB_REF_NAME-dbg.7z heob32.exe heob64.exe
+
+      - name: upload debug artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: heob-debug
+          if-no-files-found: error
+          path: |
+            heob32.exe
+            heob64.exe
 
       - name: strip heob32.exe
         run: make BITS=32 PREF= strip-heob32
@@ -35,7 +45,7 @@ jobs:
         env:
           PATH: c:\mingw64\bin;c:\msys64\usr\bin
 
-      - name: upload-unsigned-artifact
+      - name: upload unsigned artifact
         id: upload-unsigned-artifact
         uses: actions/upload-artifact@v4
         with:
@@ -46,21 +56,34 @@ jobs:
             heob64.exe
       - name: sign
         uses: signpath/github-action-submit-signing-request@v1
+        env:
+          SIGNPATH_SIGNING_POLICY_SLUG: ${{ (startsWith(github.ref, 'refs/tags/')) && 'release-signing' || 'test-signing' }}
         with:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
           organization-id: '${{ vars.SIGNPATH_ORGANIZATION_ID }}'
           project-slug: 'heob'
-          signing-policy-slug: 'release-signing'
+          signing-policy-slug: '${{ env.SIGNPATH_SIGNING_POLICY_SLUG }}'
           github-artifact-id: "${{ steps.upload-unsigned-artifact.outputs.artifact-id }}"
           wait-for-completion: true
           output-artifact-directory: 'heob-signed'
 
+      - name: upload signed artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: heob
+          if-no-files-found: error
+          path: |
+            heob-signed/heob32.exe
+            heob-signed/heob64.exe
+
       - name: compress release artifact
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
         shell: bash
         run: 7z a -mx=9 ../heob-$GITHUB_REF_NAME.7z heob32.exe heob64.exe
         working-directory: heob-signed
 
       - name: release
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
         uses: softprops/action-gh-release@v2
         with:
           draft: true

@@ -1,7 +1,7 @@
 heob - heap observer
 ====================
 
-[![build status](https://ci.appveyor.com/api/projects/status/github/ssbssa/heob?branch=master&svg=true)](https://ci.appveyor.com/project/ssbssa/heob/branch/master)
+[![build](https://github.com/ssbssa/heob/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/ssbssa/heob/actions/workflows/build.yml?query=branch%3Amaster)
 [![latest build](logo-16.png)](https://ci.appveyor.com/api/projects/ssbssa/heob/artifacts/heob.7z?branch=master "latest AppVeyor artifact")
 
 heob overrides the heap functions of the called process to detect
