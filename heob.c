@@ -4444,8 +4444,9 @@ static void showConsole( void )
 
 static void setHeobConsoleTitle( HANDLE heap,const wchar_t *prog )
 {
-  wchar_t *title = HeapAlloc( heap,0,(10+lstrlenW(prog))*2 );
-  lstrcpyW( title,L"heob" HEOB_BITS " - " );
+  const wchar_t *title_h = L"heob" HEOB_BITS " - ";
+  wchar_t *title = HeapAlloc( heap,0,(lstrlenW(title_h)+lstrlenW(prog)+1)*2 );
+  lstrcpyW( title,title_h );
   lstrcatW( title,prog );
   SetConsoleTitleW( title );
   HeapFree( heap,0,title );
