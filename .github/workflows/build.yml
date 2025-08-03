@@ -4,6 +4,7 @@ on: [push, pull_request]
 env:
   GCC_VERSION: 14.3
   GCC_PKGVERSION: ssbssa-1
+  LLVM_MINGW_VERSION: 20250613
 
 jobs:
   build:
@@ -128,3 +129,64 @@ jobs:
           files: |
             heob-${{ github.ref_name }}.7z
             heob-${{ github.ref_name }}-dbg.7z
+
+  aarch64:
+    runs-on: windows-11-arm
+    steps:
+      - name: configure git line endings
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+      - name: checkout sources
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: build heob with MSVC
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsamd64_arm64.bat"
+          set DWSTFLAGS=/Idwarfstack\include
+          call build.bat
+      - name: get llvm-mingw for aarch64 build
+        id: llvm-mingw
+        run: |
+          curl -LO https://github.com/mstorsjo/llvm-mingw/releases/download/${{ env.LLVM_MINGW_VERSION }}/llvm-mingw-${{ env.LLVM_MINGW_VERSION }}-msvcrt-x86_64.zip
+          7z x llvm-mingw-${{ env.LLVM_MINGW_VERSION }}-msvcrt-x86_64.zip
+          echo "location=${{ github.workspace }}\llvm-mingw-${{ env.LLVM_MINGW_VERSION }}-msvcrt-x86_64" >> $env:GITHUB_OUTPUT
+      - name: build heob
+        run: |
+          rm heob64a.exe
+          make BITS=64a PREF=aarch64-w64-mingw32- FREESTANDING= strip-heob64a
+          make BITS=64a PREF=aarch64-w64-mingw32- NO_THREAD_JUMPS= WARN_TEST=-Wno-implicit-exception-spec-mismatch allocer64a.exe
+        env:
+          PATH: ${{ steps.llvm-mingw.outputs.location }}\bin;C:\Program Files\Git\usr\bin;C:\mingw64\bin
+
+      - name: upload executables
+        uses: actions/upload-artifact@v4
+        with:
+          name: heob-aarch64
+          if-no-files-found: error
+          path: |
+            heob64a.exe
+
+      - name: test
+        shell: bash
+        run: |
+          make BITS=64a PREF= IGNORED_TESTS="47 68" test
+          head -n-0 test*.diff || true
+        env:
+          PATH: ${{ steps.llvm-mingw.outputs.location }}\bin;C:\Program Files\Git\usr\bin;C:\mingw64\bin
+      - name: upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-aarch64
+          if-no-files-found: error
+          path: |
+            allocer64a.exe
+            dll-alloc64a.dll
+            test*.diff
+      - name: check for test failure
+        shell: cmd
+        run: |
+          if exist test*.diff exit 1
