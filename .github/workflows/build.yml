@@ -31,16 +31,27 @@ jobs:
           curl -LO https://github.com/ssbssa/gcc/releases/download/gcc-${{ env.GCC_VERSION }}-${{ env.GCC_PKGVERSION }}/gcc-${{ env.GCC_VERSION }}.0-${{ env.GCC_PKGVERSION }}-x86_64.7z
           7z x -ogcc64 gcc-${{ env.GCC_VERSION }}.0-${{ env.GCC_PKGVERSION }}-x86_64.7z
           echo "location=${{ github.workspace }}\gcc64" >> $env:GITHUB_OUTPUT
+      - name: get llvm-mingw for aarch64 build
+        id: llvm-mingw
+        run: |
+          curl -LO https://github.com/mstorsjo/llvm-mingw/releases/download/${{ env.LLVM_MINGW_VERSION }}/llvm-mingw-${{ env.LLVM_MINGW_VERSION }}-msvcrt-x86_64.zip
+          7z x llvm-mingw-${{ env.LLVM_MINGW_VERSION }}-msvcrt-x86_64.zip
+          echo "location=${{ github.workspace }}\llvm-mingw-${{ env.LLVM_MINGW_VERSION }}-msvcrt-x86_64" >> $env:GITHUB_OUTPUT
 
       - name: build heob exes
         run: make heob32.exe heob64.exe
         env:
           PATH: ${{ steps.gcc64.outputs.location }}\bin;${{ steps.gcc32.outputs.location }}\bin;c:\mingw64\bin;c:\msys64\usr\bin
+      - name: build heob64a
+        run: |
+          make BITS=64a PREF=aarch64-w64-mingw32- FREESTANDING= heob64a.exe
+        env:
+          PATH: ${{ steps.llvm-mingw.outputs.location }}\bin;c:\mingw64\bin;c:\msys64\usr\bin
 
       - name: compress debug artifact
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
         shell: bash
-        run: 7z a -mx=9 heob-$GITHUB_REF_NAME-dbg.7z heob32.exe heob64.exe
+        run: 7z a -mx=9 heob-$GITHUB_REF_NAME-dbg.7z heob32.exe heob64.exe heob64a.exe
 
       - name: upload debug artifact
         uses: actions/upload-artifact@v4
@@ -50,11 +61,12 @@ jobs:
           path: |
             heob32.exe
             heob64.exe
+            heob64a.exe
 
       - name: strip heob exes
-        run: make strip-heob32 strip-heob64
+        run: make strip-heob32 strip-heob64 strip-heob64a
         env:
-          PATH: ${{ steps.gcc64.outputs.location }}\bin;${{ steps.gcc32.outputs.location }}\bin;c:\mingw64\bin;c:\msys64\usr\bin
+          PATH: ${{ steps.gcc64.outputs.location }}\bin;${{ steps.gcc32.outputs.location }}\bin;${{ steps.llvm-mingw.outputs.location }}\bin;c:\mingw64\bin;c:\msys64\usr\bin
 
       - name: upload unsigned artifact
         id: upload-unsigned-artifact
@@ -65,6 +77,7 @@ jobs:
           path: |
             heob32.exe
             heob64.exe
+            heob64a.exe
       - name: sign
         uses: signpath/github-action-submit-signing-request@v1
         env:
@@ -86,6 +99,7 @@ jobs:
           path: |
             heob32.exe
             heob64.exe
+            heob64a.exe
 
       - name: build allocer exes
         run: make allocer32.exe allocer64.exe
@@ -117,7 +131,7 @@ jobs:
       - name: compress release artifact
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
         shell: bash
-        run: 7z a -mx=9 heob-$GITHUB_REF_NAME.7z heob32.exe heob64.exe
+        run: 7z a -mx=9 heob-$GITHUB_REF_NAME.7z heob32.exe heob64.exe heob64a.exe
 
       - name: release
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
