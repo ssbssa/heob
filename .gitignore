@@ -8,3 +8,4 @@
 /*.user
 obj32
 obj64
+crt64a.def

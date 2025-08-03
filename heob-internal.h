@@ -57,6 +57,10 @@
 #define USE_STACKWALK 0
 #endif
 
+#if !defined(__aarch64__) && defined(_M_ARM64)
+#define __aarch64__ 1
+#endif
+
 #ifndef _WIN64
 #define IL_INT LONG
 #define IL_INC(var) InterlockedIncrement(var)
@@ -66,9 +70,20 @@
 #else
 #define IL_INT LONGLONG
 #define IL_INC(var) InterlockedIncrement64(var)
+#ifndef __aarch64__
 #define READ_TEB_PTR(o) __readgsqword(o)
 #define READ_TEB_DWORD(o) __readgsdword(o)
 #define WRITE_TEB_DWORD(o,v) __writegsdword(o,v)
+#else
+#ifdef __GNUC__
+register char *teb_reg18 __asm__("x18");
+#else
+#define teb_reg18 __getReg(18)
+#endif
+#define READ_TEB_PTR(o) (*(void**)(teb_reg18+o))
+#define READ_TEB_DWORD(o) (*(DWORD*)(teb_reg18+o))
+#define WRITE_TEB_DWORD(o,v) (*(DWORD*)(teb_reg18+o) = v)
+#endif
 #endif
 
 #define GET_TEB() ((TEB*)READ_TEB_PTR(offsetof(TEB,Self)))
@@ -121,11 +136,23 @@
 #define MACH_TYPE IMAGE_FILE_MACHINE_I386
 #define PROC_ARCH PROCESSOR_ARCHITECTURE_INTEL
 #else
+#ifndef __aarch64__
 #define csp Rsp
 #define cip Rip
 #define cfp Rbp
 #define MACH_TYPE IMAGE_FILE_MACHINE_AMD64
 #define PROC_ARCH PROCESSOR_ARCHITECTURE_AMD64
+#else
+#define csp Sp
+#define cip Pc
+#define cfp Fp
+#define MACH_TYPE IMAGE_FILE_MACHINE_ARM64
+#define PROC_ARCH PROCESSOR_ARCHITECTURE_ARM64
+#endif
+#endif
+
+#ifndef IMAGE_FILE_MACHINE_ARM64
+#define IMAGE_FILE_MACHINE_ARM64 0xaa64
 #endif
 
 // }}}
@@ -727,10 +754,16 @@ static inline int mul_overflow( size_t n,size_t s,size_t *res )
     return( 1 );
   *res = (size_t)res64;
 #else
+#ifndef __aarch64__
   size_t resHigh = 0;
   *res = _umul128( n,s,&resHigh );
   if( UNLIKELY(resHigh) )
     return( 1 );
+#else
+  if( UNLIKELY(__umulh(n,s)) )
+    return( 1 );
+  *res = n*s;
+#endif
 #endif
 #endif
 

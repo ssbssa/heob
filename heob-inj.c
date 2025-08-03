@@ -1308,8 +1308,14 @@ static uintptr_t get_unwind_pc( int unwind,const char *func )
     }
     else
     {
+#ifndef __aarch64__
       context.cip = *(PULONG64)context.csp;
       context.csp += 8;
+#else
+      if( context.cip == context.Lr ) return( 0 );
+      context.cip = context.Lr;
+      context.ContextFlags |= CONTEXT_UNWOUND_TO_CALL;
+#endif
     }
     if( !context.cip ) return( 0 );
   }
@@ -2502,6 +2508,8 @@ int heobSubProcess(
         lstrcpyW( heobEnd,L"heob32.exe" );
       else if( machProc==IMAGE_FILE_MACHINE_AMD64 )
         lstrcpyW( heobEnd,L"heob64.exe" );
+      else if( machProc==IMAGE_FILE_MACHINE_ARM64 )
+        lstrcpyW( heobEnd,L"heob64a.exe" );
     }
 
     wchar_t *heobCmd = HeapAlloc( heap,0,32768*2 );
@@ -4119,8 +4127,14 @@ static void stackwalk( const CONTEXT *contextRecord,void **frames )
       }
       else
       {
+#ifndef __aarch64__
         context.cip = *(PULONG64)context.csp;
         context.csp += 8;
+#else
+        if( context.cip == context.Lr ) break;
+        context.cip = context.Lr;
+        context.ContextFlags |= CONTEXT_UNWOUND_TO_CALL;
+#endif
       }
       if( !context.cip ) break;
 
@@ -4276,7 +4290,11 @@ static LONG WINAPI exceptionWalker( PEXCEPTION_POINTERS ep )
 
   if( ec==EXCEPTION_BREAKPOINT )
   {
+#ifndef __aarch64__
     ep->ContextRecord->cip++;
+#else
+    ep->ContextRecord->cip += 4;
+#endif
     return( EXCEPTION_CONTINUE_EXECUTION );
   }
 
@@ -5090,10 +5108,17 @@ VOID CALLBACK heob( ULONG_PTR arg )
       0xc2,0x04,0x00    // ret  $0x4
     };
 #else
+#ifndef __aarch64__
     unsigned char doNothing[] = {
       0x31,0xc0,        // xor  %eax,%eax
       0xc3              // retq
     };
+#else
+    unsigned char doNothing[] = {
+      0xe0,0x03,0x1f,0xaa,      // mov  x0,xzr
+      0xc0,0x03,0x5f,0xd6       // ret
+    };
+#endif
 #endif
     DWORD prot;
     VirtualProtect( fp,sizeof(doNothing),PAGE_EXECUTE_READWRITE,&prot );

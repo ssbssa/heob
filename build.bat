@@ -3,7 +3,12 @@ echo "%lib%" |find /i "lib\amd64" >NUL
 if errorlevel 1 (
   echo "%lib%" |find /i "lib\x64" >NUL
   if errorlevel 1 (
-    set bits=32
+    echo "%lib%" |find /i "lib\arm64" >NUL
+    if errorlevel 1 (
+      set bits=32
+    ) else (
+      set bits=64a
+    )
   ) else (
     set bits=64
   )

@@ -51,7 +51,11 @@ static LONG WINAPI exceptionWalker( LPEXCEPTION_POINTERS ep )
 #ifndef _WIN64
   ep->ContextRecord->Eip += 10;
 #else
+#ifndef __aarch64__
   ep->ContextRecord->Rip += 10;
+#else
+  ep->ContextRecord->Pc += 4;
+#endif
 #endif
 
   return( EXCEPTION_CONTINUE_EXECUTION );
@@ -1084,7 +1088,9 @@ int choose( int arg )
 
     case 54:
       // STATUS_ASSERTION_FAILURE exception
+#ifndef __aarch64__
       DbgRaiseAssertionFailure();
+#endif
       break;
 
     case 55:

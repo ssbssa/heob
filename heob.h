@@ -46,7 +46,11 @@ enum
 #ifndef _WIN64
 #define HEOB_BITS "32"
 #else
+#if !defined(__aarch64__) && !defined(_M_ARM64)
 #define HEOB_BITS "64"
+#else
+#define HEOB_BITS "64a"
+#endif
 #endif
 
 

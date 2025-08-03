@@ -1775,6 +1775,12 @@ typedef size_t func_dwstDemangle( const char*,char*,size_t );
 #define BITS "32"
 #endif
 
+#ifdef __aarch64__
+#define IF_AARCH64(a) a
+#else
+#define IF_AARCH64(a)
+#endif
+
 typedef struct sourceLocation
 {
   const wchar_t *filename;
@@ -2229,12 +2235,29 @@ const char *thunkedFunctionNameByAddress(
   {
     const unsigned char *expFunc = REL_PTR( idh,funcs[ords[i]] );
     int isThunk = 0;
+#ifndef __aarch64__
     if( expFunc[0]==0xe9 )
     {
       // follow jump thunk
       expFunc = expFunc + 5 + *(uint32_t*)(expFunc+1);
       isThunk = 1;
     }
+#else
+    const uint32_t *instrPtr = (const uint32_t*)expFunc;
+    if( (instrPtr[0]&0x9f00001fU)==0x90000010U && // adrp x16, ofs1
+        (instrPtr[1]&0xffc003ffU)==0x91000210U && // add  x16, x16, ofs2
+        instrPtr[2]==0xd61f0200U )                // br   x16
+    {
+      // follow multi-instruction jump thunk
+      uintptr_t ofs =
+        ( (instrPtr[0]&0x60000000U)>>17 ) |
+        ( (instrPtr[0]&0x007fffe0U)<<9 ) |
+        ( (instrPtr[1]&0x003ffc00U)>>10 );
+      if( (instrPtr[0]&0x00800000U)!=0 )
+        ofs |= 0xffffffff00000000ULL;
+      expFunc = (const unsigned char*)( ((uintptr_t)expFunc&~0xfffULL) + ofs );
+    }
+#endif
 
     uintptr_t expFuncAddr = (uintptr_t)expFunc + relocation;
     if( addr>=expFuncAddr && (expFuncAddr>nearestFuncAddr ||
@@ -4495,7 +4518,8 @@ static textColor *writeXmlHeader( appData *ad )
       "<protocolversion>4</protocolversion>\n"
       "<protocoltool>memcheck</protocoltool>\n\n"
       "<preamble>\n"
-      "  <line>heap-observer %s (" BITS "bit)</line>\n",HEOB_VER );
+      "  <line>heap-observer %s (" BITS "bit" IF_AARCH64(" aarch64")
+      ")</line>\n",HEOB_VER );
   attachedProcessInfo *api = ad->api;
   if( api )
   {
@@ -5793,8 +5817,20 @@ static void writeException( appData *ad,textColor *tcXml,
     if( ei->aa[0].frames[0] && (opt->exceptionDetails&2) &&
         ei->er.ExceptionCode!=EXCEPTION_BREAKPOINT )
       ip = (size_t)ei->aa[0].frames[0];
+#ifdef __aarch64__
+    uint32_t alignedInstruction;
+#endif
     if( ip && convert_address )
+    {
       ip = (size_t)convert_address( ad,ip,NULL );
+#ifdef __aarch64__
+      if( ip )
+      {
+        alignedInstruction = *(uint32_t*)ip;
+        ip = (size_t)&alignedInstruction;
+      }
+#endif
+    }
     if( ip )
       printDisassembler( tc,"$S  assembly instruction:\n",
           ad->pi.dwProcessId,ip,ad->heap );
@@ -5818,6 +5854,7 @@ static void writeException( appData *ad,textColor *tcXml,
       PREG( "ecx"   ,Ecx   ,"%X","       "        ,     );
       PREG( "eax"   ,Eax   ,"%X","       "        ,"\n" );
 #else
+#ifndef __aarch64__
       PREG( "rax"   ,Rax   ,"%X","    "           ,     );
       PREG( "rcx"   ,Rcx   ,"%X","  "             ,     );
       PREG( "rdx"   ,Rdx   ,"%X","  "             ,"\n" );
@@ -5833,6 +5870,37 @@ static void writeException( appData *ad,textColor *tcXml,
       PREG( "r13"   ,R13   ,"%X","    "           ,     );
       PREG( "r14"   ,R14   ,"%X","  "             ,     );
       PREG( "r15"   ,R15   ,"%X","  "             ,"\n" );
+#else
+      PREG( "x0"    ,X0    ,"%X","    "           ,     );
+      PREG( "x1"    ,X1    ,"%X","   "            ,     );
+      PREG( "x2"    ,X2    ,"%X","   "            ,"\n" );
+      PREG( "x3"    ,X3    ,"%X","    "           ,     );
+      PREG( "x4"    ,X4    ,"%X","   "            ,     );
+      PREG( "x5"    ,X5    ,"%X","   "            ,"\n" );
+      PREG( "x6"    ,X6    ,"%X","    "           ,     );
+      PREG( "x7"    ,X7    ,"%X","   "            ,     );
+      PREG( "x8"    ,X8    ,"%X","   "            ,"\n" );
+      PREG( "x9"    ,X9    ,"%X","    "           ,     );
+      PREG( "x10"   ,X10   ,"%X","   "            ,     );
+      PREG( "x11"   ,X11   ,"%X","  "             ,"\n" );
+      PREG( "x12"   ,X12   ,"%X","    "           ,     );
+      PREG( "x13"   ,X13   ,"%X","  "             ,     );
+      PREG( "x14"   ,X14   ,"%X","  "             ,"\n" );
+      PREG( "x15"   ,X15   ,"%X","    "           ,     );
+      PREG( "x16"   ,X16   ,"%X","  "             ,     );
+      PREG( "x17"   ,X17   ,"%X","  "             ,"\n" );
+      PREG( "x18"   ,X18   ,"%X","    "           ,     );
+      PREG( "x19"   ,X19   ,"%X","  "             ,     );
+      PREG( "x20"   ,X20   ,"%X","  "             ,"\n" );
+      PREG( "x21"   ,X21   ,"%X","    "           ,     );
+      PREG( "x22"   ,X22   ,"%X","  "             ,     );
+      PREG( "x23"   ,X23   ,"%X","  "             ,"\n" );
+      PREG( "x24"   ,X24   ,"%X","    "           ,     );
+      PREG( "x25"   ,X25   ,"%X","  "             ,     );
+      PREG( "x26"   ,X26   ,"%X","  "             ,"\n" );
+      PREG( "x27"   ,X27   ,"%X","    "           ,     );
+      PREG( "x28"   ,X28   ,"%X","  "             ,"\n" );
+#endif
 #endif
     }
     if( ei->c.ContextFlags&CONTEXT_CONTROL )
@@ -5845,13 +5913,22 @@ static void writeException( appData *ad,textColor *tcXml,
       PREG( "esp"   ,Esp   ,"%X","    "           ,     );
       PREG( "ss"    ,SegSs ,"%w","       "        ,"\n" );
 #else
+#ifndef __aarch64__
       PREG( "ss"    ,SegSs ,"%w","    "           ,     );
       PREG( "rsp"   ,Rsp   ,"%X","               ", );
       PREG( "cs"    ,SegCs ,"%w","  "             ,"\n" );
       PREG( "rip"   ,Rip   ,"%X","    "           ,     );
       PREG( "eflags",EFlags,"%x","  "             ,"\n" );
+#else
+      PREG( "fp"    ,Fp    ,"%X","    "           ,     );
+      PREG( "lr"    ,Lr    ,"%X","   "            , );
+      PREG( "sp"    ,Sp    ,"%X","   "            ,"\n" );
+      PREG( "pc"    ,Pc    ,"%X","    "           ,     );
+      PREG( "cpsr"  ,Cpsr  ,"%x","   "            ,"\n" );
+#endif
 #endif
     }
+#ifdef CONTEXT_SEGMENTS
     if( ei->c.ContextFlags&CONTEXT_SEGMENTS )
     {
 #ifndef _WIN64
@@ -5866,6 +5943,7 @@ static void writeException( appData *ad,textColor *tcXml,
       PREG( "gs"    ,SegGs ,"%w","       "        ,"\n" );
 #endif
     }
+#endif
   }
   // }}}
 
@@ -8232,7 +8310,8 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
   printf( helpKey ? "$Wh$N" : "h" );
   printf( "elp\n" );
 
-  printf( "\n$Ohe$Nap-$Oob$Nserver %s ($O" BITS "$Nbit)\n",HEOB_VER );
+  printf( "\n$Ohe$Nap-$Oob$Nserver %s ($O" BITS "$Nbit"
+      IF_AARCH64(" $Oa$Narch64") ")\n",HEOB_VER );
 
   if( waitForKeyIfConsoleOwner(tc,ad->in)=='H' && helpKey )
   {
@@ -9056,7 +9135,8 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
   ad->heobExitData = &heobExitData;
   if( isWrongArch(ad->pi.hProcess,NULL) )
   {
-    printf( "$Wonly " BITS "bit applications possible\n" );
+    printf( "$Wonly " BITS "bit" IF_AARCH64(" (aarch64)")
+        " applications possible\n" );
     heobExit = HEOB_WRONG_BITNESS;
   }
   else

@@ -18,6 +18,8 @@ ifeq ($(BITS),32)
   PREF=i686-w64-mingw32-
 else ifeq ($(BITS),64)
   PREF=x86_64-w64-mingw32-
+else ifeq ($(BITS),64a)
+  PREF=aarch64-w64-mingw32-
 else
   PREF=
 endif
@@ -76,6 +78,9 @@ dll-alloc$(BITS).dll: dll-alloc.cpp libheobcpp$(BITS).a
 dll-alloc-shared$(BITS).dll: dll-alloc$(BITS).dll
 	cp -f $< $@
 
+crt64a.def: crt64.def
+	cp -f $< $@
+
 libheobcpp$(BITS).a: crt$(BITS).def
 	$(PREF)dlltool -k -d $< -l $@
 
@@ -89,11 +94,11 @@ package-src:
 
 packages: package-src package-dbg package
 
-heob-$(HEOB_VERSION)-dbg.7z: heob32.exe heob64.exe
+heob-$(HEOB_VERSION)-dbg.7z: heob32.exe heob64.exe heob64a.exe
 	7z a -mx=9 $@ $^
 
-heob-$(HEOB_VERSION).7z: strip-heob32 strip-heob64
-	7z a -mx=9 $@ heob32.exe heob64.exe
+heob-$(HEOB_VERSION).7z: strip-heob32 strip-heob64 strip-heob64a.exe
+	7z a -mx=9 $@ heob32.exe heob64.exe heob64a.exe
 
 
 .PHONY: force
@@ -105,6 +110,10 @@ endif
 ifneq ($(BITS),64)
 heob64.exe allocer64.exe strip-heob64: force
 	$(MAKE) BITS=64 $@
+endif
+ifneq ($(BITS),64a)
+heob64a.exe allocer64a.exe strip-heob64a: force
+	$(MAKE) BITS=64a $@
 endif
 
 
