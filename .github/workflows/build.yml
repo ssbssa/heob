@@ -65,7 +65,7 @@ jobs:
           signing-policy-slug: '${{ env.SIGNPATH_SIGNING_POLICY_SLUG }}'
           github-artifact-id: "${{ steps.upload-unsigned-artifact.outputs.artifact-id }}"
           wait-for-completion: true
-          output-artifact-directory: 'heob-signed'
+          output-artifact-directory: '.'
 
       - name: upload signed artifact
         uses: actions/upload-artifact@v4
@@ -73,8 +73,8 @@ jobs:
           name: heob
           if-no-files-found: error
           path: |
-            heob-signed/heob32.exe
-            heob-signed/heob64.exe
+            heob32.exe
+            heob64.exe
 
       - name: build allocer32.exe
         run: make BITS=32 PREF= allocer32.exe
@@ -89,7 +89,6 @@ jobs:
       - name: test
         shell: bash
         run: |
-          cp heob-signed/heob*.exe .
           make IGNORED_TESTS="68" tests
           head -n-0 test*.diff || true
         env:
@@ -111,8 +110,7 @@ jobs:
       - name: compress release artifact
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
         shell: bash
-        run: 7z a -mx=9 ../heob-$GITHUB_REF_NAME.7z heob32.exe heob64.exe
-        working-directory: heob-signed
+        run: 7z a -mx=9 heob-$GITHUB_REF_NAME.7z heob32.exe heob64.exe
 
       - name: release
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
