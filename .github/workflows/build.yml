@@ -1,5 +1,10 @@
 name: build
 on: [push, pull_request]
+
+env:
+  GCC_VERSION: 14.3
+  GCC_PKGVERSION: ssbssa-1
+
 jobs:
   build:
     runs-on: windows-2022
@@ -13,14 +18,23 @@ jobs:
         with:
           submodules: 'true'
 
-      - name: build heob32.exe
-        run: make BITS=32 PREF= heob32.exe
+      - name: get i686 gcc
+        id: gcc32
+        run: |
+          curl -LO https://github.com/ssbssa/gcc/releases/download/gcc-${{ env.GCC_VERSION }}-${{ env.GCC_PKGVERSION }}/gcc-${{ env.GCC_VERSION }}.0-${{ env.GCC_PKGVERSION }}-i686.7z
+          7z x -ogcc32 gcc-${{ env.GCC_VERSION }}.0-${{ env.GCC_PKGVERSION }}-i686.7z
+          echo "location=${{ github.workspace }}\gcc32" >> $env:GITHUB_OUTPUT
+      - name: get x86_64 gcc
+        id: gcc64
+        run: |
+          curl -LO https://github.com/ssbssa/gcc/releases/download/gcc-${{ env.GCC_VERSION }}-${{ env.GCC_PKGVERSION }}/gcc-${{ env.GCC_VERSION }}.0-${{ env.GCC_PKGVERSION }}-x86_64.7z
+          7z x -ogcc64 gcc-${{ env.GCC_VERSION }}.0-${{ env.GCC_PKGVERSION }}-x86_64.7z
+          echo "location=${{ github.workspace }}\gcc64" >> $env:GITHUB_OUTPUT
+
+      - name: build heob exes
+        run: make heob32.exe heob64.exe
         env:
-          PATH: c:\mingw32\bin;c:\msys64\usr\bin
-      - name: build heob64.exe
-        run: make BITS=64 PREF= heob64.exe
-        env:
-          PATH: c:\mingw64\bin;c:\msys64\usr\bin
+          PATH: ${{ steps.gcc64.outputs.location }}\bin;${{ steps.gcc32.outputs.location }}\bin;c:\mingw64\bin;c:\msys64\usr\bin
 
       - name: compress debug artifact
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
@@ -36,14 +50,10 @@ jobs:
             heob32.exe
             heob64.exe
 
-      - name: strip heob32.exe
-        run: make BITS=32 PREF= strip-heob32
+      - name: strip heob exes
+        run: make strip-heob32 strip-heob64
         env:
-          PATH: c:\mingw32\bin;c:\msys64\usr\bin
-      - name: strip heob64.exe
-        run: make BITS=64 PREF= strip-heob64
-        env:
-          PATH: c:\mingw64\bin;c:\msys64\usr\bin
+          PATH: ${{ steps.gcc64.outputs.location }}\bin;${{ steps.gcc32.outputs.location }}\bin;c:\mingw64\bin;c:\msys64\usr\bin
 
       - name: upload unsigned artifact
         id: upload-unsigned-artifact
@@ -76,14 +86,10 @@ jobs:
             heob32.exe
             heob64.exe
 
-      - name: build allocer32.exe
-        run: make BITS=32 PREF= allocer32.exe
+      - name: build allocer exes
+        run: make allocer32.exe allocer64.exe
         env:
-          PATH: c:\mingw32\bin;c:\msys64\usr\bin
-      - name: build allocer64.exe
-        run: make BITS=64 PREF= allocer64.exe
-        env:
-          PATH: c:\mingw64\bin;c:\msys64\usr\bin
+          PATH: ${{ steps.gcc64.outputs.location }}\bin;${{ steps.gcc32.outputs.location }}\bin;c:\mingw64\bin;c:\msys64\usr\bin
       - name: install test dependencies
         run: c:\msys64\usr\bin\bash.exe -l -c "pacman -S --noconfirm make diffutils"
       - name: test
