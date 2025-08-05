@@ -937,17 +937,10 @@ static void checkOutputVariant( textColor *tc,HANDLE out,
   HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
   if( !ntdll ) return;
 
+  // windows console {{{
   DWORD flags;
   if( GetConsoleMode(tc->out,&flags) )
   {
-    if( GetProcAddress(ntdll,"wine_get_version") )
-    {
-      // wine terminal
-      setTextColorTerminal( tc );
-      return;
-    }
-
-    // windows console {{{
     CONSOLE_SCREEN_BUFFER_INFO csbi;
     GetConsoleScreenBufferInfo( tc->out,&csbi );
     int bg = csbi.wAttributes&0xf0;
@@ -969,9 +962,9 @@ static void checkOutputVariant( textColor *tc,HANDLE out,
     bg = bg | ( bg>>4 );
     for( i=0; i<ATT_COUNT; i++ )
       if( tc->colors[i]==bg ) tc->colors[i] ^= 0x08;
-    // }}}
     return;
   }
+  // }}}
 
   func_NtQueryObject *fNtQueryObject =
     (func_NtQueryObject*)GetProcAddress( ntdll,"NtQueryObject" );
