@@ -307,17 +307,22 @@ TESTS:=01
 endif
 USED_TESTS:=$(filter-out $(IGNORED_TESTS),$(TESTS))
 
+define newline
+
+
+endef
+
 testres:
 	mkdir -p $@
 
 testc: heob$(BITS).exe allocer$(BITS).exe | testres
-	@$(foreach t,$(USED_TESTS),echo heob$(BITS) $(T_H$(t)) allocer$(BITS) $(T_A$(t)) "->" test$(BITS)-$(t).txt; ./heob$(BITS).exe $(T_H$(t)) allocer$(BITS) $(T_A$(t)) |sed 's/0x[0-9A-Z]*/0xPTR/g;/^[ |]*0xPTR/d;s/\<of [1-9][0-9]*/of NUM/g;s/^[ |]*\[/    \[/;s/ \[[0-9]\+\]//;s/ '\''1'\''//;/^           *[^\[]/d' >testres/test-$(t).txt;)
+	@$(foreach t,$(USED_TESTS),echo heob$(BITS) $(T_H$(t)) allocer$(BITS) $(T_A$(t)) "->" test$(BITS)-$(t).txt; ./heob$(BITS).exe $(T_H$(t)) allocer$(BITS) $(T_A$(t)) |sed 's/0x[0-9A-Z]*/0xPTR/g;/^[ |]*0xPTR/d;s/\<of [1-9][0-9]*/of NUM/g;s/^[ |]*\[/    \[/;s/ \[[0-9]\+\]//;s/ '\''1'\''//;/^           *[^\[]/d' >testres/test-$(t).txt$(newline))
 
 TOK=[0;32mOK[0m
 TFAIL=[0;31mFAIL[0m
 
 test: heob$(BITS).exe allocer$(BITS).exe
-	@$(foreach t,$(USED_TESTS),echo test$(BITS)-$(t): heob$(BITS) $(T_H$(t)) allocer$(BITS) $(T_A$(t)) "->" `./heob$(BITS).exe $(T_H$(t)) allocer$(BITS) $(T_A$(t)) </dev/null |sed 's/0x[0-9A-Z]*/0xPTR/g;/^[ |]*0xPTR/d;s/\<of [1-9][0-9]*/of NUM/g;s/^[ |]*\[/    \[/;s/ \[[0-9]\+\]//;s/ '\''1'\''//;/^           *[^\[]/d' |diff -Naur --label "expected result" --label "actual result" testres/test-$(t).txt - >test$(BITS)-$(t).diff && echo "$(TOK)" && rm -f test$(BITS)-$(t).diff || echo "$(TFAIL)"`;)
+	@$(foreach t,$(USED_TESTS),echo test$(BITS)-$(t): heob$(BITS) $(T_H$(t)) allocer$(BITS) $(T_A$(t)) "->" `./heob$(BITS).exe $(T_H$(t)) allocer$(BITS) $(T_A$(t)) </dev/null |sed 's/0x[0-9A-Z]*/0xPTR/g;/^[ |]*0xPTR/d;s/\<of [1-9][0-9]*/of NUM/g;s/^[ |]*\[/    \[/;s/ \[[0-9]\+\]//;s/ '\''1'\''//;/^           *[^\[]/d' |diff -Naur --label "expected result" --label "actual result" testres/test-$(t).txt - >test$(BITS)-$(t).diff && echo "$(TOK)" && rm -f test$(BITS)-$(t).diff || echo "$(TFAIL)"`$(newline))
 
 testsc:
 	$(MAKE) BITS=32 testc
