@@ -3982,7 +3982,7 @@ static const char *nameFromId( unsigned id,
 }
 
 static void printOSVersion( textColor *tc,RTL_OSVERSIONINFOEXW *ver,
-    SYSTEM_INFO *si )
+    SYSTEM_INFO *si,const KUSER_SHARED_DATA *kdata )
 {
   static const struct id_name platformIds[] = {
     {      0,"WIN32s" },
@@ -4158,6 +4158,33 @@ static void printOSVersion( textColor *tc,RTL_OSVERSIONINFOEXW *ver,
   printf( "$ICPU architecture: $N%s\n",cpu );
 
   printf( "$Iprocessors: $N%u\n",si->dwNumberOfProcessors );
+
+  if( kdata )
+  {
+    FILETIME ft;
+    ULARGE_INTEGER uli1,uli2;
+    uli1.LowPart = kdata->SystemTime.LowPart;
+    uli1.HighPart = kdata->SystemTime.High1Part;
+    uli2.LowPart = kdata->InterruptTime.LowPart;
+    uli2.HighPart = kdata->InterruptTime.High1Part;
+    uli1.QuadPart -= uli2.QuadPart;
+    ft.dwLowDateTime = uli1.LowPart;
+    ft.dwHighDateTime = uli1.HighPart;
+    printf( "$Isystem start time: $N%T\n",&ft );
+
+    unsigned a2 = si->wProcessorArchitecture;
+    switch( kdata->ImageNumberLow )
+    {
+      case IMAGE_FILE_MACHINE_I386:  a2 = PROCESSOR_ARCHITECTURE_INTEL; break;
+      case IMAGE_FILE_MACHINE_AMD64: a2 = PROCESSOR_ARCHITECTURE_AMD64; break;
+      case IMAGE_FILE_MACHINE_ARM64: a2 = PROCESSOR_ARCHITECTURE_ARM64; break;
+    }
+    if( a2!=si->wProcessorArchitecture )
+    {
+      cpu = nameFromId( a2,cpuIds,ARRAYSIZE(cpuIds),"unknown" );
+      printf( "$ICPU architecture (OS): $N%s\n",cpu );
+    }
+  }
 }
 
 static void printAttachedProcessInfo( appData *ad,textColor *tc )
@@ -4214,7 +4241,7 @@ static void printAttachedProcessInfo( appData *ad,textColor *tc )
     SYSTEM_INFO si;
     GetSystemInfo( &si );
     if( fRtlGetVersion && !fRtlGetVersion((RTL_OSVERSIONINFOW*)&ver) )
-      printOSVersion( tc,&ver,&si );
+      printOSVersion( tc,&ver,&si,(const KUSER_SHARED_DATA*)SHARED_USER_DATA );
   }
 
   printf( "\n" );
@@ -6829,7 +6856,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
       FILETIME ft = secondsToFiletime( header->TimeDateStamp );
       printf( "$Iminidump timestamp: $N%T\n",&ft );
     }
-    if( system ) printOSVersion( tc,&ver,&si );
+    if( system ) printOSVersion( tc,&ver,&si,NULL );
 
     UnmapViewOfFile( dump );
     dbgsym_close( &ds );
@@ -7071,7 +7098,8 @@ static int isMinidump( appData *ad,const wchar_t *name )
     printf( "\n" );
   }
 
-  printOSVersion( tc,&ver,&si );
+  printOSVersion( tc,&ver,&si,
+      getDumpLoc(ad,SHARED_USER_DATA,sizeof(KUSER_SHARED_DATA),NULL) );
 
   if( maxNeededSize )
     printf( "\n$Wtruncated minidump, size should be at least %B\n",

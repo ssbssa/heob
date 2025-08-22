@@ -154,6 +154,11 @@ register char *teb_reg18 __asm__("x18");
 #ifndef IMAGE_FILE_MACHINE_ARM64
 #define IMAGE_FILE_MACHINE_ARM64 0xaa64
 #endif
+#ifndef PROCESSOR_ARCHITECTURE_ARM64
+#define PROCESSOR_ARCHITECTURE_ARM64 12
+#endif
+
+#define SHARED_USER_DATA 0x7ffe0000
 
 // }}}
 // kernel32.dll function definitions {{{
@@ -769,6 +774,29 @@ static inline int mul_overflow( size_t n,size_t s,size_t *res )
 
   return( 0 );
 }
+
+// }}}
+// KUSER_SHARED_DATA {{{
+
+typedef struct
+{
+  ULONG LowPart;
+  ULONG High1Part;
+  ULONG High2Part;
+}
+KSYSTEM_TIME;
+
+typedef struct
+{
+  ULONG TickCountLow;
+  ULONG TickCountMultiplier;
+  KSYSTEM_TIME InterruptTime;
+  KSYSTEM_TIME SystemTime;
+  KSYSTEM_TIME TimeZoneBias;
+  USHORT ImageNumberLow;
+  USHORT ImageNumberHigh;
+}
+KUSER_SHARED_DATA;
 
 // }}}
 
