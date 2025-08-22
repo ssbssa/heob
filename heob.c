@@ -1852,7 +1852,7 @@ typedef struct dbgsym
   char *ansiPath;
   textColor *tc;
   options *opt;
-  const char **funcnames;
+  const char *const *funcnames;
   uintptr_t threadInitAddr;
   HANDLE heap;
   stackSourceLocation *ssl;
@@ -1973,8 +1973,8 @@ sorted_add_func( strings_add,char,lstrcmp,lstrlen,1 )
 sorted_add_func( strings_addW,wchar_t,lstrcmpW,lstrlenW,2 )
 
 static void dbgsym_init( dbgsym *ds,HANDLE process,textColor *tc,options *opt,
-    const char **funcnames,HANDLE heap,const wchar_t *dbgPath,BOOL invade,
-    void *threadInitAddr )
+    const char *const *funcnames,HANDLE heap,const wchar_t *dbgPath,
+    BOOL invade,void *threadInitAddr )
 {
   RtlZeroMemory( ds,sizeof(dbgsym) );
   ds->process = process;
@@ -6778,7 +6778,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
       printf( "$Iminidump flags: $N%x",flags );
       if( flags )
       {
-        const char *flagNames[25] = {
+        static const char *const flagNames[25] = {
           "WithDataSegs",
           "WithFullMemory",
           "WithHandleData",
@@ -6806,7 +6806,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
           "FilterWriteCombinedMemory",
         };
         int printed = 0;
-        for( unsigned int f=0; f<25; f++ )
+        for( unsigned int f=0; f<ARRAYSIZE(flagNames); f++ )
         {
           if( !(flags&(1<<f)) ) continue;
 
@@ -8334,7 +8334,7 @@ static void showHelpText( appData *ad,options *defopt,int fullhelp )
 // }}}
 // main {{{
 
-static const char *funcnames[FT_COUNT] = {
+static const char *const funcnames[FT_COUNT] = {
   "malloc",
   "calloc",
   "free",
