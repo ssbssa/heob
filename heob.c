@@ -5721,7 +5721,7 @@ static void writeException( appData *ad,textColor *tcXml,
     int threadName_q,threadInfo *threadName_a,
 #endif
 #ifndef NO_DBGENG
-    const void *convert_address(appData*,size_t,size_t*),
+    const void *convert_address(appData*,size_t,size_t,size_t*),
 #endif
     exceptionInfo *ei,modInfo *mi_a,int mi_q )
 {
@@ -5822,7 +5822,7 @@ static void writeException( appData *ad,textColor *tcXml,
 #endif
     if( ip && convert_address )
     {
-      ip = (size_t)convert_address( ad,ip,NULL );
+      ip = (size_t)convert_address( ad,ip,1,NULL );
 #ifdef __aarch64__
       if( ip )
       {
@@ -6092,7 +6092,7 @@ static void writeException( appData *ad,textColor *tcXml,
     {
       size_t ip = (size_t)flt_error_offset;
       if( convert_address )
-        ip = (size_t)convert_address( ad,ip,NULL );
+        ip = (size_t)convert_address( ad,ip,1,NULL );
       if( ip )
         printDisassembler( tc,NULL,ad->pi.dwProcessId,ip,ad->heap );
     }
@@ -6289,7 +6289,8 @@ static int addDumpMemoryLocMaxSize( appData *ad,
   return( 0 );
 }
 
-static const void *getDumpLoc( appData *ad,size_t address,size_t *size )
+static const void *getDumpLoc( appData *ad,size_t address,
+    size_t minSize,size_t *size )
 {
   dump_memory_loc *dump_mem_a = ad->dump_mem_a;
   int dump_mem_q = ad->dump_mem_q;
@@ -6299,7 +6300,9 @@ static const void *getDumpLoc( appData *ad,size_t address,size_t *size )
     dump_memory_loc *dml = dump_mem_a + i;
     if( address>=dml->address && address<dml->address+dml->size )
     {
-      if( size ) *size = dml->address + dml->size - address;
+      size_t maxSize = dml->address + dml->size - address;
+      if( maxSize<minSize ) return( NULL );
+      if( size ) *size = maxSize;
       return( dml->ptr + address - dml->address );
     }
   }
@@ -6335,7 +6338,7 @@ static BOOL WINAPI readDumpMemory( HANDLE process,
   appData *ad = process;
 
   size_t maxSize;
-  const void *loc = getDumpLoc( ad,(size_t)address,&maxSize );
+  const void *loc = getDumpLoc( ad,(size_t)address,1,&maxSize );
   if( loc )
   {
     if( size>maxSize ) size = (DWORD)maxSize;
@@ -6723,20 +6726,21 @@ static int isMinidump( appData *ad,const wchar_t *name )
         // the 32bit TEB is exactly 2 pages after the 64bit TEB
         teb_ptr += 0x2000;
 #endif
-      size_t maxSize;
-      const TEB *teb = getDumpLoc( ad,teb_ptr,&maxSize );
-      if( teb && maxSize>=sizeof(TEB) )
+      const TEB *teb = getDumpLoc( ad,teb_ptr,sizeof(TEB),NULL );
+      if( teb )
       {
-        const PEB *peb = getDumpLoc( ad,(size_t)teb->Peb,&maxSize );
-        if( peb && maxSize>=sizeof(PEB) )
+        const PEB *peb = getDumpLoc( ad,(size_t)teb->Peb,sizeof(PEB),NULL );
+        if( peb )
         {
           const RTL_USER_PROCESS_PARAMETERS *upp =
-            getDumpLoc( ad,(size_t)peb->ProcessParameters,&maxSize );
-          if( upp && maxSize>=sizeof(RTL_USER_PROCESS_PARAMETERS) )
+            getDumpLoc( ad,(size_t)peb->ProcessParameters,
+                sizeof(RTL_USER_PROCESS_PARAMETERS),NULL );
+          if( upp )
           {
             const wchar_t *commandLine = getDumpLoc(
-                ad,(size_t)upp->CommandLine.Buffer,&maxSize );
-            if( commandLine && maxSize>=upp->CommandLine.Length )
+                ad,(size_t)upp->CommandLine.Buffer,
+                upp->CommandLine.Length,NULL );
+            if( commandLine )
             {
               wchar_t *cl = HeapAlloc(
                   heap,HEAP_ZERO_MEMORY,upp->CommandLine.Length+2 );
@@ -6746,8 +6750,9 @@ static int isMinidump( appData *ad,const wchar_t *name )
             }
 
             const wchar_t *currentDirectory = getDumpLoc(
-                ad,(size_t)upp->CurrentDirectory.Buffer,&maxSize );
-            if( currentDirectory && maxSize>=upp->CurrentDirectory.Length )
+                ad,(size_t)upp->CurrentDirectory.Buffer,
+                upp->CurrentDirectory.Length,NULL );
+            if( currentDirectory )
             {
               wchar_t *cd = HeapAlloc(
                   heap,HEAP_ZERO_MEMORY,upp->CurrentDirectory.Length+2 );
@@ -6865,19 +6870,20 @@ static int isMinidump( appData *ad,const wchar_t *name )
 #ifdef _WIN64
       char *mod = (char*)ei->er.ExceptionInformation[3];
 #endif
-      size_t maxSize;
-      ptr = getDumpLoc( ad,(size_t)ptr,&maxSize );
-      if( ptr && maxSize>=4*sizeof(DWORD) )
+      ptr = getDumpLoc( ad,(size_t)ptr,4*sizeof(DWORD),NULL );
+      if( ptr )
       {
-        ptr = getDumpLoc( ad,CALC_THROW_ARG(mod,ptr[3]),&maxSize );
-        if( ptr && maxSize>=2*sizeof(DWORD) )
+        ptr = getDumpLoc( ad,CALC_THROW_ARG(mod,ptr[3]),2*sizeof(DWORD),NULL );
+        if( ptr )
         {
-          ptr = getDumpLoc( ad,CALC_THROW_ARG(mod,ptr[1]),&maxSize );
-          if( ptr && maxSize>=2*sizeof(DWORD) )
+          ptr = getDumpLoc( ad,CALC_THROW_ARG(mod,ptr[1]),
+              2*sizeof(DWORD),NULL );
+          if( ptr )
           {
+            size_t maxSize;
             ptr = getDumpLoc( ad,
-                CALC_THROW_ARG(mod,ptr[1])+2*sizeof(void*),&maxSize );
-            if( ptr && maxSize )
+                CALC_THROW_ARG(mod,ptr[1])+2*sizeof(void*),1,&maxSize );
+            if( ptr )
             {
               if( maxSize>=sizeof(ei->throwName) )
                 maxSize = sizeof(ei->throwName) - 1;
@@ -6933,15 +6939,14 @@ static int isMinidump( appData *ad,const wchar_t *name )
       {
         // the location of the 32bit CONTEXT is in teb->TlsSlots[1] of
         // the 64bit TEB (TlsSlots[1] is at a 657*8 bytes offset), plus 4
-        size_t maxSize;
-        const uint64_t *teb = getDumpLoc( ad,(size_t)thread->Teb,&maxSize );
         const unsigned tlsslots_1_idx = 657;
-        if( teb && maxSize>=(tlsslots_1_idx+1)*8 &&
-            teb[tlsslots_1_idx] && teb[tlsslots_1_idx]<0x100000000-4 )
+        const uint64_t *teb = getDumpLoc( ad,(size_t)thread->Teb,
+            (tlsslots_1_idx+1)*8,NULL );
+        if( teb && teb[tlsslots_1_idx] && teb[tlsslots_1_idx]<0x100000000-4 )
         {
           const CONTEXT *wow64_context = getDumpLoc(
-              ad,(size_t)teb[tlsslots_1_idx]+4,&maxSize );
-          if( wow64_context && maxSize>=sizeof(CONTEXT) )
+              ad,(size_t)teb[tlsslots_1_idx]+4,sizeof(CONTEXT),NULL );
+          if( wow64_context )
             context = wow64_context;
         }
       }
