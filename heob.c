@@ -6584,6 +6584,20 @@ static int isMinidump( appData *ad,const wchar_t *name )
       printf( "$Wminidump is from a different platform\n" );
     else
       printf( "$Wminidump is from a different processor architecture\n" );
+
+    if( mods && mods->NumberOfModules )
+    {
+      MINIDUMP_STRING *app = REL_PTR( dump,mods->Modules[0].ModuleNameRva );
+      printf( "$Iapplication: $N%S\n",app->Buffer );
+    }
+    if( misc && misc->Flags1&MINIDUMP_MISC1_PROCESS_ID )
+      printf( "$IPID: $N%u\n",misc->ProcessId );
+    if( header->TimeDateStamp )
+    {
+      FILETIME ft = secondsToFiletime( header->TimeDateStamp );
+      printf( "$Iminidump timestamp: $N%T\n",&ft );
+    }
+
     UnmapViewOfFile( dump );
     dbgsym_close( &ds );
     return( 1 );
