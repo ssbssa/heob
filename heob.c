@@ -3966,6 +3966,173 @@ static DWORD WINAPI samplingThread( LPVOID arg )
 
 static int isConsoleOwner( void );
 
+struct id_name
+{
+  unsigned id;
+  const char *name;
+};
+
+static const char *nameFromId( unsigned id,
+    const struct id_name *idArr,unsigned idCount,const char *fallback )
+{
+  for( unsigned i=0; i<idCount; i++ )
+    if( id==idArr[i].id )
+      return( idArr[i].name );
+  return( fallback );
+}
+
+static void printOSVersion( textColor *tc,RTL_OSVERSIONINFOEXW *ver )
+{
+  static const struct id_name platformIds[] = {
+    {      0,"WIN32s" },
+    {      1,"WIN32_WINDOWS" },
+    {      2,"WIN32_NT" },
+    {      3,"WIN32_CE" },
+    { 0x8000,"UNIX" },
+    { 0x8101,"MAC_OS_X" },
+    { 0x8102,"IOS" },
+    { 0x8201,"LINUX" },
+    { 0x8202,"SOLARIS" },
+    { 0x8203,"ANDROID" },
+    { 0x8204,"PS3" },
+    { 0x8205,"NACL" },
+    { 0x8206,"FUCHSIA" },
+  };
+  const char *platform = nameFromId( ver->dwPlatformId,
+      platformIds,ARRAYSIZE(platformIds),"unknown" );
+  printf( "$IOS platform: $N%s\n",platform );
+
+  if( ver->dwMajorVersion || ver->dwMinorVersion || ver->dwBuildNumber ||
+      ver->wProductType==VER_NT_WORKSTATION ||
+      ver->wProductType==VER_NT_SERVER ||
+      ver->szCSDVersion[0] )
+  {
+    printf( "$IOS version: $N" );
+    if( ver->dwMajorVersion || ver->dwMinorVersion || ver->dwBuildNumber )
+      printf( " %u.%u.%u",
+          ver->dwMajorVersion,ver->dwMinorVersion,ver->dwBuildNumber );
+    if( ver->wProductType==VER_NT_WORKSTATION ||
+        ver->wProductType==VER_NT_SERVER )
+      printf( " (%s)",
+          ver->wProductType==VER_NT_WORKSTATION?"workstation":"server" );
+    if( ver->szCSDVersion[0] )
+      printf( " %S",ver->szCSDVersion );
+    printf( "\n" );
+  }
+  if( ver->dwPlatformId==VER_PLATFORM_WIN32_NT &&
+      ver->dwMajorVersion>=5 && ver->dwMajorVersion<=10 &&
+      ver->dwMinorVersion<=3 )
+  {
+    const struct id_name *osNames;
+    unsigned osNameCount;
+    unsigned osNameId;
+    if( ver->dwMajorVersion!=10 )
+    {
+      static const struct id_name osPre10Names[] = {
+        { 0x50000,"2000" },
+        { 0x50100,"XP" },
+        { 0x50200,"XP x64" },
+        { 0x50201,"Server 2003" },
+        { 0x60000,"Vista" },
+        { 0x60001,"Server 2008" },
+        { 0x60100,"7" },
+        { 0x60101,"Server 2008 R2" },
+        { 0x60200,"8" },
+        { 0x60201,"Server 2012" },
+        { 0x60300,"8.1" },
+        { 0x60301,"Server 2012 R2" },
+      };
+      osNames = osPre10Names;
+      osNameCount = ARRAYSIZE(osPre10Names);
+      osNameId = (ver->dwMajorVersion<<16) | (ver->dwMinorVersion<<8) |
+        (ver->wProductType!=VER_NT_WORKSTATION);
+    }
+    else
+    {
+      if( ver->wProductType==VER_NT_WORKSTATION )
+      {
+        static const struct id_name os10Names[] = {
+          { 10240,"10 Version 1507" },
+          { 10586,"10 Version 1511" },
+          { 14393,"10 Version 1607" },
+          { 15063,"10 Version 1703" },
+          { 16299,"10 Version 1709" },
+          { 17134,"10 Version 1803" },
+          { 17763,"10 Version 1809" },
+          { 18362,"10 Version 1903" },
+          { 18363,"10 Version 1909" },
+          { 19041,"10 Version 2004" },
+          { 19042,"10 Version 20H2" },
+          { 19043,"10 Version 21H1" },
+          { 19044,"10 Version 21H2" },
+          { 19045,"10 Version 22H2" },
+          { 22000,"11 Version 21H2" },
+          { 22621,"11 Version 22H2" },
+          { 22631,"11 Version 23H2" },
+          { 26100,"11 Version 24H2" },
+          { 26200,"11 Version 25H2" },
+        };
+        osNames = os10Names;
+        osNameCount = ARRAYSIZE(os10Names);
+      }
+      else
+      {
+        static const struct id_name os10ServerNames[] = {
+          { 14393,"Server 2016" },
+          { 16299,"Server Version 1709" },
+          { 17134,"Server Version 1803" },
+          { 17763,"Server 2019" },
+          { 18362,"Server Version 1903" },
+          { 18363,"Server Version 1909" },
+          { 19041,"Server Version 2004" },
+          { 19042,"Server Version 20H2" },
+          { 20348,"Server 2022" },
+          { 25398,"Server Version 23H2" },
+          { 26100,"Server 2025" },
+        };
+        osNames = os10ServerNames;
+        osNameCount = ARRAYSIZE(os10ServerNames);
+      }
+      osNameId = ver->dwBuildNumber;
+    }
+    const char *osName = nameFromId( osNameId,osNames,osNameCount,NULL );
+    if( osName )
+      printf( "$IOS name:     $NWindows %s\n",osName );
+  }
+
+  if( ver->wSuiteMask )
+  {
+    static const char *const flagNames[16] = {
+      "SMALLBUSINESS",
+      "ENTERPRISE",
+      "BACKOFFICE",
+      "COMMUNICATIONS",
+      "TERMINAL",
+      "SMALLBUSINESS_RESTRICTED",
+      "EMBEDDEDNT",
+      "DATACENTER",
+      "SINGLEUSERTS",
+      "PERSONAL",
+      "BLADE",
+      "EMBEDDED_RESTRICTED",
+      "SECURITY_APPLIANCE",
+      "STORAGE_SERVER",
+      "COMPUTE_SERVER",
+      "WH_SERVER",
+    };
+    printf( "$IOS suite:    $N" );
+    int printed = 0;
+    for( unsigned int f=0; f<16; f++ )
+    {
+      if( !(ver->wSuiteMask&(1U<<f)) ) continue;
+
+      printf( "%s%s",printed?" | ":"",flagNames[f] );
+      printed++;
+    }
+    printf( "\n" );
+  }
+}
+
 static void printAttachedProcessInfo( appData *ad,textColor *tc )
 {
   attachedProcessInfo *api = ad->api;
@@ -4008,6 +4175,19 @@ static void printAttachedProcessInfo( appData *ad,textColor *tc )
     printf( "$Istderr: $N%S\n",api->stderrName );
   if( ad->dbgPid )
     printf( "$Idebugger PID: $N%u\n",ad->dbgPid );
+
+  if( tc->out && GetFileType(tc->out)==FILE_TYPE_DISK )
+  {
+    HMODULE ntdll = GetModuleHandle( "ntdll.dll" );
+    func_RtlGetVersion *fRtlGetVersion =
+      (func_RtlGetVersion*)GetProcAddress( ntdll,"RtlGetVersion" );
+    RTL_OSVERSIONINFOEXW ver;
+    ver.dwOSVersionInfoSize = sizeof(ver);
+    ver.szCSDVersion[0] = 0;
+    if( fRtlGetVersion && !fRtlGetVersion((RTL_OSVERSIONINFOW*)&ver) )
+      printOSVersion( tc,&ver );
+  }
+
   printf( "\n" );
 }
 
@@ -6575,6 +6755,25 @@ static int isMinidump( appData *ad,const wchar_t *name )
   }
 #endif
 
+  RTL_OSVERSIONINFOEXW ver;
+  if( system )
+  {
+    ver.dwPlatformId = system->PlatformId;
+    ver.dwMajorVersion = system->MajorVersion;
+    ver.dwMinorVersion = system->MinorVersion;
+    ver.dwBuildNumber = system->BuildNumber;
+    ver.wProductType = system->ProductType;
+    ver.wSuiteMask = system->SuiteMask;
+    ver.szCSDVersion[0] = 0;
+    if( system->CSDVersionRva )
+    {
+      MINIDUMP_STRING *csdver = REL_PTR( dump,system->CSDVersionRva );
+      size_t versize = csdver->Length+2<sizeof(ver.szCSDVersion) ?
+        csdver->Length+2 : sizeof(ver.szCSDVersion);
+      RtlMoveMemory( ver.szCSDVersion,csdver->Buffer,versize );
+    }
+  }
+
   if( !system || system->PlatformId!=VER_PLATFORM_WIN32_NT ||
       arch!=PROC_ARCH )
   {
@@ -6597,6 +6796,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
       FILETIME ft = secondsToFiletime( header->TimeDateStamp );
       printf( "$Iminidump timestamp: $N%T\n",&ft );
     }
+    if( system ) printOSVersion( tc,&ver );
 
     UnmapViewOfFile( dump );
     dbgsym_close( &ds );
@@ -6837,6 +7037,8 @@ static int isMinidump( appData *ad,const wchar_t *name )
     }
     printf( "\n" );
   }
+
+  printOSVersion( tc,&ver );
 
   if( maxNeededSize )
     printf( "\n$Wtruncated minidump, size should be at least %B\n",
