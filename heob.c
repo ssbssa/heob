@@ -3981,7 +3981,8 @@ static const char *nameFromId( unsigned id,
   return( fallback );
 }
 
-static void printOSVersion( textColor *tc,RTL_OSVERSIONINFOEXW *ver )
+static void printOSVersion( textColor *tc,RTL_OSVERSIONINFOEXW *ver,
+    SYSTEM_INFO *si )
 {
   static const struct id_name platformIds[] = {
     {      0,"WIN32s" },
@@ -4131,6 +4132,32 @@ static void printOSVersion( textColor *tc,RTL_OSVERSIONINFOEXW *ver )
     }
     printf( "\n" );
   }
+
+  static const struct id_name cpuIds[] = {
+    {      0,"X86" },
+    {      1,"MIPS" },
+    {      2,"ALPHA" },
+    {      3,"PPC" },
+    {      4,"SHX" },
+    {      5,"ARM" },
+    {      6,"IA64" },
+    {      7,"ALPHA64" },
+    {      8,"MSIL" },
+    {      9,"AMD64" },
+    {     10,"X86_WIN64" },
+    {     12,"ARM64" },
+    { 0x8001,"SPARC" },
+    { 0x8002,"PPC64" },
+    { 0x8003,"ARM64_OLD" },
+    { 0x8004,"MIPS64" },
+    { 0x8005,"RISCV" },
+    { 0x8006,"RISCV64" },
+  };
+  const char *cpu = nameFromId( si->wProcessorArchitecture,
+      cpuIds,ARRAYSIZE(cpuIds),"unknown" );
+  printf( "$ICPU architecture: $N%s\n",cpu );
+
+  printf( "$Iprocessors: $N%u\n",si->dwNumberOfProcessors );
 }
 
 static void printAttachedProcessInfo( appData *ad,textColor *tc )
@@ -4184,8 +4211,10 @@ static void printAttachedProcessInfo( appData *ad,textColor *tc )
     RTL_OSVERSIONINFOEXW ver;
     ver.dwOSVersionInfoSize = sizeof(ver);
     ver.szCSDVersion[0] = 0;
+    SYSTEM_INFO si;
+    GetSystemInfo( &si );
     if( fRtlGetVersion && !fRtlGetVersion((RTL_OSVERSIONINFOW*)&ver) )
-      printOSVersion( tc,&ver );
+      printOSVersion( tc,&ver,&si );
   }
 
   printf( "\n" );
@@ -6756,6 +6785,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
 #endif
 
   RTL_OSVERSIONINFOEXW ver;
+  SYSTEM_INFO si;
   if( system )
   {
     ver.dwPlatformId = system->PlatformId;
@@ -6772,6 +6802,9 @@ static int isMinidump( appData *ad,const wchar_t *name )
         csdver->Length+2 : sizeof(ver.szCSDVersion);
       RtlMoveMemory( ver.szCSDVersion,csdver->Buffer,versize );
     }
+
+    si.wProcessorArchitecture = system->ProcessorArchitecture;
+    si.dwNumberOfProcessors = system->NumberOfProcessors;
   }
 
   if( !system || system->PlatformId!=VER_PLATFORM_WIN32_NT ||
@@ -6796,7 +6829,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
       FILETIME ft = secondsToFiletime( header->TimeDateStamp );
       printf( "$Iminidump timestamp: $N%T\n",&ft );
     }
-    if( system ) printOSVersion( tc,&ver );
+    if( system ) printOSVersion( tc,&ver,&si );
 
     UnmapViewOfFile( dump );
     dbgsym_close( &ds );
@@ -7038,7 +7071,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
     printf( "\n" );
   }
 
-  printOSVersion( tc,&ver );
+  printOSVersion( tc,&ver,&si );
 
   if( maxNeededSize )
     printf( "\n$Wtruncated minidump, size should be at least %B\n",
