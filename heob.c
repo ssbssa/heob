@@ -5771,6 +5771,8 @@ static int checkExecutable( appData *ad,textColor *tcXml,
       "<error>\n"
       "  <kind>SyscallParam</kind>\n" );
 
+  SetDllDirectoryW( NULL );
+
   HMODULE exeMod =
     LoadLibraryExW( exePath,NULL,DONT_RESOLVE_DLL_REFERENCES );
   if( !exeMod )
