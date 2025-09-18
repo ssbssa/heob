@@ -176,6 +176,9 @@ jobs:
         env:
           PATH: ${{ steps.llvm-mingw.outputs.location }}\bin;C:\Program Files\Git\usr\bin;C:\mingw64\bin
 
+      - name: breakpoint
+        uses: fawazahmed0/action-debug-vscode@main
+
       - name: upload executables
         uses: actions/upload-artifact@v4
         with:
