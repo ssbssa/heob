@@ -39,9 +39,14 @@ jobs:
           echo "location=${{ github.workspace }}\llvm-mingw-${{ env.LLVM_MINGW_VERSION }}-msvcrt-x86_64" >> $env:GITHUB_OUTPUT
 
       - name: build heob exes
-        run: make heob32.exe heob64.exe heob64a.exe
+        run: make heob32.exe heob64.exe
         env:
-          PATH: ${{ steps.gcc64.outputs.location }}\bin;${{ steps.gcc32.outputs.location }}\bin;${{ steps.llvm-mingw.outputs.location }}\bin;c:\mingw64\bin;c:\msys64\usr\bin
+          PATH: ${{ steps.gcc64.outputs.location }}\bin;${{ steps.gcc32.outputs.location }}\bin;c:\mingw64\bin;c:\msys64\usr\bin
+      - name: build heob64a
+        run: |
+          make BITS=64a PREF=aarch64-w64-mingw32- FREESTANDING= heob64a.exe
+        env:
+          PATH: ${{ steps.llvm-mingw.outputs.location }}\bin;c:\mingw64\bin;c:\msys64\usr\bin
 
       - name: compress debug artifact
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
