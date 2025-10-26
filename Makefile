@@ -97,7 +97,7 @@ packages: package-src package-dbg package
 heob-$(HEOB_VERSION)-dbg.7z: heob32.exe heob64.exe heob64a.exe
 	7z a -mx=9 $@ $^
 
-heob-$(HEOB_VERSION).7z: strip-heob32 strip-heob64 strip-heob64a.exe
+heob-$(HEOB_VERSION).7z: strip-heob32 strip-heob64 strip-heob64a
 	7z a -mx=9 $@ heob32.exe heob64.exe heob64a.exe
 
 
