@@ -4,7 +4,7 @@ Project {
     references: "dwarfstack/dwarfstack.qbs"
 
     CppApplication {
-        property string heob_base_ver: "4.2"
+        property string heob_base_ver: "4.3-dev"
         property string heob_ver: {
           var d = new Date()
           return heob_base_ver + "-"
@@ -20,7 +20,7 @@ Project {
         }
         consoleApplication: true
         cpp.windowsApiCharacterSet: "mbcs"
-        cpp.defines: "HEOB_VER=\"" + heob_base_ver + "\""
+        cpp.defines: "HEOB_VER=\"" + heob_ver + "\""
         cpp.dynamicLibraries: "kernel32"
         cpp.driverFlags: "-nostdlib"
 
