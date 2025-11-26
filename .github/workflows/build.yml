@@ -156,6 +156,9 @@ jobs:
         with:
           submodules: true
 
+      - name: breakpoint
+        uses: fawazahmed0/action-debug-vscode@main
+
       - name: build heob with MSVC
         shell: cmd
         run: |
@@ -175,9 +178,6 @@ jobs:
           make BITS=64a PREF=aarch64-w64-mingw32- NO_THREAD_JUMPS= WARN_TEST=-Wno-implicit-exception-spec-mismatch allocer64a.exe
         env:
           PATH: ${{ steps.llvm-mingw.outputs.location }}\bin;C:\Program Files\Git\usr\bin;C:\mingw64\bin
-
-      - name: breakpoint
-        uses: fawazahmed0/action-debug-vscode@main
 
       - name: upload executables
         uses: actions/upload-artifact@v4
