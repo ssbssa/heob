@@ -7,21 +7,7 @@ on:
 
 jobs:
   msys2:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - sys: "clang64"
-            os: "windows-latest"
-          - sys: "mingw32"
-            os: "windows-latest"
-          - sys: "mingw64"
-            os: "windows-latest"
-          - sys: "ucrt64"
-            os: "windows-latest"
-          - sys: "clangarm64"
-            os: "windows-11-arm"
+    runs-on: windows-latest
     defaults:
       run:
         shell: msys2 {0}
@@ -32,6 +18,9 @@ jobs:
           msystem: ${{ matrix.sys }}
           update: true
           pacboy: ffmpeg
+
+      - name: breakpoint
+        uses: fawazahmed0/action-debug-vscode@main
 
       - name: Test ffmpeg output
         run: |
