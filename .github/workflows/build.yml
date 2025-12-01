@@ -1,206 +1,33 @@
 name: build
-on: [push, pull_request]
 
-env:
-  GCC_VERSION: 14.3
-  GCC_PKGVERSION: ssbssa-1
-  LLVM_MINGW_VERSION: 20250613
+on:
+  push:
+    branches:
+      - master
 
 jobs:
-  build:
-    runs-on: windows-2022
+  msys2:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - sys: "mingw64"
+            os: "windows-latest"
+    defaults:
+      run:
+        shell: msys2 {0}
     steps:
-      - name: configure git line endings
-        run: |
-          git config --global core.autocrlf false
-          git config --global core.eol lf
-      - name: checkout sources
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+      - uses: msys2/setup-msys2@v2
         with:
-          submodules: 'true'
+          msystem: ${{ matrix.sys }}
+          update: true
+          pacboy: ffmpeg
 
-      - name: get i686 gcc
-        id: gcc32
+      - name: breakpoint
+        uses: fawazahmed0/action-debug-vscode@main
+
+      - name: Test ffmpeg output
         run: |
-          curl -LO https://github.com/ssbssa/gcc/releases/download/gcc-${{ env.GCC_VERSION }}-${{ env.GCC_PKGVERSION }}/gcc-${{ env.GCC_VERSION }}.0-${{ env.GCC_PKGVERSION }}-i686.7z
-          7z x -ogcc32 gcc-${{ env.GCC_VERSION }}.0-${{ env.GCC_PKGVERSION }}-i686.7z
-          echo "location=${{ github.workspace }}\gcc32" >> $env:GITHUB_OUTPUT
-      - name: get x86_64 gcc
-        id: gcc64
-        run: |
-          curl -LO https://github.com/ssbssa/gcc/releases/download/gcc-${{ env.GCC_VERSION }}-${{ env.GCC_PKGVERSION }}/gcc-${{ env.GCC_VERSION }}.0-${{ env.GCC_PKGVERSION }}-x86_64.7z
-          7z x -ogcc64 gcc-${{ env.GCC_VERSION }}.0-${{ env.GCC_PKGVERSION }}-x86_64.7z
-          echo "location=${{ github.workspace }}\gcc64" >> $env:GITHUB_OUTPUT
-      - name: get llvm-mingw for aarch64 build
-        id: llvm-mingw
-        run: |
-          curl -LO https://github.com/mstorsjo/llvm-mingw/releases/download/${{ env.LLVM_MINGW_VERSION }}/llvm-mingw-${{ env.LLVM_MINGW_VERSION }}-msvcrt-x86_64.zip
-          7z x llvm-mingw-${{ env.LLVM_MINGW_VERSION }}-msvcrt-x86_64.zip
-          echo "location=${{ github.workspace }}\llvm-mingw-${{ env.LLVM_MINGW_VERSION }}-msvcrt-x86_64" >> $env:GITHUB_OUTPUT
-
-      - name: build heob exes
-        run: make heob32.exe heob64.exe
-        env:
-          PATH: ${{ steps.gcc64.outputs.location }}\bin;${{ steps.gcc32.outputs.location }}\bin;c:\mingw64\bin;c:\msys64\usr\bin
-      - name: build heob64a
-        run: |
-          make BITS=64a PREF=aarch64-w64-mingw32- FREESTANDING= heob64a.exe
-        env:
-          PATH: ${{ steps.llvm-mingw.outputs.location }}\bin;c:\mingw64\bin;c:\msys64\usr\bin
-
-      - name: compress debug artifact
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
-        shell: bash
-        run: 7z a -mx=9 heob-$GITHUB_REF_NAME-dbg.7z heob32.exe heob64.exe heob64a.exe
-
-      - name: upload debug artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: heob-debug
-          if-no-files-found: error
-          path: |
-            heob32.exe
-            heob64.exe
-            heob64a.exe
-
-      - name: strip heob exes
-        run: make strip-heob32 strip-heob64 strip-heob64a
-        env:
-          PATH: ${{ steps.gcc64.outputs.location }}\bin;${{ steps.gcc32.outputs.location }}\bin;${{ steps.llvm-mingw.outputs.location }}\bin;c:\mingw64\bin;c:\msys64\usr\bin
-
-      - name: upload unsigned artifact
-        id: upload-unsigned-artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: heob-unsigned
-          if-no-files-found: error
-          path: |
-            heob32.exe
-            heob64.exe
-            heob64a.exe
-      - name: sign
-        uses: signpath/github-action-submit-signing-request@v1
-        env:
-          SIGNPATH_SIGNING_POLICY_SLUG: ${{ (startsWith(github.ref, 'refs/tags/')) && 'release-signing' || 'test-signing' }}
-        with:
-          api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
-          organization-id: '${{ vars.SIGNPATH_ORGANIZATION_ID }}'
-          project-slug: 'heob'
-          signing-policy-slug: '${{ env.SIGNPATH_SIGNING_POLICY_SLUG }}'
-          github-artifact-id: "${{ steps.upload-unsigned-artifact.outputs.artifact-id }}"
-          wait-for-completion: true
-          output-artifact-directory: '.'
-
-      - name: upload signed artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: heob
-          if-no-files-found: error
-          path: |
-            heob32.exe
-            heob64.exe
-            heob64a.exe
-
-      - name: build allocer exes
-        run: make allocer32.exe allocer64.exe
-        env:
-          PATH: ${{ steps.gcc64.outputs.location }}\bin;${{ steps.gcc32.outputs.location }}\bin;c:\mingw64\bin;c:\msys64\usr\bin
-      - name: install test dependencies
-        run: c:\msys64\usr\bin\bash.exe -l -c "pacman -S --noconfirm make diffutils"
-      - name: test
-        shell: bash
-        run: |
-          make IGNORED_TESTS="68" tests
-          head -n-0 test*.diff || true
-        env:
-          PATH: c:\msys64\usr\bin
-      - name: upload test results
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results
-          if-no-files-found: error
-          path: |
-            allocer*.exe
-            dll-alloc*.dll
-            test*.diff
-      - name: check for test failure
-        shell: cmd
-        run: |
-          if exist test*.diff exit 1
-
-      - name: compress release artifact
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
-        shell: bash
-        run: 7z a -mx=9 heob-$GITHUB_REF_NAME.7z heob32.exe heob64.exe heob64a.exe
-
-      - name: release
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: true
-          prerelease: false
-          name: heob ${{ github.ref_name }}
-          files: |
-            heob-${{ github.ref_name }}.7z
-            heob-${{ github.ref_name }}-dbg.7z
-
-  aarch64:
-    runs-on: windows-11-arm
-    steps:
-      - name: configure git line endings
-        run: |
-          git config --global core.autocrlf false
-          git config --global core.eol lf
-      - name: checkout sources
-        uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - name: build heob with MSVC
-        shell: cmd
-        run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsamd64_arm64.bat"
-          set DWSTFLAGS=/Idwarfstack\include
-          call build.bat
-      - name: get llvm-mingw for aarch64 build
-        id: llvm-mingw
-        run: |
-          curl -LO https://github.com/mstorsjo/llvm-mingw/releases/download/${{ env.LLVM_MINGW_VERSION }}/llvm-mingw-${{ env.LLVM_MINGW_VERSION }}-msvcrt-x86_64.zip
-          7z x llvm-mingw-${{ env.LLVM_MINGW_VERSION }}-msvcrt-x86_64.zip
-          echo "location=${{ github.workspace }}\llvm-mingw-${{ env.LLVM_MINGW_VERSION }}-msvcrt-x86_64" >> $env:GITHUB_OUTPUT
-      - name: build heob
-        run: |
-          rm heob64a.exe
-          make BITS=64a PREF=aarch64-w64-mingw32- FREESTANDING= strip-heob64a
-          make BITS=64a PREF=aarch64-w64-mingw32- NO_THREAD_JUMPS= WARN_TEST=-Wno-implicit-exception-spec-mismatch allocer64a.exe
-        env:
-          PATH: ${{ steps.llvm-mingw.outputs.location }}\bin;C:\Program Files\Git\usr\bin;C:\mingw64\bin
-
-      - name: upload executables
-        uses: actions/upload-artifact@v4
-        with:
-          name: heob-aarch64
-          if-no-files-found: error
-          path: |
-            heob64a.exe
-
-      - name: test
-        shell: bash
-        run: |
-          make BITS=64a PREF= IGNORED_TESTS="47 68" test
-          head -n-0 test*.diff || true
-        env:
-          PATH: ${{ steps.llvm-mingw.outputs.location }}\bin;C:\Program Files\Git\usr\bin;C:\mingw64\bin
-      - name: upload test results
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results-aarch64
-          if-no-files-found: error
-          path: |
-            allocer64a.exe
-            dll-alloc64a.dll
-            test*.diff
-      - name: check for test failure
-        shell: cmd
-        run: |
-          if exist test*.diff exit 1
+          ./test.sh
