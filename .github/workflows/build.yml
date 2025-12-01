@@ -12,8 +12,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - sys: "clang64"
+            os: "windows-latest"
+          - sys: "mingw32"
+            os: "windows-latest"
           - sys: "mingw64"
             os: "windows-latest"
+          - sys: "ucrt64"
+            os: "windows-latest"
+          - sys: "clangarm64"
+            os: "windows-11-arm"
     defaults:
       run:
         shell: msys2 {0}
