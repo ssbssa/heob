@@ -5,6 +5,7 @@ on:
     branches:
       - master
 
+
 jobs:
   msys2:
     runs-on: ${{ matrix.os }}
