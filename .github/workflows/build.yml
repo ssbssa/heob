@@ -5,7 +5,6 @@ on:
     branches:
       - master
 
-
 jobs:
   msys2:
     runs-on: ${{ matrix.os }}
@@ -25,9 +24,6 @@ jobs:
           msystem: ${{ matrix.sys }}
           update: true
           pacboy: ffmpeg
-
-      - name: breakpoint
-        uses: fawazahmed0/action-debug-vscode@main
 
       - name: Test ffmpeg output
         run: |
