@@ -4072,6 +4072,8 @@ static void printOSVersion( textColor *tc,RTL_OSVERSIONINFOEXW *ver,
           { 22631,"11 Version 23H2" },
           { 26100,"11 Version 24H2" },
           { 26200,"11 Version 25H2" },
+          { 28000,"11 Version 26H1" },
+          { 26300,"11 Version 26H2" },
         };
         osNames = os10Names;
         osNameCount = ARRAYSIZE(os10Names);
