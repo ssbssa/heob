@@ -79,6 +79,7 @@ jobs:
             heob64.exe
             heob64a.exe
       - name: sign
+        if: ${{ github.event_name != 'pull_request' }}
         uses: signpath/github-action-submit-signing-request@v1
         env:
           SIGNPATH_SIGNING_POLICY_SLUG: ${{ (startsWith(github.ref, 'refs/tags/')) && 'release-signing' || 'test-signing' }}
@@ -92,6 +93,7 @@ jobs:
           output-artifact-directory: '.'
 
       - name: upload signed artifact
+        if: ${{ github.event_name != 'pull_request' }}
         uses: actions/upload-artifact@v4
         with:
           name: heob
