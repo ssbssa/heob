@@ -7196,7 +7196,11 @@ static int isMinidump( appData *ad,const wchar_t *name )
   }
 
   if( !exception )
+  {
     printf( "\n$Wminidump doesn't contain exception information stream\n" );
+    if( !ad->opt->exceptionDetails )
+      printf( "  show all threads with exception details $I-D8\n" );
+  }
 
   if( mtl && mtl->NumberOfThreads && ad->opt->exceptionDetails>0 &&
       (ad->opt->exceptionDetails&8) )
