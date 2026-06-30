@@ -1719,6 +1719,13 @@ static CODE_SEG(".text$2") HANDLE inject(
   {
     data->exe.path[MAX_PATH-1] = 0;
     GetFullPathNameW( data->exe.path,MAX_PATH,exePath,NULL );
+
+    ad->mi_a = HeapAlloc( heap,0,sizeof(modInfo) );
+    if( ad->mi_a )
+    {
+      ad->mi_q = 1;
+      RtlMoveMemory( ad->mi_a,&data->exe,sizeof(modInfo) );
+    }
   }
 
   if( data->noCRT==2 )
@@ -4205,7 +4212,10 @@ static void printAttachedProcessInfo( appData *ad,textColor *tc )
   if( !api ) return;
   if( tc->fTextColor==&TextColorConsole && isConsoleOwner() )
     printf( "\n$Iheob command line: $N%S\n",ad->cmdLineW );
-  printf( "\n$Iapplication: $N%S\n",ad->exePathW );
+  printf( "\n$Iapplication: $N%S",ad->exePathW );
+  if( ad->mi_q )
+    writeModuleInfo( tc,ad->mi_a );
+  printf( "\n" );
   if( api->type>=0 && api->type<=3 )
   {
     const char *types[4] = {
@@ -6981,7 +6991,10 @@ static int isMinidump( appData *ad,const wchar_t *name )
   if( mtl && ad->dump_mod_a )
   {
     MINIDUMP_STRING *appName = REL_PTR( dump,ad->dump_mod_a[0].ModuleNameRva );
-    printf( "\n$Iapplication: $N%S\n",appName->Buffer );
+    printf( "\n$Iapplication: $N%S",appName->Buffer );
+    if( ad->mi_q )
+      writeModuleInfo( tc,ad->mi_a );
+    printf( "\n" );
 
 #ifndef NO_THREADS
     if( exception )
