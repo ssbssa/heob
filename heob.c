@@ -1447,7 +1447,7 @@ static CODE_SEG(".text$1") VOID NTAPI remoteCall(
     rd->kernel32 = kernel32;
   }
 
-  HMODULE app = rd->fLoadLibraryW( rd->exePath );
+  HMODULE app = rd->fLoadLibraryW( rd->exe.path );
   rd->heobMod = app;
 
   func_heob *fheob = (func_heob*)( (size_t)app + rd->injOffset );
@@ -1516,7 +1516,7 @@ static CODE_SEG(".text$2") HANDLE inject(
   data->kernelName.MaximumLength = data->kernelName.Length + 2;
   data->kernelName.Buffer = ((remoteData*)fullDataRemote)->kernelNameBuffer;
 
-  GetModuleFileNameW( NULL,data->exePath,MAX_PATH );
+  GetModuleFileNameW( NULL,data->exe.path,MAX_PATH );
   func_heob *fheob = &heob;
   data->injOffset = (size_t)fheob - (size_t)GetModuleHandle( NULL );
 
@@ -1717,8 +1717,8 @@ static CODE_SEG(".text$2") HANDLE inject(
   }
   else
   {
-    data->exePath[MAX_PATH-1] = 0;
-    GetFullPathNameW( data->exePath,MAX_PATH,exePath,NULL );
+    data->exe.path[MAX_PATH-1] = 0;
+    GetFullPathNameW( data->exe.path,MAX_PATH,exePath,NULL );
   }
 
   if( data->noCRT==2 )

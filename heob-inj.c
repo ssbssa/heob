@@ -5134,7 +5134,7 @@ VOID CALLBACK heob( ULONG_PTR arg )
   addModule( appMod );
   replaceModFuncs();
 
-  GetModuleFileNameW( NULL,rd->exePath,MAX_PATH );
+  GetModuleFileNameW( NULL,rd->exe.path,MAX_PATH );
   rd->master = ld->master;
   rd->noCRT = ld->noCRT;
 

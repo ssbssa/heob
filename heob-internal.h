@@ -584,6 +584,17 @@ typedef struct
 }
 attachedProcessInfo;
 
+typedef struct
+{
+  size_t base;
+  size_t size;
+  wchar_t path[MAX_PATH];
+  DWORD versionMS;
+  DWORD versionLS;
+  DWORD timestamp;
+}
+modInfo;
+
 typedef struct remoteData
 {
   HMODULE heobMod;
@@ -617,7 +628,7 @@ typedef struct remoteData
   DWORD threadNumTlsRemote;
 #endif
 
-  wchar_t exePath[MAX_PATH];
+  modInfo exe;
   size_t injOffset;
 
   UNICODE_STRING kernelName;
@@ -681,17 +692,6 @@ enum
 #endif
   WRITE_REFERENCE,
 };
-
-typedef struct
-{
-  size_t base;
-  size_t size;
-  wchar_t path[MAX_PATH];
-  DWORD versionMS;
-  DWORD versionLS;
-  DWORD timestamp;
-}
-modInfo;
 
 typedef struct
 {
