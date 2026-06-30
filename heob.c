@@ -4189,6 +4189,16 @@ static void printOSVersion( textColor *tc,RTL_OSVERSIONINFOEXW *ver,
   }
 }
 
+static void writeModuleInfo( textColor *tc,modInfo *mi )
+{
+  if( mi->versionMS || mi->versionLS )
+    printf( " [$I%u.%u.%u.%u$N]",
+        mi->versionMS>>16,mi->versionMS&0xffff,
+        mi->versionLS>>16,mi->versionLS&0xffff );
+  FILETIME ft = secondsToFiletime( mi->timestamp );
+  printf( " [%x: $S%T$N]",mi->timestamp,&ft );
+}
+
 static void printAttachedProcessInfo( appData *ad,textColor *tc )
 {
   attachedProcessInfo *api = ad->api;
@@ -5872,12 +5882,7 @@ static void writeModules( textColor *tc,modInfo *mi_a,int mi_q )
   {
     modInfo *mi = mi_a + m;
     printf( "    %X   %S",mi->base,mi->path );
-    if( mi->versionMS || mi->versionLS )
-      printf( " [$I%u.%u.%u.%u$N]",
-          mi->versionMS>>16,mi->versionMS&0xffff,
-          mi->versionLS>>16,mi->versionLS&0xffff );
-    FILETIME ft = secondsToFiletime( mi->timestamp );
-    printf( " [%x: $S%T$N]",mi->timestamp,&ft );
+    writeModuleInfo( tc,mi );
     printf( "\n" );
   }
 }
