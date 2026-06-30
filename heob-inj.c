@@ -380,7 +380,7 @@ static wchar_t *wdup( const wchar_t *w,HANDLE heap )
 // }}}
 // send module information {{{
 
-static void writeModsFind( modInfo **p_mi_a,int *p_mi_q )
+static void writeModsFindApp( modInfo **p_mi_a,int *p_mi_q,modInfo *appMi )
 {
   GET_REMOTEDATA( rd );
 
@@ -400,22 +400,29 @@ static void writeModsFind( modInfo **p_mi_a,int *p_mi_q )
   LIST_ENTRY *head = &ldrData->InMemoryOrderModuleList;
   LIST_ENTRY *entry = head;
   int mi_q = 0;
-  do
-  {
-    LDR_DATA_TABLE_ENTRY *ldrEntry = CONTAINING_RECORD(
-        entry,LDR_DATA_TABLE_ENTRY,InMemoryOrderModuleList );
-    if( ldrEntry->DllBase )
-      mi_q++;
-    entry = entry->Flink;
-  }
-  while( entry!=head );
+  modInfo *mi_a = NULL;
 
-  modInfo *mi_a = HeapAlloc( rd->heap,HEAP_ZERO_MEMORY,mi_q*sizeof(modInfo) );
-  if( !mi_a )
+  if( !appMi )
   {
-    fLdrUnlockLoaderLock( 0,ldrLockCookie );
-    return;
+    do
+    {
+      LDR_DATA_TABLE_ENTRY *ldrEntry = CONTAINING_RECORD(
+          entry,LDR_DATA_TABLE_ENTRY,InMemoryOrderModuleList );
+      if( ldrEntry->DllBase )
+        mi_q++;
+      entry = entry->Flink;
+    }
+    while( entry!=head );
+
+    mi_a = HeapAlloc( rd->heap,HEAP_ZERO_MEMORY,mi_q*sizeof(modInfo) );
+    if( !mi_a )
+    {
+      fLdrUnlockLoaderLock( 0,ldrLockCookie );
+      return;
+    }
   }
+  else
+    mi_a = appMi;
 
   mi_q = 0;
   do
@@ -435,6 +442,7 @@ static void writeModsFind( modInfo **p_mi_a,int *p_mi_q )
         mi->path[count] = 0;
         mi_q++;
       }
+      if( appMi ) break;
     }
     entry = entry->Flink;
   }
@@ -442,7 +450,8 @@ static void writeModsFind( modInfo **p_mi_a,int *p_mi_q )
 
   fLdrUnlockLoaderLock( 0,ldrLockCookie );
 
-  if( rd->opt.exceptionDetails>0 && (rd->opt.exceptionDetails&4) )
+  if( (rd->opt.exceptionDetails>0 && (rd->opt.exceptionDetails&4)) ||
+      appMi )
   {
     int i;
     for( i=0; i<mi_q; i++ )
@@ -467,12 +476,18 @@ static void writeModsFind( modInfo **p_mi_a,int *p_mi_q )
     }
   }
 
-  *p_mi_q = mi_q;
-  *p_mi_a = mi_a;
+  if( p_mi_q ) *p_mi_q = mi_q;
+  if( p_mi_a ) *p_mi_a = mi_a;
 
 #ifndef NO_THREADS
-  writeThreadDescs();
+  if( !appMi )
+    writeThreadDescs();
 #endif
+}
+
+static void writeModsFind( modInfo **p_mi_a,int *p_mi_q )
+{
+  writeModsFindApp( p_mi_a,p_mi_q,NULL );
 }
 
 static void writeModsSend( modInfo *mi_a,int mi_q )
