@@ -6758,14 +6758,6 @@ static int isMinidump( appData *ad,const wchar_t *name )
   dbgsym_init( &ds,ad,tc,ad->opt,NULL,heap,symPath,FALSE,NULL );
   ad->ds = &ds;
 
-  if( !ds.swf.fStackWalk64 )
-  {
-    printf( "$Wminidump reader needs StackWalk64() from dbghelp.dll\n" );
-    UnmapViewOfFile( dump );
-    dbgsym_close( &ds );
-    return( 1 );
-  }
-
   MINIDUMP_MODULE_LIST *mods = NULL;
   MINIDUMP_MEMORY_LIST *mml = NULL;
   MINIDUMP_MEMORY64_LIST *mm64l = NULL;
@@ -6857,14 +6849,23 @@ static int isMinidump( appData *ad,const wchar_t *name )
   }
 
   if( !system || system->PlatformId!=VER_PLATFORM_WIN32_NT ||
-      arch!=PROC_ARCH )
+      arch!=PROC_ARCH ||
+      !mtl || !mtl->NumberOfThreads ||
+      mtl->Threads[0].ThreadContext.DataSize<sizeof(CONTEXT) ||
+      !ds.swf.fStackWalk64 )
   {
     if( !system )
       printf( "$Wminidump doesn't contain system info stream\n" );
     else if( system->PlatformId!=VER_PLATFORM_WIN32_NT )
       printf( "$Wminidump is from a different platform\n" );
-    else
+    else if( arch!=PROC_ARCH )
       printf( "$Wminidump is from a different processor architecture\n" );
+    else if( !mtl || !mtl->NumberOfThreads )
+      printf( "$Wminidump doesn't contain any threads\n" );
+    else if( mtl->Threads[0].ThreadContext.DataSize<sizeof(CONTEXT) )
+      printf( "$Wminidump thread context size is too small\n" );
+    else
+      printf( "$Wminidump reader needs StackWalk64() from dbghelp.dll\n" );
 
     if( mods && mods->NumberOfModules )
     {
@@ -6880,18 +6881,6 @@ static int isMinidump( appData *ad,const wchar_t *name )
     }
     if( system ) printOSVersion( tc,&ver,&si,NULL );
 
-    UnmapViewOfFile( dump );
-    dbgsym_close( &ds );
-    return( 1 );
-  }
-
-  if( !mtl || !mtl->NumberOfThreads ||
-      mtl->Threads[0].ThreadContext.DataSize<sizeof(CONTEXT) )
-  {
-    if( !mtl || !mtl->NumberOfThreads )
-      printf( "$Wminidump doesn't contain any threads\n" );
-    else
-      printf( "$Wminidump thread context size is too small\n" );
     UnmapViewOfFile( dump );
     dbgsym_close( &ds );
     return( 1 );
