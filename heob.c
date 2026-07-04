@@ -6910,16 +6910,86 @@ static int isMinidump( appData *ad,const wchar_t *name )
       RVA_STR( app,mods->Modules[0].ModuleNameRva );
     if( app )
     {
-      printf( "$Iapplication: $N%S\n",app->Buffer );
+      ad->mi_a = HeapAlloc( heap,HEAP_ZERO_MEMORY,sizeof(modInfo) );
+      if( ad->mi_a )
+      {
+        ad->mi_q = 1;
+        modInfo *mi = ad->mi_a;
+        MINIDUMP_MODULE *mod = mods->Modules;
+        mi->base = (size_t)mod->BaseOfImage;
+        mi->size = mod->SizeOfImage;
+        mi->timestamp = mod->TimeDateStamp;
+        mi->versionMS = mod->VersionInfo.dwFileVersionMS;
+        mi->versionLS = mod->VersionInfo.dwFileVersionLS;
+      }
+      printf( "$Iapplication: $N%S",app->Buffer );
+      if( ad->mi_q )
+        writeModuleInfo( tc,ad->mi_a );
+      printf( "\n" );
     }
     if( misc && misc->Flags1&MINIDUMP_MISC1_PROCESS_ID )
       printf( "$IPID: $N%u\n",misc->ProcessId );
+    if( misc && misc->Flags1&MINIDUMP_MISC1_PROCESS_TIMES )
+    {
+      printf( "$Iuser CPU time:   $N%t\n",misc->ProcessUserTime );
+      printf( "$Ikernel CPU time: $N%t\n",misc->ProcessKernelTime );
+
+      FILETIME ft = secondsToFiletime( misc->ProcessCreateTime );
+      printf( "$Iprocess creation time: $N%T\n",&ft );
+    }
     if( header->TimeDateStamp )
     {
       FILETIME ft = secondsToFiletime( header->TimeDateStamp );
-      printf( "$Iminidump timestamp: $N%T\n",&ft );
+      printf( "$Iminidump timestamp:    $N%T\n",&ft );
     }
-    if( system ) printOSVersion( tc,&ver,&si,NULL );
+    if( system )
+    {
+      const KUSER_SHARED_DATA *kdata = NULL;
+      if( system->PlatformId==VER_PLATFORM_WIN32_NT )
+      {
+        // manually search the memory-ranges for SHARED_USER_DATA
+        if( mml )
+        {
+          uint32_t r;
+          for( r=0; r<mml->NumberOfMemoryRanges; r++)
+          {
+            MINIDUMP_MEMORY_DESCRIPTOR *mmd = mml->MemoryRanges + r;
+            if( mmd->Memory.Rva+mmd->Memory.DataSize>size ) continue;
+            if( SHARED_USER_DATA>=mmd->StartOfMemoryRange &&
+                SHARED_USER_DATA+sizeof(KUSER_SHARED_DATA)<=
+                mmd->StartOfMemoryRange+mmd->Memory.DataSize )
+            {
+              size_t m = mmd->Memory.Rva +
+                SHARED_USER_DATA - mmd->StartOfMemoryRange;
+              kdata = (KUSER_SHARED_DATA*)( dump + m );
+              break;
+            }
+          }
+        }
+        if( !kdata && mm64l )
+        {
+          RVA64 rva = mm64l->BaseRva;
+          size_t r;
+          for( r=0; r<mm64l->NumberOfMemoryRanges; r++ )
+          {
+            MINIDUMP_MEMORY_DESCRIPTOR64 *mmd = mm64l->MemoryRanges + r;
+            if( rva+mmd->DataSize>size ) break;
+            if( SHARED_USER_DATA>=mmd->StartOfMemoryRange &&
+                SHARED_USER_DATA+sizeof(KUSER_SHARED_DATA)<=
+                mmd->StartOfMemoryRange+mmd->DataSize )
+            {
+              size_t m = rva + SHARED_USER_DATA - mmd->StartOfMemoryRange;
+              kdata = (KUSER_SHARED_DATA*)( dump + m );
+              break;
+            }
+
+            rva += mm64l->MemoryRanges[r].DataSize;
+          }
+        }
+      }
+
+      printOSVersion( tc,&ver,&si,kdata );
+    }
 
     UnmapViewOfFile( dump );
     dbgsym_close( &ds );
