@@ -6547,15 +6547,22 @@ static int addDumpMemoryLocMaxSize( appData *ad,
   return( 0 );
 }
 
-static void *getDumpRva( const char *dump,size_t rva,size_t size,
+static void *getDumpRva( const char *dump,uint64_t rva,uint64_t size,
     size_t maxSize,size_t *maxNeededSize )
 {
-  size_t neededSize = rva + size;
+  uint64_t neededSize = rva + size;
   if( neededSize<=maxSize )
     return( (void*)(dump+rva) );
 
   if( neededSize>*maxNeededSize )
-    *maxNeededSize = neededSize;
+  {
+#ifndef _WIN64
+    if( neededSize>(size_t)-1 )
+      *maxNeededSize = (size_t)-1;
+    else
+#endif
+      *maxNeededSize = (size_t)neededSize;
+  }
 
   return( NULL );
 }
@@ -6960,7 +6967,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
                 mmd->StartOfMemoryRange+mmd->Memory.DataSize )
             {
               size_t m = mmd->Memory.Rva +
-                SHARED_USER_DATA - mmd->StartOfMemoryRange;
+                SHARED_USER_DATA - (size_t)mmd->StartOfMemoryRange;
               kdata = (KUSER_SHARED_DATA*)( dump + m );
               break;
             }
@@ -6978,7 +6985,8 @@ static int isMinidump( appData *ad,const wchar_t *name )
                 SHARED_USER_DATA+sizeof(KUSER_SHARED_DATA)<=
                 mmd->StartOfMemoryRange+mmd->DataSize )
             {
-              size_t m = rva + SHARED_USER_DATA - mmd->StartOfMemoryRange;
+              size_t m =
+                (size_t)(rva + SHARED_USER_DATA - mmd->StartOfMemoryRange);
               kdata = (KUSER_SHARED_DATA*)( dump + m );
               break;
             }
