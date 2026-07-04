@@ -6547,6 +6547,19 @@ static int addDumpMemoryLocMaxSize( appData *ad,
   return( 0 );
 }
 
+static void *getDumpRva( const char *dump,size_t rva,size_t size,
+    size_t maxSize,size_t *maxNeededSize )
+{
+  size_t neededSize = rva + size;
+  if( neededSize<=maxSize )
+    return( (void*)(dump+rva) );
+
+  if( neededSize>*maxNeededSize )
+    *maxNeededSize = neededSize;
+
+  return( NULL );
+}
+
 static const void *getDumpLoc( appData *ad,size_t address,
     size_t minSize,size_t *size )
 {
@@ -6758,6 +6771,24 @@ static int isMinidump( appData *ad,const wchar_t *name )
   dbgsym_init( &ds,ad,tc,ad->opt,NULL,heap,symPath,FALSE,NULL );
   ad->ds = &ds;
 
+  size_t maxNeededSize = 0;
+#define RVA_ENTRIES(l,r,n) \
+  (l = getDumpRva(dump,r,n*sizeof(*l),size,&maxNeededSize))
+#define RVA_ENTRY(l,r) \
+  RVA_ENTRIES( l,r,1 )
+#define RVA_LIST_EXT(l,r,as) \
+  do { \
+    l = getDumpRva( dump,r,sizeof(*l),size,&maxNeededSize ); \
+    if( l ) \
+      l = getDumpRva( dump,r,sizeof(*l)+(as),size,&maxNeededSize ); \
+  } while( 0 )
+#define RVA_LIST(l,r,n,a) \
+  RVA_LIST_EXT( l,r,l->n*sizeof(l->a[0]) )
+#define RVA_STR(l,r) \
+  RVA_LIST_EXT( l,r,l->Length+2 )
+
+  MINIDUMP_HEADER *header = NULL;
+  MINIDUMP_DIRECTORY *dir = NULL;
   MINIDUMP_MODULE_LIST *mods = NULL;
   MINIDUMP_MEMORY_LIST *mml = NULL;
   MINIDUMP_MEMORY64_LIST *mm64l = NULL;
@@ -6769,46 +6800,51 @@ static int isMinidump( appData *ad,const wchar_t *name )
   MD_THREAD_NAME_LIST *threadNames = NULL;
 #endif
 
-  MINIDUMP_HEADER *header = REL_PTR( dump,0 );
-  MINIDUMP_DIRECTORY *dir = REL_PTR( dump,header->StreamDirectoryRva );
-  uint32_t s;
-  for( s=0; s<header->NumberOfStreams; s++)
+  RVA_ENTRY( header,0 );
+  if( header )
+    RVA_ENTRIES( dir,header->StreamDirectoryRva,header->NumberOfStreams );
+  if( dir )
   {
-    switch( dir[s].StreamType )
+    uint32_t s;
+    for( s=0; s<header->NumberOfStreams; s++)
     {
-      case ModuleListStream:
-        mods = REL_PTR( dump,dir[s].Location.Rva );
-        break;
-      case MemoryListStream:
-        mml = REL_PTR( dump,dir[s].Location.Rva );
-        break;
-      case Memory64ListStream:
-        mm64l = REL_PTR( dump,dir[s].Location.Rva );
-        break;
-      case ThreadListStream:
-        mtl = REL_PTR( dump,dir[s].Location.Rva );
-        break;
-      case MiscInfoStream:
-        misc = REL_PTR( dump,dir[s].Location.Rva );
-        break;
-      case ExceptionStream:
-        exception = REL_PTR( dump,dir[s].Location.Rva );
-        break;
-      case SystemInfoStream:
-        system = REL_PTR( dump,dir[s].Location.Rva );
-        break;
+      size_t rva = dir[s].Location.Rva;
+      switch( dir[s].StreamType )
+      {
+        case ModuleListStream:
+          RVA_LIST( mods,rva,NumberOfModules,Modules );
+          break;
+        case MemoryListStream:
+          RVA_LIST( mml,rva,NumberOfMemoryRanges,MemoryRanges );
+          break;
+        case Memory64ListStream:
+          RVA_LIST( mm64l,rva,NumberOfMemoryRanges,MemoryRanges );
+          break;
+        case ThreadListStream:
+          RVA_LIST( mtl,rva,NumberOfThreads,Threads );
+          break;
+        case MiscInfoStream:
+          RVA_ENTRY( misc,rva );
+          break;
+        case ExceptionStream:
+          RVA_ENTRY( exception,rva );
+          break;
+        case SystemInfoStream:
+          RVA_ENTRY( system,rva );
+          break;
 #ifndef NO_THREADS
-      case 24: // ThreadNamesStream
-        threadNames = REL_PTR( dump,dir[s].Location.Rva );
-        break;
+        case 24: // ThreadNamesStream
+          RVA_LIST( threadNames,rva,NumberOfThreadNames,ThreadNames );
+          break;
 #endif
+      }
     }
   }
 
   USHORT arch = system ? system->ProcessorArchitecture : 0;
 #ifndef _WIN64
   unsigned wow64_ofs = 0;
-  if( arch==PROCESSOR_ARCHITECTURE_AMD64 )
+  if( arch==PROCESSOR_ARCHITECTURE_AMD64 && mods )
   {
     unsigned m;
     for( m=1; m<mods->NumberOfModules; m++ )
@@ -6836,9 +6872,11 @@ static int isMinidump( appData *ad,const wchar_t *name )
     ver.wProductType = system->ProductType;
     ver.wSuiteMask = system->SuiteMask;
     ver.szCSDVersion[0] = 0;
+    MINIDUMP_STRING *csdver = NULL;
     if( system->CSDVersionRva )
+      RVA_STR( csdver,system->CSDVersionRva );
+    if( csdver )
     {
-      MINIDUMP_STRING *csdver = REL_PTR( dump,system->CSDVersionRva );
       size_t versize = csdver->Length+2<sizeof(ver.szCSDVersion) ?
         csdver->Length+2 : sizeof(ver.szCSDVersion);
       RtlMoveMemory( ver.szCSDVersion,csdver->Buffer,versize );
@@ -6867,9 +6905,11 @@ static int isMinidump( appData *ad,const wchar_t *name )
     else
       printf( "$Wminidump reader needs StackWalk64() from dbghelp.dll\n" );
 
+    MINIDUMP_STRING *app = NULL;
     if( mods && mods->NumberOfModules )
+      RVA_STR( app,mods->Modules[0].ModuleNameRva );
+    if( app )
     {
-      MINIDUMP_STRING *app = REL_PTR( dump,mods->Modules[0].ModuleNameRva );
       printf( "$Iapplication: $N%S\n",app->Buffer );
     }
     if( misc && misc->Flags1&MINIDUMP_MISC1_PROCESS_ID )
@@ -6886,7 +6926,6 @@ static int isMinidump( appData *ad,const wchar_t *name )
     return( 1 );
   }
 
-  size_t maxNeededSize = 0;
   if( mml )
   {
     uint32_t r;
@@ -6923,14 +6962,15 @@ static int isMinidump( appData *ad,const wchar_t *name )
     ad->dump_mod_a += wow64_ofs;
     ad->mi_q -= wow64_ofs;
 #endif
-    ad->mi_a = HeapAlloc( heap,0,ad->mi_q*sizeof(modInfo) );
+    ad->mi_a = HeapAlloc( heap,HEAP_ZERO_MEMORY,ad->mi_q*sizeof(modInfo) );
     if( !ad->mi_a ) ad->mi_q = 0;
 
     int m;
     for( m=0; m<ad->mi_q; m++ )
     {
       MINIDUMP_MODULE *mod = ad->dump_mod_a + m;
-      MINIDUMP_STRING *moduleName = REL_PTR( dump,mod->ModuleNameRva );
+      MINIDUMP_STRING *moduleName;
+      RVA_STR( moduleName,mod->ModuleNameRva );
 
       modInfo *mi = ad->mi_a + m;
       mi->base = (size_t)mod->BaseOfImage;
@@ -6938,7 +6978,8 @@ static int isMinidump( appData *ad,const wchar_t *name )
       mi->timestamp = mod->TimeDateStamp;
       mi->versionMS = mod->VersionInfo.dwFileVersionMS;
       mi->versionLS = mod->VersionInfo.dwFileVersionLS;
-      lstrcpynW( mi->path,moduleName->Buffer,MAX_PATH );
+      if( moduleName )
+        lstrcpynW( mi->path,moduleName->Buffer,MAX_PATH );
 
       if( ds.fSymLoadModule64 )
         dbgsym_loadmodule( &ds,mi->path,mi->base,(DWORD)mi->size );
@@ -6973,8 +7014,10 @@ static int isMinidump( appData *ad,const wchar_t *name )
         MD_THREAD_NAME *threadName = threadNames->ThreadNames + n;
         if( threadName->ThreadId!=threadId ) continue;
 
-        MINIDUMP_STRING *tn = REL_PTR( dump,threadName->ThreadNameRva );
-        threadName_a[t].name = tn->Buffer;
+        MINIDUMP_STRING *tn;
+        RVA_STR( tn,threadName->ThreadNameRva );
+        if( tn )
+          threadName_a[t].name = tn->Buffer;
         break;
       }
     }
@@ -6982,11 +7025,15 @@ static int isMinidump( appData *ad,const wchar_t *name )
 #endif
   if( mtl && ad->dump_mod_a )
   {
-    MINIDUMP_STRING *appName = REL_PTR( dump,ad->dump_mod_a[0].ModuleNameRva );
-    printf( "\n$Iapplication: $N%S",appName->Buffer );
-    if( ad->mi_q )
-      writeModuleInfo( tc,ad->mi_a );
-    printf( "\n" );
+    MINIDUMP_STRING *appName;
+    RVA_STR( appName,ad->dump_mod_a[0].ModuleNameRva );
+    if( appName )
+    {
+      printf( "\n$Iapplication: $N%S",appName->Buffer );
+      if( ad->mi_q )
+        writeModuleInfo( tc,ad->mi_a );
+      printf( "\n" );
+    }
 
 #ifndef NO_THREADS
     if( exception )
@@ -7126,9 +7173,11 @@ static int isMinidump( appData *ad,const wchar_t *name )
   if( fSymRegisterCallback64 )
     fSymRegisterCallback64( ds.process,symbolCallback,0 );
 
+  const CONTEXT *context = NULL;
   if( exception )
+    RVA_ENTRY( context,exception->ThreadContext.Rva );
+  if( context )
   {
-    CONTEXT *context = REL_PTR( dump,exception->ThreadContext.Rva );
     MINIDUMP_EXCEPTION *me = &exception->ExceptionRecord;
 
     exceptionInfo *ei =
@@ -7224,7 +7273,7 @@ static int isMinidump( appData *ad,const wchar_t *name )
     {
       MINIDUMP_THREAD *thread = mtl->Threads + t;
       allocation *a = aa + t;
-      const CONTEXT *context = REL_PTR( dump,thread->ThreadContext.Rva );
+      RVA_ENTRY( context,thread->ThreadContext.Rva );
 #ifndef NO_THREADS
       a->threadNum = t + 1;
 #endif
@@ -7248,7 +7297,8 @@ static int isMinidump( appData *ad,const wchar_t *name )
 #endif
 
       a->size = thread->SuspendCount;
-      stackwalkDbghelp( &ad->ds->swf,0,ad,(HANDLE)2,context,a->frames );
+      if( context )
+        stackwalkDbghelp( &ad->ds->swf,0,ad,(HANDLE)2,context,a->frames );
     }
 
     printExceptionThreads( c,aa,
