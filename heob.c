@@ -4202,8 +4202,11 @@ static void writeModuleInfo( textColor *tc,modInfo *mi )
     printf( " [$I%u.%u.%u.%u$N]",
         mi->versionMS>>16,mi->versionMS&0xffff,
         mi->versionLS>>16,mi->versionLS&0xffff );
-  FILETIME ft = secondsToFiletime( mi->timestamp );
-  printf( " [%x: $S%T$N]",mi->timestamp,&ft );
+  if( mi->timestamp )
+  {
+    FILETIME ft = secondsToFiletime( mi->timestamp );
+    printf( " [%x: $S%T$N]",mi->timestamp,&ft );
+  }
 }
 
 static void printAttachedProcessInfo( appData *ad,textColor *tc )
