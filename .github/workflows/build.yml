@@ -23,7 +23,7 @@ jobs:
         shell: cmd
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-          cl /Zi amd64-shadow-stack.c /CETCOMPAT
+          cl /Zi amd64-shadow-stack.c /link /CETCOMPAT
       - name: upload shadow stack test executable
         uses: actions/upload-artifact@v4
         with:
