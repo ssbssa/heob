@@ -34,7 +34,11 @@ main ()
      instruction of call1 function after "runto_main".  Avoid this by
      adding a nop instruction, to simplify the testing in
      amd64-shadow-stack-disp-step.exp.  */
+#ifndef _MSC_VER
   asm ("nop");
+#else
+  __nop();
+#endif
   call1 (); /* break main.  */
   return 0;
 }
