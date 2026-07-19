@@ -19,6 +19,9 @@ jobs:
         with:
           submodules: 'true'
 
+      - name: breakpoint
+        uses: fawazahmed0/action-debug-vscode@main
+
       - name: build shadow stack test executable with MSVC
         shell: cmd
         run: |
