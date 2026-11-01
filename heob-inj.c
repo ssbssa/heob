@@ -5231,30 +5231,21 @@ VOID CALLBACK heob( ULONG_PTR arg )
         type = ci1->type;
       int argc = 0;
       const char **argv = NULL;
-      if( (type==1 || type==2) &&
-          startup.cbReserved2==sizeof(cyg_child_info_1) && ci1->moreinfo )
-      {
-        argc = ci1->moreinfo->argc;
-        argv = ci1->moreinfo->argv;
-      }
-      else if( (type==1 || type==2) &&
-          startup.cbReserved2==sizeof(cyg_child_info_2) && ci2->moreinfo )
-      {
-        argc = ci2->moreinfo->argc;
-        argv = ci2->moreinfo->argv;
-      }
-      else if( (type==1 || type==2) &&
-          startup.cbReserved2==sizeof(cyg_child_info_3) && ci3->moreinfo )
-      {
-        argc = ci3->moreinfo->argc;
-        argv = ci3->moreinfo->argv;
-      }
-      else if( (type==1 || type==2) &&
-          startup.cbReserved2==sizeof(cyg_child_info_4) && ci4->moreinfo )
-      {
-        argc = ci4->moreinfo->argc;
-        argv = ci4->moreinfo->argv;
-      }
+#define CYG_ARGS_IF(n) \
+      ( startup.cbReserved2==sizeof(cyg_child_info_##n) && \
+        ci##n->moreinfo )
+#define CYG_ARGS_SET(n) \
+      argc = ci##n->moreinfo->argc; \
+      argv = ci##n->moreinfo->argv
+      if( type!=1 && type!=2 ) {}
+      else if( CYG_ARGS_IF(1) )
+      { CYG_ARGS_SET(1); }
+      else if( CYG_ARGS_IF(2) )
+      { CYG_ARGS_SET(2); }
+      else if( CYG_ARGS_IF(3) )
+      { CYG_ARGS_SET(3); }
+      else if( CYG_ARGS_IF(4) )
+      { CYG_ARGS_SET(4); }
       if( argc && argv )
       {
         wchar_t *cmdLine = api->commandLine;
