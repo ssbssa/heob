@@ -5176,7 +5176,9 @@ VOID CALLBACK heob( ULONG_PTR arg )
       {
         uint32_t padding1[4];
         unsigned short type;
-        void *padding2[9];
+        uintptr_t cygheap;
+        uintptr_t cygheap_max;
+        void *padding2[7];
         uint32_t padding3[6];
         cygheap_exec_info *moreinfo;
         int padding4[2];
@@ -5187,7 +5189,9 @@ VOID CALLBACK heob( ULONG_PTR arg )
       {
         uint32_t padding1[4];
         unsigned short type;
-        void *padding2[9];
+        uintptr_t cygheap;
+        uintptr_t cygheap_max;
+        void *padding2[7];
         uint32_t padding3[6];
         void *cygpid;
         cygheap_exec_info *moreinfo;
@@ -5199,7 +5203,9 @@ VOID CALLBACK heob( ULONG_PTR arg )
       {
         uint32_t padding1[4];
         unsigned short type;
-        void *padding2[9];
+        uintptr_t cygheap;
+        uintptr_t cygheap_max;
+        void *padding2[7];
         uint32_t padding3[6];
         void *sem;
         void *cygpid;
@@ -5212,7 +5218,9 @@ VOID CALLBACK heob( ULONG_PTR arg )
       {
         uint32_t padding1[4];
         unsigned short type;
-        void *padding2[9];
+        uintptr_t cygheap;
+        uintptr_t cygheap_max;
+        void *padding2[7];
         uint32_t padding3[6];
         unsigned long sigmask;
         void *sem;
@@ -5233,7 +5241,8 @@ VOID CALLBACK heob( ULONG_PTR arg )
       const char **argv = NULL;
 #define CYG_ARGS_IF(n) \
       ( startup.cbReserved2==sizeof(cyg_child_info_##n) && \
-        ci##n->moreinfo )
+        (uintptr_t)ci##n->moreinfo>ci##n->cygheap && \
+        (uintptr_t)ci##n->moreinfo<ci##n->cygheap_max )
 #define CYG_ARGS_SET(n) \
       argc = ci##n->moreinfo->argc; \
       argv = ci##n->moreinfo->argv
