@@ -5230,10 +5230,26 @@ VOID CALLBACK heob( ULONG_PTR arg )
         char padding5[4];
       }
       cyg_child_info_4;
+      typedef struct
+      {
+        uint32_t padding1[4];
+        unsigned short type;
+        uintptr_t cygheap;
+        uintptr_t cygheap_max;
+        void *padding2[7];
+        uint32_t padding3[6];
+        unsigned long sigmask;
+        void *sem;
+        void *cygpid;
+        cygheap_exec_info *moreinfo;
+        int padding4[2];
+      }
+      cyg_child_info_5;
       cyg_child_info_1 *ci1 = (cyg_child_info_1*)startup.lpReserved2;
       cyg_child_info_2 *ci2 = (cyg_child_info_2*)startup.lpReserved2;
       cyg_child_info_3 *ci3 = (cyg_child_info_3*)startup.lpReserved2;
       cyg_child_info_4 *ci4 = (cyg_child_info_4*)startup.lpReserved2;
+      cyg_child_info_5 *ci5 = (cyg_child_info_5*)startup.lpReserved2;
       int type = 0;
       if( startup.cbReserved2>=sizeof(cyg_child_info_1) && ci1 )
         type = ci1->type;
@@ -5255,6 +5271,8 @@ VOID CALLBACK heob( ULONG_PTR arg )
       { CYG_ARGS_SET(3); }
       else if( CYG_ARGS_IF(4) )
       { CYG_ARGS_SET(4); }
+      else if( CYG_ARGS_IF(5) )
+      { CYG_ARGS_SET(5); }
       if( argc && argv )
       {
         wchar_t *cmdLine = api->commandLine;
