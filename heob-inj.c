@@ -2550,20 +2550,23 @@ int heobSubProcess(
       if( subOutName && !subOutName[0] ) subOutName = NULL;
       if( subOutName )
       {
-        lstrcatW( heobCmd,L" -o" );
+        lstrcatW( heobCmd,L" -o\"" );
         lstrcatW( heobCmd,subOutName );
+        lstrcatW( heobCmd,L"\"" );
       }
       if( subXmlName && !subXmlName[0] ) subXmlName = NULL;
       if( subXmlName )
       {
-        lstrcatW( heobCmd,L" -x" );
+        lstrcatW( heobCmd,L" -x\"" );
         lstrcatW( heobCmd,subXmlName );
+        lstrcatW( heobCmd,L"\"" );
       }
       if( subSvgName && !subSvgName[0] ) subSvgName = NULL;
       if( subSvgName )
       {
-        lstrcatW( heobCmd,L" -v" );
+        lstrcatW( heobCmd,L" -v\"" );
         lstrcatW( heobCmd,subSvgName );
+        lstrcatW( heobCmd,L"\"" );
       }
       if( subSymPath && !subSymPath[0] ) subSymPath = NULL;
       if( subSymPath )

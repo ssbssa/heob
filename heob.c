@@ -8879,17 +8879,17 @@ CODE_SEG(".text$7") void mainCRTStartup( void )
 
       case 'o':
         if( ad->outName ) break;
-        ad->outName = getStringOption( args+2,heap );
+        ad->outName = getQuotedStringOption( args+2,heap,&args );
         break;
 
       case 'x':
         if( ad->xmlName ) break;
-        ad->xmlName = getStringOption( args+2,heap );
+        ad->xmlName = getQuotedStringOption( args+2,heap,&args );
         break;
 
       case 'v':
         if( ad->svgName ) break;
-        ad->svgName = getStringOption( args+2,heap );
+        ad->svgName = getQuotedStringOption( args+2,heap,&args );
         break;
 
       case 'y':
